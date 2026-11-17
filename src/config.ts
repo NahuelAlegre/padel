@@ -94,6 +94,12 @@ export interface TimingConfig {
   graceAfter: number;
   /** Subtracted from the swipe time of human players: touch and display latency. */
   latencyCompensation: number;
+  /**
+   * How much earlier than the real contact the timing ring closes on screen.
+   * A swipe is judged when the finger lifts, and people start it on the cue:
+   * with this lead, starting on the ring ends on the ball. Display only.
+   */
+  cueLead: number;
   /** After missing a contact, the next opportunity has to be at least this far ahead. */
   replanLead: number;
 }
@@ -169,11 +175,14 @@ export interface RulesConfig {
   maxPointTime: number;
   /**
    * Long rallies heat up: after `heatAfter` hits every further hit is
-   * `heatPerHit` faster, up to `heatMax`. It keeps points short and tense.
+   * `heatPerHit` faster, up to `heatMax`, and that much harder to control
+   * (`heatError` times the heat is added to the scatter). It keeps points
+   * short and tense.
    */
   heatAfter: number;
   heatPerHit: number;
   heatMax: number;
+  heatError: number;
 }
 
 export interface AILevel {
@@ -258,6 +267,7 @@ const defaults: GameConfig = {
     reswipeGap: 0.2,
     graceAfter: 0.1,
     latencyCompensation: 0.03,
+    cueLead: 0.06,
     replanLead: 0.2,
   },
   shots: {
@@ -298,8 +308,9 @@ const defaults: GameConfig = {
     serveWindup: 0.57,
     maxPointTime: 90,
     heatAfter: 5,
-    heatPerHit: 0.025,
-    heatMax: 0.35,
+    heatPerHit: 0.03,
+    heatMax: 0.45,
+    heatError: 1.2,
   },
   ai: {
     easy: {
@@ -323,9 +334,9 @@ const defaults: GameConfig = {
       serveDelay: 1.1,
     },
     hard: {
-      reaction: 0.22,
-      speedFactor: 0.94,
-      timingSigma: 0.065,
+      reaction: 0.24,
+      speedFactor: 0.92,
+      timingSigma: 0.075,
       errorScale: 1,
       smart: 0.85,
       lobChance: 0.22,

@@ -1,6 +1,6 @@
 import type { AILevelName } from '../config';
 import type { FaultReason, PointReason } from '../sim/rules';
-import type { Quality } from '../sim/types';
+import type { Quality, ShotKind } from '../sim/types';
 
 /** Every string the player reads. The game speaks rioplatense Spanish. */
 export const TEXT = {
@@ -16,7 +16,17 @@ export const TEXT = {
     late: 'Tarde',
   } satisfies Record<Quality, string>,
   whiffFar: 'No llegás',
-  smash: '¡Remate!',
+
+  /** Name of the shot that came out, shown under the timing: gestures are learnt by playing. */
+  shot: {
+    safe: 'Seguro',
+    drive: 'Drive',
+    volley: 'Volea',
+    lob: 'Globo',
+    drop: 'Dejada',
+    smash: 'Remate',
+    serve: 'Saque',
+  } satisfies Record<ShotKind, string>,
 
   reason: {
     doubleBounce: 'Doble pique',
@@ -70,7 +80,7 @@ export const TEXT = {
     ['Deslizá hacia abajo', 'dejada'],
     ['Tocá', 'golpe seguro al centro'],
   ] as ReadonlyArray<readonly [string, string]>,
-  howToTiming: 'Soltá cuando el anillo se cierra sobre la pelota.',
+  howToTiming: 'Pegale justo cuando el anillo se cierra: ni antes ni después.',
 
   settings: {
     controls: 'Controles',

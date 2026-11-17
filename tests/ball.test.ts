@@ -163,9 +163,12 @@ describe('predicción', () => {
       expect(ball.y).toBe(point.y);
       expect(ball.z).toBe(point.z);
     }
-    expect(trajectory.bounce).not.toBeNull();
-    const firstFloor = events.find((event) => event.type === 'floor');
-    expect(firstFloor).toMatchObject({ x: trajectory.bounce!.x, y: trajectory.bounce!.y });
+    // Every bounce on the way was announced, in order.
+    const floors = events.filter((event) => event.type === 'floor');
+    expect(floors.length).toBeGreaterThan(0);
+    floors.forEach((event, index) => {
+      expect(event).toMatchObject({ x: trajectory.bounces[index]!.x, y: trajectory.bounces[index]!.y });
+    });
   });
 
   it('sabe cómo termina el punto si nadie toca la pelota', () => {

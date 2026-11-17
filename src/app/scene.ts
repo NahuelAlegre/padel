@@ -8,6 +8,7 @@ export interface SceneOptions {
   bounceMarker: boolean;
   timingAid: boolean;
   reduceMotion: boolean;
+  debug: boolean;
 }
 
 export function createScene(pointer: PointerFeedback = createPointerFeedback()): Scene {
@@ -20,10 +21,11 @@ export function createScene(pointer: PointerFeedback = createPointerFeedback()):
     heat: 0,
     pointer,
     reduceMotion: false,
+    debug: false,
   };
 }
 
-const bounce = { x: 0, y: 0, eta: 0 };
+const bounce = { x: 0, y: 0, eta: 0, first: true };
 const contact = { x: 0, y: 0, z: 0, eta: 0, perfect: 0, good: 0 };
 
 /**
@@ -36,6 +38,7 @@ export function fillScene(scene: Scene, match: Match, alpha: number, options: Sc
   const time = match.time - (1 - alpha) * SIM_DT;
   scene.time = time;
   scene.reduceMotion = options.reduceMotion;
+  scene.debug = options.debug;
   scene.heat = match.config.rules.heatMax > 0 ? match.heat / match.config.rules.heatMax : 0;
 
   scene.ball.x = lerp(match.ballPrev.x, match.ball.x, alpha);
@@ -84,14 +87,21 @@ export function fillScene(scene: Scene, match: Match, alpha: number, options: Sc
   }
   scene.players.length = match.players.length;
 
-  // Where the ball lands next.
+  // Where the ball lands next. After the first bounce the mark moves on to
+  // the next one, so it keeps following the ball when it comes off a wall.
   scene.bounce = null;
   const trajectory = match.trajectory;
-  if (options.bounceMarker && match.rally.live && trajectory?.bounce && trajectory.bounce.t > time) {
-    bounce.x = trajectory.bounce.x;
-    bounce.y = trajectory.bounce.y;
-    bounce.eta = trajectory.bounce.t - time;
-    scene.bounce = bounce;
+  if (options.bounceMarker && match.rally.live && trajectory) {
+    for (let i = 0; i < trajectory.bounces.length; i++) {
+      const next = trajectory.bounces[i]!;
+      if (next.t <= time) continue;
+      bounce.x = next.x;
+      bounce.y = next.y;
+      bounce.eta = next.t - time;
+      bounce.first = i === 0;
+      scene.bounce = bounce;
+      break;
+    }
   }
 
   // Where and when the person meets the ball.
@@ -103,9 +113,9 @@ export function fillScene(scene: Scene, match: Match, alpha: number, options: Sc
       contact.x = plan.x;
       contact.y = plan.y;
       contact.z = plan.z;
-      // Shown truthfully: the match already allows for the delay between what
-      // the person sees and when the swipe arrives (latencyCompensation).
-      contact.eta = plan.t - time;
+      // The ring closes a little before the contact: a swipe started on the
+      // cue ends, and is judged, right on the ball.
+      contact.eta = plan.t - match.config.timing.cueLead - time;
       contact.perfect = match.config.timing.perfect;
       contact.good = match.config.timing.good;
       scene.contact = contact;

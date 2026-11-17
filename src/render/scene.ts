@@ -12,14 +12,19 @@ export interface Scene {
   time: number;
   ball: SceneBall;
   players: ScenePlayer[];
-  /** Where the ball lands next, when the aid is on. */
-  bounce: { x: number; y: number; eta: number } | null;
+  /**
+   * Where the ball lands next, when the aid is on. `first` is false once the
+   * ball has already bounced: that next landing is the one that loses the point.
+   */
+  bounce: { x: number; y: number; eta: number; first: boolean } | null;
   /** Where and when the person meets the ball, when the aid is on. */
   contact: SceneContact | null;
   /** Rally pace above the base: 0 at the start, up to 1 in a long rally. */
   heat: number;
   pointer: PointerFeedback;
   reduceMotion: boolean;
+  /** Show numbers meant for tuning (timing error in milliseconds). */
+  debug: boolean;
 }
 
 export interface SceneBall {

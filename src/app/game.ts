@@ -15,7 +15,7 @@ import { Hud } from '../ui/hud';
 import { Screens } from '../ui/screens';
 import { QUALITY_SCALE, loadSettings, saveSettings, type Settings } from '../ui/settings';
 import { TEXT } from '../ui/text';
-import { createScene, fillScene } from './scene';
+import { createScene, fillScene, type SceneOptions } from './scene';
 
 export type AppState = 'menu' | 'playing' | 'paused' | 'over';
 export type PlayMode = 'play' | 'demo';
@@ -34,6 +34,10 @@ export class Game {
   match: Match;
   state: AppState = 'menu';
   mode: PlayMode = 'play';
+  /** When set, the demo starts over instead of showing the result (performance runs). */
+  loopDemo = false;
+  /** Called with everything that happens in the match: for tests, tools and, later, sound. */
+  onSimEvent: ((event: SimEvent) => void) | null = null;
   readonly stats = new FrameStats();
 
   private config: GameConfig;
@@ -46,6 +50,7 @@ export class Game {
   private readonly screens: Screens;
   private readonly scene: Scene;
   private readonly autoQuality = new AutoQuality();
+  private readonly options: SceneOptions = { bounceMarker: true, timingAid: true, reduceMotion: false, debug: false };
   private ais: AIController[] = [];
 
   private running = false;
@@ -53,6 +58,8 @@ export class Game {
   private last = 0;
   private accumulator = 0;
   private warmup = 0;
+  /** Seconds left of the freeze that follows a strong hit. */
+  private hitStop = 0;
 
   constructor(stage: HTMLElement) {
     const canvas = stage.querySelector<HTMLCanvasElement>('#court');
@@ -102,6 +109,7 @@ export class Game {
     this.screens.hide();
     this.state = 'playing';
     this.accumulator = 0;
+    this.hitStop = 0;
     this.warmup = 2;
     this.autoQuality.reset();
     this.setInputEnabled(true);
@@ -142,6 +150,10 @@ export class Game {
   }
 
   private finish(): void {
+    if (this.mode === 'demo' && this.loopDemo) {
+      this.start('demo');
+      return;
+    }
     this.state = 'over';
     this.setInputEnabled(false);
     this.stopLoop();
@@ -214,7 +226,7 @@ export class Game {
   }
 
   /** Applies the settings that can change in the middle of a match, and saves them. */
-  private applySettings(): void {
+  applySettings(): void {
     const settings = this.settings;
     saveSettings(settings);
 
@@ -244,15 +256,22 @@ export class Game {
     for (const event of events) {
       this.renderer.onEvent(event, this.scene);
       this.hud.onEvent(event, this.match, humanTeam);
-      this.vibrate(event);
+      if (event.type === 'hit') this.onHit(event);
+      this.onSimEvent?.(event);
     }
     events.length = 0;
   }
 
-  private vibrate(event: SimEvent): void {
-    if (!this.settings.vibration || event.type !== 'hit') return;
-    if (!this.match.players[event.player]?.isHuman) return;
-    if (typeof navigator.vibrate === 'function') navigator.vibrate(event.quality === 'perfect' ? 22 : 12);
+  /** Weight for the good hits: a very short freeze and, on phones that have it, a buzz. */
+  private onHit(event: Extract<SimEvent, { type: 'hit' }>): void {
+    if (event.kind !== 'serve' && !this.settings.reduceMotion) {
+      if (event.kind === 'smash') this.hitStop = VIEW.hitStopSmash;
+      else if (event.quality === 'perfect') this.hitStop = VIEW.hitStopPerfect;
+    }
+    if (!this.settings.vibration || !this.match.players[event.player]?.isHuman) return;
+    // Browsers only allow vibration after the person has touched the page.
+    if (typeof navigator.vibrate !== 'function' || navigator.userActivation?.hasBeenActive === false) return;
+    navigator.vibrate(event.quality === 'perfect' ? 22 : 12);
   }
 
   // ---------------------------------------------------------------- loop
@@ -283,13 +302,14 @@ export class Game {
     this.renderer.render(this.scene, 0);
   }
 
-  private sceneOptions(): { bounceMarker: boolean; timingAid: boolean; reduceMotion: boolean } {
+  private sceneOptions(): SceneOptions {
     const playing = this.state === 'playing' || this.state === 'paused';
-    return {
-      bounceMarker: this.settings.bounceMarker && playing,
-      timingAid: this.settings.timingAid && playing && this.mode === 'play',
-      reduceMotion: this.settings.reduceMotion,
-    };
+    const options = this.options;
+    options.bounceMarker = this.settings.bounceMarker && playing;
+    options.timingAid = this.settings.timingAid && playing && this.mode === 'play';
+    options.reduceMotion = this.settings.reduceMotion;
+    options.debug = this.settings.showFps;
+    return options;
   }
 
   private readonly frame = (now: number): void => {
@@ -305,7 +325,8 @@ export class Game {
     }
 
     // Fixed-step simulation: run as many steps as real time asks for.
-    this.accumulator += dt * this.settings.speed;
+    if (this.hitStop > 0) this.hitStop -= dt;
+    else this.accumulator += dt * this.settings.speed;
     let steps = 0;
     while (this.accumulator >= SIM_DT && steps < MAX_STEPS_PER_FRAME) {
       this.match.step();

@@ -17,7 +17,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "sim": "vitest run --config vitest.sim.config.ts",
-    "perf": "node scripts/perf.mjs"
+    "perf": "node scripts/perf.mjs",
+    "smoke": "node scripts/smoke.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

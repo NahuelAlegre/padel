@@ -20,6 +20,11 @@ export const VIEW = {
   /** Where the court sits in the remaining free height (0 = top, 1 = bottom). */
   align: 0.3,
   /** The ball is drawn bigger than it is: at its real size it would be a dot. */
-  ballRadius: 0.115,
-  ballMinPixels: 2.8,
+  ballRadius: 0.125,
+  ballMinPixels: 3,
+  /** Players are drawn a little larger than life so they read on a phone. */
+  figureScale: 1.2,
+  /** Seconds the game freezes on a perfect hit and on a smash, to give them weight. */
+  hitStopPerfect: 0.03,
+  hitStopSmash: 0.055,
 };

@@ -25,8 +25,8 @@ export interface Trajectory {
   /** Simulation time of points[0]. Points are SIM_DT apart. */
   t0: number;
   points: TrajPoint[];
-  /** First contact with the floor, for the bounce marker. */
-  bounce: { t: number; x: number; y: number } | null;
+  /** Every contact with the floor, in order, for the bounce marker. */
+  bounces: Array<{ t: number; x: number; y: number }>;
   /** How the point (or the serve) ends untouched. Null if it outlives the horizon. */
   end: { t: number; result: RallyResult } | null;
 }
@@ -53,7 +53,7 @@ export function predictTrajectory(
   copyBall(ball, b);
   copyRally(rally, r);
 
-  const trajectory: Trajectory = { id: nextId++, t0, points: [], bounce: null, end: null };
+  const trajectory: Trajectory = { id: nextId++, t0, points: [], bounces: [], end: null };
   const steps = Math.ceil(horizon / SIM_DT);
   let bounces = 0;
   let walls = 0;
@@ -72,7 +72,7 @@ export function predictTrajectory(
     for (const event of scratchEvents) {
       if (event.type === 'floor') {
         bounces++;
-        if (!trajectory.bounce) trajectory.bounce = { t, x: event.x, y: event.y };
+        trajectory.bounces.push({ t, x: event.x, y: event.y });
       } else if (event.type === 'wall') {
         walls++;
       }

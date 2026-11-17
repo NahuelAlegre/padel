@@ -10,15 +10,18 @@ import { drawFigure } from './figure';
 import { FONT, PAL } from './palette';
 
 interface Effect {
-  kind: 'floorRing' | 'airRing' | 'burst' | 'text';
+  kind: 'floorRing' | 'airRing' | 'burst';
   x: number;
   y: number;
   z: number;
   age: number;
   life: number;
   size: number;
-  text: string;
 }
+
+/** Size of the cached message bitmap, in CSS pixels. */
+const LABEL_WIDTH = 220;
+const LABEL_HEIGHT = 56;
 
 interface DrawItem {
   /** 0 = player, 1 = ball, 2 = net. */
@@ -56,6 +59,14 @@ export class PrototypeRenderer implements Renderer {
   private readonly p: Projected = { x: 0, y: 0, scale: 0 };
   private readonly q: Projected = { x: 0, y: 0, scale: 0 };
 
+  /**
+   * The message over the player ("¡Perfecto!"). Text is slow to draw on a
+   * canvas, so it is painted once into this bitmap and then just copied.
+   */
+  private readonly label: HTMLCanvasElement;
+  private readonly labelCtx: CanvasRenderingContext2D;
+  private readonly message = { active: false, x: 0, y: 0, age: 0, life: 0.9 };
+
   constructor(
     canvas: HTMLCanvasElement,
     private readonly court: CourtConfig,
@@ -63,9 +74,12 @@ export class PrototypeRenderer implements Renderer {
     const ctx = canvas.getContext('2d', { alpha: false });
     this.back = document.createElement('canvas');
     const backCtx = this.back.getContext('2d', { alpha: false });
-    if (!ctx || !backCtx) throw new Error('Canvas 2D is not available');
+    this.label = document.createElement('canvas');
+    const labelCtx = this.label.getContext('2d');
+    if (!ctx || !backCtx || !labelCtx) throw new Error('Canvas 2D is not available');
     this.ctx = ctx;
     this.backCtx = backCtx;
+    this.labelCtx = labelCtx;
   }
 
   setCamera(name: CameraName): void {
@@ -84,6 +98,7 @@ export class PrototypeRenderer implements Renderer {
   reset(): void {
     this.effects.length = 0;
     this.trailCount = 0;
+    this.message.active = false;
   }
 
   /** Fits the camera to the viewport and repaints the cached court. */
@@ -118,16 +133,17 @@ export class PrototypeRenderer implements Renderer {
         this.spawn('burst', event.x, event.y, event.z, 0.2, event.quality === 'perfect' ? 0.7 : 0.4);
         const player = scene.players[event.player];
         if (player?.isHuman && event.kind !== 'serve') {
-          const label = event.kind === 'smash' && event.quality !== 'early' && event.quality !== 'late'
-            ? TEXT.smash
-            : TEXT.quality[event.quality];
-          this.say(label, player.x, player.y, event.quality === 'perfect' ? 1.25 : 1);
+          // How well it was timed, and which shot came out of the gesture.
+          // With the debug display on, also by how many milliseconds it was off.
+          const ms = Math.round(event.error * 1000);
+          const detail = scene.debug ? `${TEXT.shot[event.kind]} · ${ms > 0 ? '+' : ''}${ms} ms` : TEXT.shot[event.kind];
+          this.say(TEXT.quality[event.quality], detail, player.x, player.y, event.quality === 'perfect');
         }
         break;
       }
       case 'whiff': {
         const player = scene.players[event.player];
-        if (player?.isHuman && event.reason === 'far') this.say(TEXT.whiffFar, player.x, player.y, 1);
+        if (player?.isHuman && event.reason === 'far') this.say(TEXT.whiffFar, '', player.x, player.y, false);
         break;
       }
       default:
@@ -136,15 +152,44 @@ export class PrototypeRenderer implements Renderer {
   }
 
   private spawn(kind: Effect['kind'], x: number, y: number, z: number, life: number, size: number): void {
-    this.effects.push({ kind, x, y, z, age: 0, life, size, text: '' });
+    this.effects.push({ kind, x, y, z, age: 0, life, size });
   }
 
-  private say(text: string, x: number, y: number, size: number): void {
-    // One message at a time over the player: a new one replaces the old.
-    for (let i = this.effects.length - 1; i >= 0; i--) {
-      if (this.effects[i]!.kind === 'text') this.effects.splice(i, 1);
+  /** Shows a message over a player. One at a time: a new one replaces the old. */
+  private say(title: string, detail: string, x: number, y: number, strong: boolean): void {
+    const ratio = this.ratio;
+    const label = this.label;
+    const width = Math.round(LABEL_WIDTH * ratio);
+    const height = Math.round(LABEL_HEIGHT * ratio);
+    if (label.width !== width || label.height !== height) {
+      label.width = width;
+      label.height = height;
     }
-    this.effects.push({ kind: 'text', x, y, z: 2.15, age: 0, life: 0.85, size, text });
+    const ctx = this.labelCtx;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, LABEL_WIDTH, LABEL_HEIGHT);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = PAL.textEdge;
+    ctx.fillStyle = PAL.text;
+
+    ctx.font = `800 ${strong ? 22 : 18}px ${FONT}`;
+    ctx.lineWidth = 5;
+    ctx.strokeText(title, LABEL_WIDTH / 2, 30);
+    ctx.fillText(title, LABEL_WIDTH / 2, 30);
+    if (detail) {
+      ctx.font = `700 13px ${FONT}`;
+      ctx.lineWidth = 4;
+      ctx.strokeText(detail, LABEL_WIDTH / 2, 48);
+      ctx.fillText(detail, LABEL_WIDTH / 2, 48);
+    }
+
+    const message = this.message;
+    message.active = true;
+    message.x = x;
+    message.y = y;
+    message.age = 0;
   }
 
   // ---------------------------------------------------------------- frame
@@ -159,6 +204,10 @@ export class PrototypeRenderer implements Renderer {
       const effect = this.effects[i]!;
       effect.age += dt;
       if (effect.age >= effect.life) this.effects.splice(i, 1);
+    }
+    if (this.message.active) {
+      this.message.age += dt;
+      if (this.message.age >= this.message.life) this.message.active = false;
     }
 
     this.drawFloor(scene);
@@ -178,21 +227,28 @@ export class PrototypeRenderer implements Renderer {
 
     const bounce = scene.bounce;
     if (bounce) {
+      // The first landing is a dashed ring with a cross. Once the ball has
+      // bounced, the mark follows it (off the walls too) as a smaller, plain
+      // ring: where it must not be allowed to land again.
       camera.project(bounce.x, bounce.y, 0, p);
-      const radius = Math.max(7, 0.4 * p.scale);
+      const radius = Math.max(7, (bounce.first ? 0.4 : 0.3) * p.scale);
       ctx.strokeStyle = PAL.aid;
+      ctx.globalAlpha = bounce.first ? 1 : 0.6;
       ctx.lineWidth = 2;
       ctx.setLineDash([radius * 0.5, radius * 0.32]);
       ctx.beginPath();
       ctx.ellipse(p.x, p.y, radius, radius * squash, 0, 0, TAU);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.moveTo(p.x - radius * 0.3, p.y);
-      ctx.lineTo(p.x + radius * 0.3, p.y);
-      ctx.moveTo(p.x, p.y - radius * 0.3 * squash);
-      ctx.lineTo(p.x, p.y + radius * 0.3 * squash);
-      ctx.stroke();
+      if (bounce.first) {
+        ctx.beginPath();
+        ctx.moveTo(p.x - radius * 0.3, p.y);
+        ctx.lineTo(p.x + radius * 0.3, p.y);
+        ctx.moveTo(p.x, p.y - radius * 0.3 * squash);
+        ctx.lineTo(p.x, p.y + radius * 0.3 * squash);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
     }
 
     for (const effect of this.effects) {
@@ -212,16 +268,17 @@ export class PrototypeRenderer implements Renderer {
     ctx.fillStyle = PAL.shadow;
     for (const player of scene.players) {
       camera.project(player.x, player.y, 0, p);
-      const radius = 0.38 * p.scale;
+      const radius = 0.38 * p.scale * VIEW.figureScale;
       ctx.beginPath();
       ctx.ellipse(p.x, p.y, radius, radius * squash, 0, 0, TAU);
       ctx.fill();
       if (player.isHuman) {
         // Not colour alone: the person's player always stands on a ring.
+        const ring = radius * 1.5;
         ctx.strokeStyle = PAL.aidSoft;
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.ellipse(p.x, p.y, 0.56 * p.scale, 0.56 * p.scale * squash, 0, 0, TAU);
+        ctx.ellipse(p.x, p.y, ring, ring * squash, 0, 0, TAU);
         ctx.stroke();
       }
     }
@@ -281,7 +338,7 @@ export class PrototypeRenderer implements Renderer {
   private drawPlayer(player: ScenePlayer): void {
     const p = this.camera.project(player.x, player.y, 0, this.p);
     const colors = player.team === 0 ? PAL.near : PAL.far;
-    drawFigure(this.ctx, p.x, p.y, p.scale, player, colors.body, colors.edge);
+    drawFigure(this.ctx, p.x, p.y, p.scale * VIEW.figureScale, player, colors.body, colors.edge);
   }
 
   private drawBall(scene: Scene): void {
@@ -416,22 +473,17 @@ export class PrototypeRenderer implements Renderer {
           ctx.lineTo(p.x + Math.cos(angle) * outer, p.y + Math.sin(angle) * outer);
         }
         ctx.stroke();
-      } else if (effect.kind === 'text') {
-        camera.project(effect.x, effect.y, effect.z, p);
-        const rise = scene.reduceMotion ? 0 : easeOutCubic(t) * 16;
-        const size = Math.round(17 * effect.size);
-        ctx.globalAlpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
-        ctx.font = `800 ${size}px ${FONT}`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'alphabetic';
-        const x = clamp(p.x, 60, this.width - 60);
-        ctx.lineJoin = 'round';
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = PAL.textEdge;
-        ctx.strokeText(effect.text, x, p.y - rise);
-        ctx.fillStyle = PAL.text;
-        ctx.fillText(effect.text, x, p.y - rise);
       }
+    }
+
+    const message = this.message;
+    if (message.active) {
+      const t = message.age / message.life;
+      camera.project(message.x, message.y, 2.3 * VIEW.figureScale, p);
+      const rise = scene.reduceMotion ? 0 : easeOutCubic(t) * 14;
+      const x = clamp(p.x, LABEL_WIDTH / 2, this.width - LABEL_WIDTH / 2);
+      ctx.globalAlpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
+      ctx.drawImage(this.label, x - LABEL_WIDTH / 2, p.y - LABEL_HEIGHT - rise, LABEL_WIDTH, LABEL_HEIGHT);
     }
     ctx.globalAlpha = 1;
   }

@@ -465,6 +465,7 @@ export class Match {
     const fast = clamp((incoming - shots.paceFrom) / 12, 0, 1.5);
     const low = clamp((0.45 - ball.z) / 0.45, 0, 1);
     let scale = 1 + stretch * shots.stretchPenalty + fast * shots.pacePenalty + low * shots.lowPenalty;
+    scale += this.heat * config.rules.heatError;
     scale *= player.errorScale;
     if (kind === 'safe') scale *= 0.6;
 

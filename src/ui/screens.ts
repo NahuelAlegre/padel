@@ -85,8 +85,8 @@ export class Screens {
   }
 
   private menu(): HTMLElement {
-    const list = el('dl', 'howto');
-    for (const [gesture, effect] of TEXT.howTo) list.append(el('dt', '', gesture), el('dd', '', effect));
+    const list = el('ul', 'howto');
+    for (const [gesture, effect] of TEXT.howTo) list.append(el('li', '', el('b', '', gesture), ` ${effect}`));
     return el(
       'section',
       'panel',
@@ -196,7 +196,8 @@ export class Screens {
       ]),
       this.choice(s.fps, 'showFps', onOff),
 
-      button(TEXT.back, 'btn primary', () => this.show(this.cameFrom)),
+      // The list is longer than a phone screen: the way back stays in view.
+      el('div', 'sticky', button(TEXT.back, 'btn primary', () => this.show(this.cameFrom))),
     );
     return panel;
   }

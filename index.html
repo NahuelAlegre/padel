@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#15171b" />
+    <meta name="description" content="Juego de pádel para el navegador, pensado para jugar en el celular con una sola mano." />
+    <title>Pádel</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2315171b'/%3E%3Ccircle cx='16' cy='16' r='8' fill='%23e8f23a'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <div id="app">
+      <main id="stage">
+        <canvas id="court" aria-label="Cancha de pádel"></canvas>
+
+        <div id="hud" hidden>
+          <div class="score" role="status" aria-live="polite" aria-atomic="true">
+            <div class="row" data-team="0">
+              <span class="serve" aria-hidden="true">●</span>
+              <span class="name"></span>
+              <span class="games"></span>
+              <span class="points"></span>
+            </div>
+            <div class="row" data-team="1">
+              <span class="serve" aria-hidden="true">●</span>
+              <span class="name"></span>
+              <span class="games"></span>
+              <span class="points"></span>
+            </div>
+            <div class="tag" hidden></div>
+          </div>
+          <button id="pause" type="button" aria-label="Pausa">
+            <span aria-hidden="true"></span>
+          </button>
+          <div id="banner" role="status" aria-live="assertive"></div>
+          <div id="hint"></div>
+          <pre id="fps" hidden></pre>
+        </div>
+
+        <div id="overlay"></div>
+        <div id="rotate">Girá el teléfono: el juego es en vertical.</div>
+      </main>
+    </div>
+    <noscript>Este juego necesita JavaScript para funcionar.</noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

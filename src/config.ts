@@ -102,6 +102,13 @@ export interface TimingConfig {
   cueLead: number;
   /** After missing a contact, the next opportunity has to be at least this far ahead. */
   replanLead: number;
+  /**
+   * A person who swipes while the assisted player is waiting for a later
+   * contact takes the ball right there if it passes within reach in the next
+   * `takeNow` seconds (or did in the last `takeNowBack`).
+   */
+  takeNow: number;
+  takeNowBack: number;
 }
 
 export interface ShotSpec {
@@ -269,6 +276,8 @@ const defaults: GameConfig = {
     latencyCompensation: 0.03,
     cueLead: 0.06,
     replanLead: 0.2,
+    takeNow: 0.15,
+    takeNowBack: 0.06,
   },
   shots: {
     specs: {

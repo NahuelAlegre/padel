@@ -77,6 +77,8 @@ El contexto completa el resto: un drive tomado en el aire cerca de la red sale c
 
 Deslizar antes de tiempo no falla el golpe: el jugador arma la raqueta y pega cuando llega la pelota. Un deslizamiento nuevo reemplaza al anterior.
 
+El movimiento asistido suele esperar la pelota más cómoda, que muchas veces es la que vuelve del vidrio de fondo. Si deslizás cuando la pelota te está pasando al lado, le pegás ahí mismo: es más temprano y más difícil de controlar, pero le saca tiempo al rival.
+
 **Modo joystick (Opciones → Controles).** Pensado para un futuro modo competitivo: un joystick flotante de un lado de la pantalla mueve al jugador y el otro pulgar pega con los mismos gestos. El lado del joystick se puede cambiar.
 
 **Teclado.** Flechas o WASD para moverse (en modo joystick) y apuntar; espacio o J para pegar, K para el globo, L para la dejada; P o Escape para pausar.
@@ -178,8 +180,8 @@ El encuadre, el tamaño visual de la pelota y de los jugadores están en [src/re
 
 | Jugador simulado | contra Fácil | contra Normal | contra Difícil |
 | --- | --- | --- | --- |
-| Principiante (timing ±160 ms) | gana 82 % | gana 18 % | gana 0 % |
-| Promedio (±100 ms) | gana 98 % | gana 73 % | gana 10 % |
+| Principiante (timing ±160 ms) | gana 80 % | gana 17 % | gana 2 % |
+| Promedio (±100 ms) | gana 98 % | gana 75 % | gana 10 % |
 | Experto (±50 ms) | gana 100 % | gana 100 % | gana 67 % |
 
 Un punto dura de promedio unos 5 golpes contra Fácil, entre 6 y 9 contra Normal y entre 7 y 13 contra Difícil. Un partido a 2 juegos dura entre 2 y 5 minutos. Son 60 partidos por casilla con un jugador simulado que apunta al lado libre el 60 % de las veces: sirve para comparar cambios, no reemplaza probarlo con gente.
@@ -210,7 +212,7 @@ Chrome headless pinta a 240 cuadros por segundo, así que "240" significa que no
 
 ## Verificación
 
-- `npm test`: 109 tests. Cubren la física de la pelota (pique, vidrio, reja, red, salida de la cancha), que la predicción coincide exactamente con la simulación, las reglas (pique antes de pared, doble pique, saque cruzado, faltas, let), la puntuación (punto de oro, ventaja, rotación del saque en singles y dobles), el cálculo de los golpes, el timing, los gestos, la cámara y partidos completos entre IA, también de dobles.
+- `npm test`: 111 tests. Cubren la física de la pelota (pique, vidrio, reja, red, salida de la cancha), que la predicción coincide exactamente con la simulación, las reglas (pique antes de pared, doble pique, saque cruzado, faltas, let), la puntuación (punto de oro, ventaja, rotación del saque en singles y dobles), el cálculo de los golpes, el timing, los gestos, la cámara y partidos completos entre IA, también de dobles.
 - `npm run smoke`: 21 verificaciones en un Chrome con emulación de celular. Toca "Jugar", juega un partido entero deslizando con un dedo y levantándolo cuando se cierra el anillo, pausa, entra a Opciones, prueba el modo joystick con dos dedos y, en tamaño de escritorio, el mouse, el teclado y la pausa automática. Guarda capturas de cada etapa en `.smoke/`.
 
 ## Accesibilidad

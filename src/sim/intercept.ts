@@ -197,20 +197,25 @@ export function planIntercept(
 const MANUAL_LOOKAHEAD = 0.7;
 
 /**
- * Contact for a player that moves by hand: the moment the ball passes closest
- * to the sweet spot of where the player is standing right now. It may lie
- * slightly in the past, which is what makes a swing late.
+ * The moment the ball passes closest to the sweet spot of where the player is
+ * standing right now, looking `ahead` seconds forward and `back` seconds
+ * behind. A contact slightly in the past is what makes a swing late.
+ *
+ * This is the contact of a player that moves by hand, and also how an
+ * assisted player takes a ball that is passing by instead of waiting for it.
  */
 export function contactNear(
   trajectory: Trajectory,
   player: Player,
   now: number,
   config: GameConfig,
+  ahead = MANUAL_LOOKAHEAD,
+  back = config.timing.lateMax,
 ): InterceptPlan | null {
   const pc = config.player;
   const points = trajectory.points;
-  const from = Math.max(0, Math.floor((now - config.timing.lateMax - trajectory.t0) / SIM_DT));
-  const to = Math.min(points.length - 1, Math.ceil((now + MANUAL_LOOKAHEAD - trajectory.t0) / SIM_DT));
+  const from = Math.max(0, Math.floor((now - back - trajectory.t0) / SIM_DT));
+  const to = Math.min(points.length - 1, Math.ceil((now + ahead - trajectory.t0) / SIM_DT));
 
   let best: TrajPoint | null = null;
   let bestScore = Infinity;

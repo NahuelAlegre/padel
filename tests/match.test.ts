@@ -209,6 +209,59 @@ describe('timing del golpe', () => {
     expect(returned?.error).toBeCloseTo(0, 2);
   });
 
+  /**
+   * The serve bounces and carries on to the back glass, and the assisted plan
+   * is to wait for the rebound. The person swipes as the ball goes by instead.
+   */
+  function swipeAtPassingBall(configure?: (config: GameConfig) => void) {
+    const { match, a, b, receiver } = setup(configure, {}, { isHuman: true });
+    a.decide = (m) => (m.phase === 'serve' ? serveNow() : null);
+    const result = { swungAt: -1, plannedFor: -1, returnedAt: -1, wallFirst: false, quality: '' };
+    b.decide = (m, me) => {
+      if (result.swungAt >= 0 || !me.plan || m.rally.bounces !== 1) return null;
+      const gap = Math.hypot(m.ball.x - me.x, m.ball.y - me.y);
+      if (gap > 1 || me.plan.t - m.time < 0.25) return null;
+      result.swungAt = m.time;
+      result.plannedFor = me.plan.t;
+      return { kind: 'drive', aim: 0 };
+    };
+    for (let i = 0; i < 120 * 8 && result.returnedAt < 0; i++) {
+      match.step();
+      for (const event of match.events) {
+        if (event.type === 'wall' && result.swungAt >= 0) result.wallFirst = true;
+        if (event.type === 'hit' && event.team === receiver.team) {
+          result.returnedAt = match.time;
+          result.quality = event.quality;
+        }
+        if (event.type === 'point') i = Infinity;
+      }
+      match.events.length = 0;
+    }
+    return result;
+  }
+
+  it('si la persona desliza cuando la pelota le pasa al lado, le pega ahí en vez de esperar la pared', () => {
+    const { swungAt, plannedFor, returnedAt, wallFirst, quality } = swipeAtPassingBall();
+    expect(swungAt).toBeGreaterThan(0);
+    expect(returnedAt).toBeGreaterThan(0);
+    // Hit right away, before the wall and well before the contact that was planned.
+    expect(returnedAt - swungAt).toBeLessThan(0.2);
+    expect(returnedAt).toBeLessThan(plannedFor - 0.1);
+    expect(wallFirst).toBe(false);
+    expect(quality).not.toBe('early');
+  });
+
+  it('sin esa regla, el mismo deslizamiento espera la pared y cuenta como temprano', () => {
+    const { swungAt, plannedFor, returnedAt, wallFirst, quality } = swipeAtPassingBall((config) => {
+      config.timing.takeNow = -1;
+      config.timing.takeNowBack = -1;
+    });
+    expect(swungAt).toBeGreaterThan(0);
+    expect(returnedAt).toBeCloseTo(plannedFor, 1);
+    expect(wallFirst).toBe(true);
+    expect(quality).toBe('early');
+  });
+
   it('un golpe al aire no rompe nada', () => {
     const { match, a, b } = setup();
     a.decide = (m) => (m.phase === 'serve' ? serveNow() : null);

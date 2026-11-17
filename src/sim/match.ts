@@ -381,7 +381,7 @@ export class Match {
     const timing = this.config.timing;
     player.swingLockUntil = this.time + timing.reswipeGap;
 
-    const plan = player.plan;
+    let plan = player.plan;
     if (!plan || !this.rally.live || this.rally.hitter === player.team) {
       // Nothing to hit: swing at the air so the input is visibly acknowledged.
       player.swing = null;
@@ -389,11 +389,23 @@ export class Match {
       this.events.push({ type: 'whiff', player: player.id, reason: 'nothing' });
       return;
     }
+    const at = this.time - (player.isHuman ? timing.latencyCompensation : 0);
+
+    // The assisted movement may be waiting for a later, more comfortable
+    // contact, typically the rebound off the back wall. A person who swipes
+    // while the ball is passing within reach means that ball: take it there,
+    // earlier and harder to control, instead of calling the swipe early.
+    if (player.isHuman && !player.manual && this.trajectory && plan.t - at > timing.good) {
+      const passing = contactNear(this.trajectory, player, this.time, this.config, timing.takeNow, timing.takeNowBack);
+      if (passing && passing.t < plan.t - timing.good) {
+        plan = passing;
+        player.plan = passing;
+      }
+    }
 
     // A swing before the contact is armed and waits for the ball; a swing
     // after it reaches for the ball straight away. Either way the error
     // against the ideal moment decides the quality.
-    const at = this.time - (player.isHuman ? timing.latencyCompensation : 0);
     const executeAt = Math.max(plan.t, this.time);
     player.swing = { intent, requestedAt: this.time, executeAt, error: at - plan.t };
     this.playSwing(player, 'swing', executeAt - SWING_LEAD, intent.kind);

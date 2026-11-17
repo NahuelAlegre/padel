@@ -58,7 +58,12 @@ async function main() {
       return { x: r.left + r.width / 2, y: r.top + r.height / 2, visible };
     })()`);
   const tapButton = async (label) => {
-    const at = await buttonAt(label);
+    // The screen the button belongs to may still be on its way: wait for it.
+    let at = null;
+    for (const deadline = Date.now() + 2000; Date.now() < deadline; await sleep(25)) {
+      at = await buttonAt(label);
+      if (at?.visible) break;
+    }
     if (!at) throw new Error(`No hay un botón "${label}" en pantalla`);
     if (!at.visible) throw new Error(`El botón "${label}" está fuera de la pantalla o tapado`);
     await phone.tap(at.x, at.y);
@@ -81,6 +86,16 @@ async function main() {
       };
     })()`);
 
+  /** Waits until the app is in `expected` (a tap takes a moment to become a click). */
+  const reaches = async (expected, timeoutMs = 2000) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if ((await state()).state === expected) return true;
+      await sleep(20);
+    }
+    return false;
+  };
+
   try {
     if (throttle > 1) await phone.throttle(throttle);
     await phone.goto(preview.url);
@@ -88,16 +103,15 @@ async function main() {
     await shot('01-menu');
     check('el menú abre', (await buttonAt('Jugar')) !== null);
 
-    // A one-game match keeps the run short. Everything else is the default setup.
+    // The default setup: easy rival, two games. The rival serves the second
+    // game, so there are always serves to return.
     await phone.evaluate(`(() => {
       const g = window.padel;
-      g.settings.games = 1;
       window.__events = [];
       g.onSimEvent = (event) => window.__events.push({ ...event });
     })()`);
     await tapButton('Jugar');
-    await sleep(300);
-    check('tocar "Jugar" empieza el partido', (await state()).state === 'playing');
+    check('tocar "Jugar" empieza el partido', await reaches('playing'));
     await shot('02-saque');
 
     // ---------------------------------------------------------------- one-finger match
@@ -114,7 +128,7 @@ async function main() {
     let pausedOnce = false;
     const started = Date.now();
 
-    while (Date.now() - started < 240_000) {
+    while (Date.now() - started < 360_000) {
       const s = await state();
       if (s.state === 'over') break;
 
@@ -148,7 +162,7 @@ async function main() {
       if (!pausedOnce && s.phase === 'pointOver' && s.time > 12) {
         pausedOnce = true;
         await tapButton('Pausa');
-        check('el botón de pausa pausa', (await state()).state === 'paused');
+        check('el botón de pausa pausa', await reaches('paused'));
         const frozen = (await state()).time;
         await shot('06-pausa');
         await tapButton('Opciones');
@@ -157,7 +171,7 @@ async function main() {
         await sleep(300);
         check('en pausa el partido no avanza', (await state()).time === frozen);
         await tapButton('Seguir');
-        check('"Seguir" vuelve al partido', (await state()).state === 'playing');
+        check('"Seguir" vuelve al partido', await reaches('playing'));
       }
       await sleep(4);
     }
@@ -244,8 +258,7 @@ async function main() {
     );
     const play = await buttonAt('Jugar');
     await phone.mouseDrag(play.x, play.y, play.x, play.y, 20);
-    await sleep(300);
-    check('un clic en "Jugar" empieza el partido', (await state()).state === 'playing');
+    check('un clic en "Jugar" empieza el partido', await reaches('playing'));
 
     await sleep(400);
     await phone.key('Space', 32);
@@ -265,19 +278,16 @@ async function main() {
     await shot('10-escritorio');
 
     await phone.key('KeyP', 80);
-    await sleep(150);
-    check('la tecla P pausa', (await state()).state === 'paused');
+    check('la tecla P pausa', await reaches('paused'));
     await phone.key('KeyP', 80);
-    await sleep(150);
-    check('y vuelve a jugar', (await state()).state === 'playing');
+    check('y vuelve a jugar', await reaches('playing'));
 
     // Switching to another tab or app has to pause the game by itself.
     await phone.evaluate(`(() => {
       Object.defineProperty(document, 'hidden', { value: true, configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
     })()`);
-    await sleep(100);
-    check('al perder de vista la página, se pausa sola', (await state()).state === 'paused');
+    check('al perder de vista la página, se pausa sola', await reaches('paused'));
 
     check('la página no tiró errores', phone.errors.length === 0, phone.errors.slice(0, 3).join(' | '));
   } finally {

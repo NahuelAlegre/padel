@@ -20,7 +20,7 @@ Lo que distingue a este juego es que es accesible y respetuoso con el jugador:
 ## Decisiones tomadas
 
 - **Cámara**: desde atrás del jugador, con profundidad simulada (2D con proyección en perspectiva). La sombra de la pelota en el piso es lo que muestra a qué altura va.
-- **Estilo visual**: plano redondeado (vectorial, formas redondeadas, paleta cálida). Lo buscado es "interesante y estético", no realista. El pixel art se descartó porque "parece un juego de NES".
+- **Estilo visual**: la base actual es plano redondeado, en la dirección "atlético estilizado" de `design/art-direction/` (vectorial, formas redondeadas, paleta cálida). Lo buscado es "interesante y estético", no realista. El pixel art se descartó porque "parece un juego de NES". **El estilo final todavía no está decidido**: falta comparar 2D contra 3D estilizado y definir el nivel de detalle.
 - **Calidad del arte**: la primera maqueta se rechazó porque los personajes "parecen palitos y círculos que intentan ser un humano". Los personajes necesitan proporciones estilizadas pero creíbles, volumen y animación con carácter.
 - **Orientación**: vertical primero. En escritorio se muestra como una columna vertical centrada.
 - **Jugadores**: 1 contra 1 al principio, pero la arquitectura tiene que soportar dobles (2 contra 2) sin reescribir. Equipos con N jugadores e IA o control por jugador; nada de 1 contra 1 fijo en el código.
@@ -29,6 +29,16 @@ Lo que distingue a este juego es que es accesible y respetuoso con el jugador:
   - El jugador elige a dónde golpear y con qué fuerza o altura. El tipo de golpe concreto (bandeja, víbora, contrapared, chiquita, globo, remate) lo decide el contexto y se nombra en pantalla.
   - Se prueban dos esquemas: dos pulgares (mover, y apuntar antes de que llegue la pelota y soltar para golpear) y uno de una sola mano.
 - **Reglas**: saque por abajo, punto de oro y partidos cortos.
+
+## Exigencia visual
+
+- **Criterio de crítico exigente: el único tope es el rendimiento.** Nada de conformarse con "está bien para ser código".
+- **Evitar la sensación de "AI slop"**: arte genérico, formas de manual, todo igual de prolijo y sin intención.
+- **Feedback concreto sobre la maqueta v2**:
+  - Las piernas y los pies parecen cilindros que imitan piernas.
+  - Las caras son demasiado simples.
+  - Con los personajes a 1,7× la cancha se siente chica. Probar una escala que varíe con la profundidad (menos en el jugador cercano, más en el rival).
+- **El pulido visual profundo es una fase posterior**, después de validar las mecánicas en el celular. Pero cada entrega visual se revisa con este criterio desde ya.
 
 ## Lo que no queremos (aprendido de jugar a la competencia)
 

@@ -22,8 +22,23 @@ Lo que distingue a este juego es que es accesible y respetuoso con el jugador:
 - **Calidad del arte**: la primera maqueta se rechazó porque los personajes "parecen palitos y círculos que intentan ser un humano". Los personajes necesitan proporciones estilizadas pero creíbles, volumen y animación con carácter.
 - **Orientación**: vertical primero. En escritorio se muestra como una columna vertical centrada.
 - **Jugadores**: 1 contra 1 al principio, pero la arquitectura tiene que soportar dobles (2 contra 2) sin reescribir. Equipos con N jugadores e IA o control por jugador; nada de 1 contra 1 fijo en el código.
-- **Controles**: simples, pensados para jugar con el pulgar y con una sola mano.
+- **Controles**: simples y fluidos.
+  - El jugador controla el movimiento de su personaje. Nada de que se mueva solo: el movimiento asistido queda únicamente como opción de accesibilidad.
+  - El jugador elige a dónde golpear y con qué fuerza o altura. El tipo de golpe concreto (bandeja, víbora, contrapared, chiquita, globo, remate) lo decide el contexto y se nombra en pantalla.
+  - Se prueban dos esquemas: dos pulgares (mover, y apuntar antes de que llegue la pelota y soltar para golpear) y uno de una sola mano.
 - **Reglas**: saque por abajo, punto de oro y partidos cortos.
+
+## Lo que no queremos (aprendido de jugar a la competencia)
+
+- Ralentizar o detener el juego para apuntar.
+- Animaciones largas después de cada punto que cortan la fluidez.
+- Ruedas o menús con muchos tipos de golpe para elegir.
+- Que el personaje se mueva solo, o que la dirección del golpe dependa de hacia dónde se mueve.
+- Publicidad, popups, pase de temporada, monedas y puntos por todos lados.
+- Estética anime exagerada: el pádel tiene que parecer pádel.
+- Cargas largas (los juegos de pádel hechos con Unity tardan en arrancar).
+
+Lo que sí gustó: elegir a dónde golpear antes de que llegue la pelota y que el personaje ejecute el golpe ahí.
 
 ## Restricciones técnicas
 

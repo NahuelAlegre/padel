@@ -74,3 +74,4 @@ Lo que sí gustó: elegir a dónde golpear antes de que llegue la pelota y que e
 - `design/` es para la dirección de arte y las exploraciones visuales. `src/` es para el juego.
 - El trabajo se reparte en sesiones paralelas que coordina una sesión orquestadora. Cada sesión trabaja en su propia rama o worktree y toca solo su área.
 - Hacer commit en la rama propia. Pedir confirmación antes de hacer push o abrir PRs.
+- **Capturas y navegador**: preferir el navegador integrado de la app. Si un script necesita un navegador headless (Chrome o Edge), tiene que usar `--user-data-dir` con una carpeta temporal ABSOLUTA y escribible, más `--noerrdialogs`. Nunca una ruta relativa ni el perfil real del usuario: si falla, aparecen carteles de error en su pantalla.

@@ -6,6 +6,15 @@ Juego de pádel para navegador, **mobile first y en vertical**. Está pensado pa
 
 Tiene que ser muy simple de jugar y accesible para todos. Además tiene que verse lindo: **la parte visual importa tanto como las mecánicas**. Si se ve soso, la gente lo abandona antes de probarlo en serio.
 
+## Principios de producto
+
+Lo que distingue a este juego es que es accesible y respetuoso con el jugador:
+
+- **Cargar y jugar**: sin registro, sin cuentas obligatorias, sin pase de temporada y sin pagar para jugar.
+- **Partida rápida siempre a mano**: desde el inicio, un toque y estás jugando. Esta opción no desaparece aunque se agreguen modos.
+- **Más adelante**: torneos y opciones de partido (sets, dificultad, dobles). Suman profundidad sin tapar la partida rápida.
+- **Nada de patrones oscuros**: sin presión para pagar, sin notificaciones abusivas, sin trucos para retener a la fuerza.
+
 ## Decisiones tomadas
 
 - **Cámara**: desde atrás del jugador, con profundidad simulada (2D con proyección en perspectiva). La sombra de la pelota en el piso es lo que muestra a qué altura va.

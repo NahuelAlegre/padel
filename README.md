@@ -208,7 +208,7 @@ Chrome headless pinta a 240 cuadros por segundo, así que "240" significa que no
 
 **Navegador integrado de la app.** También lo corrí ahí con emulación móvil vertical (375×812, canvas de 750×1624). El trabajo por cuadro dio entre 0,2 y 0,4 ms. Los cuadros por segundo de esa prueba no sirven: el panel del navegador estaba oculto y, en ese estado, el navegador limita las animaciones a unos 15 por segundo. Tampoco ofrece freno de CPU, por eso la medición con freno se hizo con el script.
 
-**Peso.** La descarga inicial es de 26 KB comprimidos: 23,4 KB de JavaScript, 1,9 KB de CSS y 0,9 KB de HTML. No hay imágenes, fuentes ni dependencias en tiempo de ejecución.
+**Peso.** La descarga inicial es de 26 KB comprimidos: 23,5 KB de JavaScript, 1,9 KB de CSS y 0,9 KB de HTML. No hay imágenes, fuentes ni dependencias en tiempo de ejecución.
 
 ## Verificación
 

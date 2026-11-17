@@ -14,6 +14,8 @@ Lo que distingue a este juego es que es accesible y respetuoso con el jugador:
 - **Partida rápida siempre a mano**: desde el inicio, un toque y estás jugando. Esta opción no desaparece aunque se agreguen modos.
 - **Más adelante**: torneos y opciones de partido (sets, dificultad, dobles). Suman profundidad sin tapar la partida rápida.
 - **Nada de patrones oscuros**: sin presión para pagar, sin notificaciones abusivas, sin trucos para retener a la fuerza.
+- **Rivales y compañeros con personalidad**: se juega contra alguien, no contra "la CPU". La personalidad se nota jugando (estilo de juego, gestos, frases cortas) y nunca corta la fluidez.
+- **Control arcade, resultado realista**: pocas decisiones para el jugador (moverse, a dónde, qué tan fuerte o alto, cuándo) y pádel de verdad como resultado (golpes reales, paredes y reglas).
 
 ## Decisiones tomadas
 

@@ -26,6 +26,11 @@ export interface Settings {
   lines: LineFrequency;
   reduceMotion: boolean;
   vibration: boolean;
+  /** Sound on or off. The game plays the same in silence: nothing needed to play is only heard. */
+  sound: boolean;
+  /** 0..1: the sounds of the match, and the club around it. Quiet by default. */
+  effects: number;
+  ambience: number;
   /** Some like the camera that goes with the play, some the still one. With reduced motion it is always still. */
   camera: CameraName;
   quality: QualityName;
@@ -34,6 +39,7 @@ export interface Settings {
 }
 
 export const SPEEDS = [0.6, 0.8, 1] as const;
+export const VOLUMES = [0, 0.25, 0.5, 0.75, 1] as const;
 /** Easiest first. */
 export const RIVALS: readonly RivalId[] = CHARACTER_IDS;
 export const QUALITY_SCALE: Record<Exclude<QualityName, 'auto'>, number> = {
@@ -53,6 +59,9 @@ export function defaultSettings(reduceMotion: boolean): Settings {
     lines: 'many',
     reduceMotion,
     vibration: true,
+    sound: true,
+    effects: 0.5,
+    ambience: 0.25,
     camera: 'follow',
     quality: 'auto',
     fullscreen: false,
@@ -80,6 +89,9 @@ export function readSettings(saved: unknown, reduceMotion: boolean): Settings {
     lines: pick(data.lines, ['many', 'few', 'none'] as const, base.lines),
     reduceMotion: flag('reduceMotion'),
     vibration: flag('vibration'),
+    sound: flag('sound'),
+    effects: pick(data.effects, VOLUMES, base.effects as (typeof VOLUMES)[number]),
+    ambience: pick(data.ambience, VOLUMES, base.ambience as (typeof VOLUMES)[number]),
     camera: pick(data.camera, ['follow', 'fixed'] as const, base.camera),
     quality: pick(data.quality, ['auto', 'high', 'medium', 'low'] as const, base.quality),
     fullscreen: flag('fullscreen'),

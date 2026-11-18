@@ -1,6 +1,6 @@
 import { CAST } from '../characters/cast';
 import type { FormatName } from '../config';
-import { RIVALS, SPEEDS, type LineFrequency, type Settings } from './settings';
+import { RIVALS, SPEEDS, VOLUMES, type LineFrequency, type Settings } from './settings';
 import { LESSONS } from '../app/drill';
 import { TEXT } from './text';
 
@@ -262,6 +262,12 @@ export class Screens {
     );
     if (info.canVibrate) panel.append(this.choice(s.vibration, 'vibration', onOff));
 
+    panel.append(el('h3', '', s.sound), this.choice(s.soundOn, 'sound', onOff, s.soundHint));
+    if (this.settings.sound) {
+      const levels = VOLUMES.map((value) => [value, TEXT.volumeLabel(value)] as [number, string]);
+      panel.append(this.choice(s.effects, 'effects', levels), this.choice(s.ambience, 'ambience', levels, s.ambienceHint));
+    }
+
     panel.append(
       el('h3', '', s.video),
       this.choice<'camera'>(
@@ -302,7 +308,7 @@ export class Screens {
     options: ReadonlyArray<readonly [Settings[K], string]>,
     note: string | string[] = '',
   ): HTMLElement {
-    const group = el('div', 'seg');
+    const group = el('div', options.length >= 5 ? 'seg dense' : 'seg');
     group.setAttribute('role', 'group');
     group.setAttribute('aria-label', label);
     for (const [value, text] of options) {

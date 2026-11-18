@@ -63,12 +63,52 @@ export interface Haptics {
 }
 
 /** Sounds are asked for by what happened, not by file name. */
-export type SoundCue = 'hit' | 'bounce' | 'glass' | 'fence' | 'net' | 'pointWon' | 'pointLost' | 'tap';
+export type SoundCue = 'hit' | 'bounce' | 'glass' | 'fence' | 'net' | 'netCord' | 'step' | 'split' | 'slide' | 'swing';
 
+/** Where on the court a sound happens, and how strong it is. */
+export interface SoundPlace {
+  /** 0..1: how hard the ball was hit, how fast it bounced, how fast a player ran. */
+  intensity: number;
+  /** -1 left .. 1 right, as the camera sees the court. */
+  pan: number;
+  /** 0 at the near end of the court, 1 at the far end: far is quieter and duller. */
+  depth: number;
+  /** Seconds into the sound to start from: a swing noticed a little late. */
+  offset: number;
+}
+
+/**
+ * The game's sound. Nothing the game needs to be played goes only through
+ * it: the game plays the same in silence.
+ */
 export interface Sound {
-  /** `intensity` is 0..1: how hard the ball was hit, how loud the bounce. */
-  play(cue: SoundCue, intensity?: number): void;
+  play(cue: SoundCue, place?: Partial<SoundPlace>): void;
+  /** Everything on or off. */
   setEnabled(enabled: boolean): void;
+  /** 0..1 each: the sounds of the match, and the club around it. */
+  setVolumes(effects: number, ambience: number): void;
+  /** Pause: everything stops where it is, quiet, until it is false again. */
+  setPaused(paused: boolean): void;
+  /** Stops the sounds of the match that are still ringing. The club goes on. */
+  hush(): void;
+  /** How it is doing, for checks and a debug screen. */
+  status(): SoundStatus;
+}
+
+export interface SoundStatus {
+  /** The device is producing sound right now (woken up, not paused, not hidden). */
+  running: boolean;
+  /** Sounds of the match started so far. */
+  played: number;
+  /** Most sounds ever playing at once. */
+  peak: number;
+  /** Takes rendered so far, and still to render. */
+  rendered: number;
+  pending: number;
+  /** Milliseconds since load at which rendering started; -1 before. */
+  renderStartedAt: number;
+  /** The club around the court is playing. */
+  club: boolean;
 }
 
 export interface Display {

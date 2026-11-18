@@ -1,5 +1,6 @@
 import type { Insets } from '../core/layout';
-import { createLocalAnalytics, createMemoryStore, silentSound } from './memory';
+import { createLocalAnalytics, createMemoryStore } from './memory';
+import { createWebSound } from './sound';
 import type { Assets, Display, Haptics, HapticStrength, KeyValueStore, Launch, Lifecycle, Picture, Platform } from './types';
 
 /**
@@ -213,7 +214,7 @@ export function createWebPlatform(): Platform {
     assets: createWebAssets(),
     storage: createWebStore(),
     haptics: createWebHaptics(),
-    sound: silentSound,
+    sound: createWebSound(),
     display: createWebDisplay(),
     lifecycle: createWebLifecycle(),
     analytics: createLocalAnalytics(),

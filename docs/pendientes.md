@@ -45,20 +45,17 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
 
 ## Motor
 
-- **Descubrir los golpes sin leer** (feedback del 2026-11-18, jugando la versión 3D). El usuario no entendió cómo hacer los distintos golpes ("solo se puede golpear con un botón") y pidió una guía.
-  - **Pistas en contexto, una sola vez**: la primera vez que un globo es buena idea (por ejemplo, el rival en la red), el pulgar fantasma muestra "arrastrar bien arriba". Lo mismo con la chiquita (rival en el fondo) y con dejarla pasar a la pared.
-  - **Opción "Tutorial"** en el menú de inicio y en Pausa, pedida por el usuario: "sencillo y visual, poco texto". Lecciones cortas que se juegan (no se leen), cada una con una situación armada y el pulgar fantasma:
-    1. Moverse y pegar.
-    2. Apuntar a los costados.
-    3. Globo.
-    4. Chiquita.
-    5. Dejarla pasar a la pared.
-    6. Bandeja desde media cancha.
-    7. Remate.
-    8. Leer el gesto del rival.
-  - Se pueden repetir y saltear. Una marquita muestra las lecciones ya hechas. Nunca obligatoria.
-  - Feedback relacionado: contra Chela el usuario sintió que "con movimientos simples es imposible ganarle" y pensó que había "movimientos para ganarle". El tutorial y las mecánicas de profundidad tienen que hacer visible cómo se le gana a cada rival.
-  - **La marca de objetivo tiene que mostrar el tipo de golpe por su forma** (doble anillo para el globo, chico para la chiquita) también en ayudas "mínimas", y ser bien visible mientras se apunta.
+- ~~Descubrir los golpes sin leer, tutorial, profundidad y animaciones nuevas~~: **publicado el 2026-11-18** (merge `52eac28`). Ocho lecciones jugables, pistas de una sola vez, marca de objetivo con forma según el golpe, mecánicas M1 a M4 y M6, IA con `punish`, `holdNet` y `composure`, efecto en la pelota, y los 24 clips. Esperando que el usuario lo pruebe en el celular.
+- **Pendiente de esa ronda** (revisión de la orquestadora):
+  - **La marca de objetivo se ve tenue**: en algunas capturas es un anillo gris fino sobre el azul. Tiene que verse bien mientras se apunta.
+  - **El menú del tutorial es una grilla de texto**: falta un dibujito de la trayectoria en cada lección para que sea "visual".
+  - **Metas de profundidad sin cumplir**:
+    - La táctica suma +15 pp solo contra Chela; contra Beto y Romina suma entre 7 y 13.
+    - Los puntos contra Chela duran 19 s (meta: 8 a 14).
+    - Casi ningún punto termina en error: una pelota exigida vuelve floja, no afuera.
+    - La presión todavía no se ve en el cuerpo del jugador.
+  - No se hicieron los puntos 7 a 10 de `docs/profundidad.md`: lectura de patrones, cambios de ritmo, salida por tres y el medio en dobles.
+  - Medir los cuadros por segundo del 3D en un teléfono.
 - **Ronda "pantalla limpia"** (feedback del primer juego en el celular, 2026-11-18). El usuario dice "simple pero entretenido", pero que "demasiados círculos" lo confundieron. Es diseño de información; el estilo llega con el 3D:
   - Sacar el anillo que marca cuál es el jugador propio. Para accesibilidad queda como opción (contorno o color).
   - Pisadas de "dónde pararse" apagadas por defecto.

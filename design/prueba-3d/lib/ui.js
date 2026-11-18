@@ -15,14 +15,15 @@
       follow: q.has('camara') ? q.get('camara') !== 'fija' : store.get('follow', true),
       scale: q.has('escala') ? Number(q.get('escala')) : store.get('scale', 1),
       reduce: q.has('reducir') ? q.get('reducir') === '1' : store.get('reduce', reduce),
-      close: false,
+      close: q.get('cerca') === '1',
       paused: false,
       fps: q.has('fps') ? q.get('fps') === '1' : store.get('fps', true),
       open: store.get('open', true),
     };
     const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
     const listeners = [];
-    const changed = (key) => { listeners.forEach((fn) => fn(key, state)); };
+    const changed = (key) => { root.classList.toggle('p3-reduce', !!state.reduce); listeners.forEach((fn) => fn(key, state)); };
+    root.classList.toggle('p3-reduce', !!state.reduce);
 
     const bar = el('div', 'p3-bar');
     const head = el('div', 'p3-head');
@@ -70,6 +71,7 @@
     const row = el('div', 'p3-row p3-actions');
     const mk = (id, text, fn) => { const b = el('button', 'p3-btn', text); b.type = 'button'; b.id = 'p3-' + id; b.addEventListener('click', () => fn(b)); row.appendChild(b); return b; };
     const bClose = mk('cerca', 'Ver de cerca', (b) => { state.close = !state.close; b.classList.toggle('on', state.close); b.setAttribute('aria-pressed', state.close); changed('close'); });
+    bClose.classList.toggle('on', state.close);
     mk('pausa', 'Pausa', (b) => { state.paused = !state.paused; b.textContent = state.paused ? 'Seguir' : 'Pausa'; b.classList.toggle('on', state.paused); changed('paused'); });
     if (opts.other) {
       const a = el('a', 'p3-btn p3-link', opts.other.label);

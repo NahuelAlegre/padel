@@ -128,7 +128,7 @@ M['lawn'] = noise_color(principled('lawn', '#6f8f45', 1.0), '#5d7f3c', '#86a352'
 M['wood'] = noise_color(principled('wood', '#9a6a45', 0.7), '#8a5c3a', '#aa7850', scale=6.0)
 M['plaster'] = noise_color(principled('plaster', '#e6d6c2', 0.92), '#dccbb6', '#eaddc9', scale=1.2)
 M['roof'] = noise_color(principled('roof', '#b9583c', 0.85), '#a94e36', '#c8664a', scale=3.5, bump=0.3)
-M['window'] = principled('window', '#ffd9a0', 0.4, emit='#ffc878', emit_strength=7.0)
+M['window'] = principled('window', '#ffd9a0', 0.4, emit='#ffc878', emit_strength=5.5)
 M['door'] = principled('door', '#3f6f78', 0.6)
 M['awning'] = principled('awning', '#f08a5d', 0.85)
 M['cream'] = principled('cream', '#f3e7d3', 0.85)
@@ -549,8 +549,6 @@ box('puerta', (7.45, by0 - 0.04, 0.0), (8.75, by0 + 0.02, 2.45), 'door', 'entorn
 box('puerta_vidrio', (7.6, by0 - 0.06, 1.2), (8.6, by0 - 0.03, 2.25), 'window', 'entorno')
 # toldo sobre la puerta
 add_obj('toldo', [(6.6, by0, 2.95), (9.6, by0, 2.95), (9.6, by0 - 1.5, 2.45), (6.6, by0 - 1.5, 2.45)], [(0, 1, 2, 3), (3, 2, 1, 0)], 'awning', 'entorno')
-for wx in (2.4, 13.5):
-    pass
 
 # cerco verde del fondo y de los costados
 for i in range(14):
@@ -643,7 +641,6 @@ bench(-7.3, 2.5, math.radians(-90))
 blob('bolso', (7.25, 4.55, 0.66), (0.22, 0.36, 0.19), 'bag', 'entorno', sub=2, rough=0.05)
 blob('bolso2', (-7.25, 2.2, 0.64), (0.2, 0.32, 0.17), 'bag2', 'entorno', sub=2, rough=0.05)
 tube('botella', (7.25, 3.75, 0.49), (7.25, 3.75, 0.72), 0.04, 'bag2', 'entorno', n=8)
-# pala apoyada contra el banco
 # macetas en las esquinas
 for (x, y) in [(-6.6, 11.6), (6.6, 11.6), (-6.6, -11.4), (6.6, -11.4), (-8.6, -6.5), (8.6, 9.5)]:
     tube('maceta', (x, y, 0), (x, y, 0.5), 0.33, 'pot', 'entorno' if y > -10.2 else 'frente', n=12)
@@ -659,8 +656,7 @@ for (x, y) in [(-6.0, 14.4), (-1.6, 14.9)]:
         tube('silla', (x + 0.85 * math.cos(a), y + 0.85 * math.sin(a), 0), (x + 0.85 * math.cos(a), y + 0.85 * math.sin(a), 0.46), 0.2, 'wood', 'entorno', n=8)
 
 # primer plano: banco con bolso, abajo a la izquierda
-for o in bench(-3.9, -12.6, math.radians(180), 'frente'):
-    pass
+bench(-3.9, -12.6, math.radians(180), 'frente')
 blob('bolso_f', (-4.3, -12.6, 0.66), (0.36, 0.22, 0.19), 'bag', 'frente', sub=2, rough=0.05)
 tube('botella_f', (-3.4, -12.55, 0.49), (-3.4, -12.55, 0.74), 0.04, 'bag2', 'frente', n=8)
 
@@ -719,7 +715,7 @@ for (x, y) in POLES:
     sc.collection.objects.link(o)
 # luz cálida que sale por las ventanas del buffet
 d = bpy.data.lights.new('buffet', 'AREA')
-d.energy = 900
+d.energy = 380
 d.color = (1.0, 0.72, 0.42)
 d.size = 6.0
 o = bpy.data.objects.new('buffet', d)

@@ -1,0 +1,208 @@
+{
+  "fecha": "2026-11-18T02:54:06.080Z",
+  "equipo": "PC de escritorio (Ryzen 7 8700G, Radeon RX 7800 XT), Chrome sin ventana",
+  "versiones": {
+    "A": {
+      "pagina": "sprites.html",
+      "peso": {
+        "porTipo": {
+          "página y código": 17873,
+          "tipografía (externa)": 34273,
+          "cancha": 315208,
+          "sprites": 618843
+        },
+        "total": 986197,
+        "sinTipografia": 951924,
+        "pedidos": 20
+      },
+      "gpu": "ANGLE (AMD, AMD Radeon 780M Graphics (0x000015BF) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "primerCuadro": {
+        "sin límites": 85,
+        "CPU 4x": 306,
+        "4G rápido + CPU 4x": 2147,
+        "4G lento + CPU 4x": 8520
+      },
+      "cuadro": {
+        "cámara fija, CPU 1x": {
+          "js": {
+            "media": 0.11,
+            "p50": 0.1,
+            "p95": 0.2,
+            "max": 0.4,
+            "n": 2162
+          },
+          "intervalo": {
+            "media": 4.17,
+            "p50": 4.2,
+            "p95": 4.3,
+            "max": 4.9,
+            "n": 2162
+          },
+          "fps": 240.1
+        },
+        "cámara fija, CPU 4x": {
+          "js": {
+            "media": 0.43,
+            "p50": 0.4,
+            "p95": 0.7,
+            "max": 1.5,
+            "n": 2161
+          },
+          "intervalo": {
+            "media": 4.17,
+            "p50": 4.2,
+            "p95": 4.3,
+            "max": 8.3,
+            "n": 2161
+          },
+          "fps": 239.9
+        },
+        "cámara que acompaña, CPU 1x": {
+          "js": {
+            "media": 0.1,
+            "p50": 0.1,
+            "p95": 0.2,
+            "max": 0.4,
+            "n": 2162
+          },
+          "intervalo": {
+            "media": 4.16,
+            "p50": 4.2,
+            "p95": 4.3,
+            "max": 4.8,
+            "n": 2162
+          },
+          "fps": 240.1
+        },
+        "cámara que acompaña, CPU 4x": {
+          "js": {
+            "media": 0.39,
+            "p50": 0.4,
+            "p95": 0.7,
+            "max": 1.4,
+            "n": 2163
+          },
+          "intervalo": {
+            "media": 4.16,
+            "p50": 4.2,
+            "p95": 4.3,
+            "max": 4.8,
+            "n": 2163
+          },
+          "fps": 240.1
+        }
+      },
+      "memoria": {
+        "lienzoMB": 5,
+        "imagenes": 9,
+        "imagenesYHojasMB": 24.4,
+        "heapJsMB": 1.1
+      }
+    },
+    "B": {
+      "pagina": "tiempo-real.html",
+      "peso": {
+        "porTipo": {
+          "página y código": 26469,
+          "tipografía (externa)": 34273,
+          "cancha": 315208,
+          "modelo y animaciones": 132609
+        },
+        "total": 508559,
+        "sinTipografia": 474286,
+        "pedidos": 19
+      },
+      "gpu": "ANGLE (AMD, AMD Radeon 780M Graphics (0x000015BF) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "primerCuadro": {
+        "sin límites": 108,
+        "CPU 4x": 285,
+        "4G rápido + CPU 4x": 1367,
+        "4G lento + CPU 4x": 4815
+      },
+      "cuadro": {
+        "cámara fija, CPU 1x": {
+          "js": {
+            "media": 0.14,
+            "p50": 0.1,
+            "p95": 0.2,
+            "max": 0.4,
+            "n": 2160
+          },
+          "intervalo": {
+            "media": 4.17,
+            "p50": 4.2,
+            "p95": 4.3,
+            "max": 4.5,
+            "n": 2160
+          },
+          "fps": 240
+        },
+        "cámara fija, CPU 4x": {
+          "js": {
+            "media": 0.61,
+            "p50": 0.6,
+            "p95": 1.1,
+            "max": 2.3,
+            "n": 2162
+          },
+          "intervalo": {
+            "media": 4.16,
+            "p50": 4.2,
+            "p95": 4.3,
+            "max": 4.4,
+            "n": 2162
+          },
+          "fps": 240.1
+        },
+        "cámara que acompaña, CPU 1x": {
+          "js": {
+            "media": 0.14,
+            "p50": 0.1,
+            "p95": 0.2,
+            "max": 0.4,
+            "n": 2163
+          },
+          "intervalo": {
+            "media": 4.17,
+            "p50": 4.2,
+            "p95": 4.3,
+            "max": 4.6,
+            "n": 2163
+          },
+          "fps": 240
+        },
+        "cámara que acompaña, CPU 4x": {
+          "js": {
+            "media": 0.56,
+            "p50": 0.6,
+            "p95": 0.8,
+            "max": 2,
+            "n": 2162
+          },
+          "intervalo": {
+            "media": 4.16,
+            "p50": 4.2,
+            "p95": 4.3,
+            "max": 4.5,
+            "n": 2162
+          },
+          "fps": 240.1
+        }
+      },
+      "memoria": {
+        "lienzoMB": 5,
+        "imagenes": 7,
+        "texturasYMallaMB": 16,
+        "heapJsMB": 1.1
+      },
+      "gpuMs": {
+        "cámara que acompaña, DPR 2": 1.159,
+        "cámara que acompaña, solo capas, DPR 2": 0.724,
+        "cámara fija (fondo en caché), DPR 2": 0.98,
+        "cámara que acompaña, DPR 3": 2.083,
+        "cámara que acompaña, solo capas, DPR 3": 1.696,
+        "cámara fija (fondo en caché), DPR 3": 1.835
+      }
+    }
+  }
+}

@@ -189,7 +189,8 @@
       for (let k = 0; k < ch; k++) {
         let acc = 0;
         const sc = k < nb * 4 ? 1 / 32767 : 1 / 10000;
-        for (let f = 0; f < c.frames; f++) { acc += d[k * c.frames + f]; out[f * ch + k] = acc * sc; }
+        /* las diferencias se guardaron en 16 bits con desborde: se acumulan igual, módulo 65536 */
+        for (let f = 0; f < c.frames; f++) { acc = ((acc + d[k * c.frames + f] + 32768) & 0xffff) - 32768; out[f * ch + k] = acc * sc; }
       }
       data.clips[c.name] = Object.assign({}, c, { samples: out });
     }
@@ -199,7 +200,7 @@
   /* Pose de un clip en un instante: cuaterniones locales + pelvis, interpolados entre cuadros. */
   P3.samplePose = function (ch, clip, time, out) {
     const nb = ch.meta.bones.names.length, n = nb * 4 + 3, fps = ch.meta.fps;
-    let f = time * fps, f0, f1;
+    let f = (time - (clip.t0 || 0)) * fps, f0, f1;      /* t0: desfase para que un cuadro caiga justo en el impacto */
     if (clip.loop) { f = ((f % clip.frames) + clip.frames) % clip.frames; f0 = floor(f); f1 = (f0 + 1) % clip.frames; } else {
       f = P3.clamp(f, 0, clip.frames - 1); f0 = floor(f); f1 = min(clip.frames - 1, f0 + 1);
     }
@@ -296,10 +297,13 @@
     const Q = (a, b, c, d) => [a, b, c, a, c, d].flat();
     const PROXY = {
       piso: Q([-90, -70, 0], [90, -70, 0], [90, 60, 0], [-90, 60, 0]),
+      /* entorno: una «U» de paredes (fondo y costados) más el piso de adentro, para lo que está apoyado
+         en la vereda (bancos, macetas). Cada rayo de la cámara de referencia toca uno solo de los cuatro. */
       entorno: [].concat(
-        Q([-9.5, 17.3, -1], [9.5, 17.3, -1], [9.5, 17.3, 60], [-9.5, 17.3, 60]),
-        Q([-9.5, -60, -1], [-9.5, 17.3, -1], [-9.5, 17.3, 60], [-9.5, -60, 60]),
-        Q([9.5, 17.3, -1], [9.5, -60, -1], [9.5, -60, 60], [9.5, 17.3, 60])),
+        Q([-9.5, 17.3, 0], [9.5, 17.3, 0], [9.5, 17.3, 60], [-9.5, 17.3, 60]),
+        Q([-9.5, -60, 0], [-9.5, 17.3, 0], [-9.5, 17.3, 60], [-9.5, -60, 60]),
+        Q([9.5, 17.3, 0], [9.5, -60, 0], [9.5, -60, 60], [9.5, 17.3, 60]),
+        Q([-9.5, -60, 0], [9.5, -60, 0], [9.5, 17.3, 0], [-9.5, 17.3, 0])),
       paredes: [].concat(
         Q([-5.04, 10, -0.1], [5.04, 10, -0.1], [5.04, 10, 4.2], [-5.04, 10, 4.2]),
         Q([-5, -10.04, -0.1], [-5, 10, -0.1], [-5, 10, 4.2], [-5, -10.04, 4.2]),
@@ -453,7 +457,8 @@
       gl.cullFace(gl.FRONT);
       gl.uniform1i(u.uMode, 1);
       const ppm = (cam.f * lay.s * R.dpr) / c.depth;        /* px del dispositivo por metro */
-      gl.uniform1f(u.uOutlinePx, P3.clamp(0.026 * c.k * ppm * 0.5, 1.0 * R.dpr * 0.75, 3.2 * R.dpr));
+      /* tinta de 1,9 cm del personaje, igual que en los sprites, pero nunca más fina que ~0,6 px CSS */
+      gl.uniform1f(u.uOutlinePx, P3.clamp(0.019 * c.k * ppm, 0.62 * R.dpr, 2.3 * R.dpr));
       gl.drawElements(gl.TRIANGLES, M.ni, gl.UNSIGNED_SHORT, 0);
       gl.cullFace(gl.BACK);
       gl.disable(gl.CULL_FACE);
@@ -509,9 +514,51 @@
       }
     }
 
+    /* memoria de video de las texturas (con sus mipmaps) y de la malla */
+    R.memory = () => {
+      let b = 0;
+      for (const l of court.layers) b += l.image.naturalWidth * l.image.naturalHeight * 4 * 1.333;
+      return b + M.nv * 16 + M.ni * 2;
+    };
+    /* tiempo de GPU por cuadro, si el navegador lo deja medir (solo con ?gpu=1) */
+    const timer = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+    R.gpu = { ms: 0, n: 0, ok: !!timer };
+    let pending = null, started = null;
+
+    const bg = { tex: gl.createTexture(), fbo: gl.createFramebuffer(), key: '', last: '', still: 0, w: 0, h: 0 };
+    gl.bindTexture(gl.TEXTURE_2D, bg.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 4, 4, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, bg.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, bg.tex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const blitData = new Float32Array([-1, -1, 0, 0, 1, -1, 1, 0, 1, 1, 1, 1, -1, -1, 0, 0, 1, 1, 1, 1, -1, 1, 0, 1]);
+    function blitBackground() {
+      gl.useProgram(pScreen.p);
+      gl.bindVertexArray(skyVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, skyBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, blitData);
+      gl.bindTexture(gl.TEXTURE_2D, bg.tex);
+      gl.disable(gl.BLEND);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.enable(gl.BLEND);
+    }
+    R.cached = () => bg.key !== '';
+
     /* un cuadro completo */
     R.draw = function (frame) {
       const { cam, lay, chars, ball, rings, fade, skyShift, nearAlpha } = frame;
+      if (timer && R.measureGpu) {
+        if (pending && gl.getQueryParameter(pending, gl.QUERY_RESULT_AVAILABLE)) {
+          if (!gl.getParameter(timer.GPU_DISJOINT_EXT)) { R.gpu.ms += gl.getQueryParameter(pending, gl.QUERY_RESULT) / 1e6; R.gpu.n++; }
+          gl.deleteQuery(pending);
+          pending = null;
+        }
+        if (!pending) { started = gl.createQuery(); gl.beginQuery(timer.TIME_ELAPSED_EXT, started); }
+      }
       P3.viewProj(cam, lay, vp);
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.disable(gl.DEPTH_TEST);
@@ -522,17 +569,36 @@
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.activeTexture(gl.TEXTURE0);
-      drawSky(lay, skyShift);
-      drawLayer('piso');
-      drawLayer('entorno');
-      drawLayer('paredes');
+      /* Con la cámara quieta, el fondo se dibuja una vez a una textura y después se copia. */
+      const key = [cam.pos[0], cam.pos[1], cam.pos[2], cam.fwd[0], cam.fwd[1], skyShift, canvas.width, canvas.height, lay.oy].join();
+      if (key === bg.key) blitBackground();
+      else {
+        bg.still = key === bg.last ? bg.still + 1 : 0;
+        bg.last = key;
+        bg.key = '';
+        const bake = bg.still >= 2;
+        if (bake) {
+          if (bg.w !== canvas.width || bg.h !== canvas.height) {
+            bg.w = canvas.width; bg.h = canvas.height;
+            gl.bindTexture(gl.TEXTURE_2D, bg.tex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, bg.w, bg.h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+          }
+          gl.bindFramebuffer(gl.FRAMEBUFFER, bg.fbo);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+        }
+        drawSky(lay, skyShift);
+        drawLayer('piso');
+        drawLayer('entorno');
+        drawLayer('paredes');
+        if (bake) { gl.bindFramebuffer(gl.FRAMEBUFFER, null); bg.key = key; blitBackground(); }
+      }
       const far = chars.filter((c) => c.y > 0), near = chars.filter((c) => c.y <= 0);
       const side = (list, ballHere) => {
         /* de más lejos a más cerca, con la pelota intercalada */
         const items = list.map((c) => ({ y: c.y, c }));
         if (ballHere) items.push({ y: ball.y, ball: true });
         items.sort((a, b) => b.y - a.y);
-        for (const it of items) { if (it.ball) drawBall(ball, cam, lay); else if (fade > 0.02) drawCharacter(it.c, cam, lay); }
+        for (const it of items) { if (it.ball) drawBall(ball, cam, lay); else if (fade > 0.02 && !frame.skipChars) drawCharacter(it.c, cam, lay); }
       };
       for (const r of rings) if (r.e.pos[1] > 0) drawRing(r.e, r.age, cam);
       side(far, ball.y > 0);
@@ -541,6 +607,7 @@
       side(near, ball.y <= 0);
       drawLayer('cerca', nearAlpha);
       drawLayer('frente');
+      if (started) { gl.endQuery(timer.TIME_ELAPSED_EXT); pending = started; started = null; }
     };
     R.projectCss = function (cam, lay, x, y, z) {
       const o = cam.project(x, y, z, {});

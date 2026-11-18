@@ -63,18 +63,21 @@
       vel += a * dt;
       return [cur + vel * dt, vel];
     };
-    s.update = function (player, ball, dt, enabled, close) {
-      let tx = 0, ta = 0, td = 0;
-      if (enabled) {
-        tx = P3.clamp(player.x * 0.34, -1.5, 1.5);
-        ta = P3.clamp(player.x * 0.13 + ball.x * 0.05, -0.7, 0.7);
-        td = P3.clamp((player.y + 8.2) * 0.42, 0, 1.9);
-      }
-      if (close) { tx = player.x * 0.9; ta = player.x; td = 9 + (player.y + 8) * 0.9; }
+    const targets = (player, ball, enabled) => (enabled
+      ? [P3.clamp(player.x * 0.34, -1.3, 1.3), P3.clamp(player.x * 0.13 + ball.x * 0.05, -0.7, 0.7), P3.clamp((player.y + 8.2) * 0.42, 0, 1.9)]
+      : [0, 0, 0]);
+    s.update = function (player, ball, dt, enabled) {
+      const [tx, ta, td] = targets(player, ball, enabled);
       dt = min(dt, 0.05);
       [s.x, s.vx] = spring(s.x, s.vx, tx, 3.2, dt);
       [s.aim, s.va] = spring(s.aim, s.va, ta, 3.2, dt);
       [s.dolly, s.vd] = spring(s.dolly, s.vd, td, 2.6, dt);
+      return s;
+    };
+    /* sin transición: para arrancar o para mirar un instante fijo */
+    s.jump = function (player, ball, enabled) {
+      [s.x, s.aim, s.dolly] = targets(player, ball, enabled);
+      s.vx = s.va = s.vd = 0;
       return s;
     };
     s.snap = function () { s.x = s.vx = s.aim = s.va = s.dolly = s.vd = 0; };

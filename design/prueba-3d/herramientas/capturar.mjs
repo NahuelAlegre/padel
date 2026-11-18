@@ -18,7 +18,8 @@ const cel = await abrirCelular({ ancho: Number(arg('ancho', 390)), alto: Number(
 try {
   for (const [letra, pagina] of paginas) {
     for (const t of tiempos) {
-      await cel.ir(`${srv.url}${pagina}?t=${t}&panel=0&fps=0${extra ? '&' + extra : ''}`);
+      const vivo = process.argv.includes('--vivo');   // sin pausa: arranca en t y deja correr (para ver carteles y efectos)
+      await cel.ir(`${srv.url}${pagina}?${vivo ? 'desde' : 't'}=${t}&panel=${process.argv.includes('--panel') ? 1 : 0}&fps=${vivo ? 1 : 0}${extra ? '&' + extra : ''}`);
       await cel.esperar('window.__p3 && window.__p3.firstFrame > 0');
       await dormir(Number(arg('espera', 350)));
       const nombre = `${prefijo}${letra}-${String(t).replace('.', '_')}.png`;

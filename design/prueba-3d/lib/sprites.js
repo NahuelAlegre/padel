@@ -100,7 +100,23 @@
       ctx.drawImage(l.image, l.dx, l.dy, l.dw, l.dh);
       if (alpha !== undefined) ctx.globalAlpha = 1;
     }
+    /* Con la cámara quieta, el fondo (cielo, piso, entorno y paredes) se compone una vez y se reutiliza. */
+    const bg = { canvas: document.createElement('canvas'), key: '', last: '', still: 0 };
+    R.cached = () => bg.key !== '';
     function drawBackground() {
+      const key = [cam.A, cam.B, cam.Z, cam.rot, cam.zoomK, cam.zx, cam.zy, canvas.width, canvas.height].join();
+      if (key === bg.key) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(bg.canvas, 0, 0); return; }
+      bg.still = key === bg.last ? bg.still + 1 : 0;
+      bg.last = key;
+      bg.key = '';
+      drawBackgroundNow();
+      if (bg.still >= 2) {
+        if (bg.canvas.width !== canvas.width || bg.canvas.height !== canvas.height) { bg.canvas.width = canvas.width; bg.canvas.height = canvas.height; }
+        bg.canvas.getContext('2d', { alpha: false }).drawImage(canvas, 0, 0);
+        bg.key = key;
+      }
+    }
+    function drawBackgroundNow() {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = '#291f34';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -127,7 +143,8 @@
       const c = sprites.views[view].clips[clip];
       if (!c) return null;
       const n = c.frames.length;
-      let i = floor(time * c.fps + 1e-4);
+      /* bucles: el cuadro que corresponde; golpes: el más cercano en el tiempo (hay uno justo en el impacto) */
+      let i = c.loop ? floor(time * c.fps + 1e-4) : Math.round((time - c.t0) * c.fps);
       i = c.loop ? ((i % n) + n) % n : P3.clamp(i, 0, n - 1);
       return c.frames[i];
     }

@@ -248,7 +248,7 @@ if MODE == 'vista':
 if MODE == 'capas':
     os.makedirs(DST, exist_ok=True)
     order = ['piso', 'entorno', 'paredes', 'red', 'cerca', 'frente']
-    quality = {'cielo': 82, 'piso': 84, 'entorno': 88, 'paredes': 86, 'red': 86, 'cerca': 86, 'frente': 88}
+    quality = {'cielo': 80, 'piso': 80, 'entorno': 82, 'paredes': 80, 'red': 80, 'cerca': 78, 'frente': 82}
     first = load(os.path.join(SRC, 'piso.exr'))
     h, w = first.shape[:2]
     meta = {

@@ -37,7 +37,7 @@ body {
 .p3-bar {
   position: absolute; left: 50%; transform: translateX(-50%);
   bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-  width: min(366px, calc(100% - 2 * max(12px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px))));
+  width: min(358px, calc(100% - 2 * max(16px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px))));
   background: var(--crema); color: var(--tinta); border-radius: 18px;
   box-shadow: 0 10px 28px rgba(15, 10, 30, 0.42), 0 0 0 1.5px rgba(39, 48, 74, 0.10);
   padding: 8px 10px 10px; box-sizing: border-box;
@@ -82,7 +82,8 @@ body {
   82% { opacity: 1; }
   100% { opacity: 0; transform: translate(-50%, -112%) scale(1); }
 }
+.p3-reduce .p3-tag { animation-name: p3-tag-quieto; }
+@keyframes p3-tag-quieto { 0%, 100% { opacity: 0; } 12%, 82% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .p3-tag { animation-name: p3-tag-quieto; }
-  @keyframes p3-tag-quieto { 0%, 100% { opacity: 0; } 12%, 82% { opacity: 1; } }
 }

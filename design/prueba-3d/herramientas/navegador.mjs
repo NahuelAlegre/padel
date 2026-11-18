@@ -57,13 +57,13 @@ class Devtools {
 }
 
 /** Abre una página como un celular en vertical. Devuelve ayudas para manejarla. */
-export async function abrirCelular({ ancho = 390, alto = 844, dpr = 2, gpu = true } = {}) {
+export async function abrirCelular({ ancho = 390, alto = 844, dpr = 2, gpu = true, extra = [] } = {}) {
   const perfil = mkdtempSync(join(tmpdir(), 'padel-prueba3d-'));
   const args = ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${perfil}`, '--noerrdialogs', '--no-first-run',
     '--no-default-browser-check', '--disable-extensions', '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
     '--disable-backgrounding-occluded-windows', '--hide-scrollbars', '--mute-audio', `--window-size=${ancho},${alto + 90}`];
   if (gpu) args.push('--enable-gpu', '--ignore-gpu-blocklist', '--use-angle=d3d11');
-  args.push('about:blank');
+  args.push(...extra, 'about:blank');
   const proc = spawn(buscarNavegador(), args, { stdio: ['ignore', 'ignore', 'pipe'] });
   const dir = await new Promise((si, no) => {
     let txt = '';

@@ -17,13 +17,14 @@
     const R = P3.makeSpriteRenderer(canvas, court, sprites, sheets);
     const count = names.reduce((a, n) => a + Object.values(sprites.views[n].clips).reduce((b, c) => b + c.frames.length, 0), 0);
     const ui = P3.makeUI(scene, {
-      version: 'A', name: 'Sprites prerrenderizados',
-      other: g.P3_OTHER || { label: 'Ver versión B', href: 'tiempo-real.html' },
+      version: 'A', name: 'Sprites',
+      other: g.P3_OTHER === undefined ? { label: 'Ver versión B', href: 'tiempo-real.html' } : g.P3_OTHER,
       note: 'Personajes renderizados antes en Blender: ' + count + ' cuadros en dos hojas. En pantalla todo es Canvas 2D.',
     });
     let rally = P3.buildRally(sprites.clips, P3.SCALES[ui.state.scale]);
     const clock = P3.makeClock(rally.duration);
     if (q.has('t')) { clock.t = Number(q.get('t')); clock.paused = true; ui.state.paused = true; }
+    if (q.has('desde')) clock.t = Number(q.get('desde'));
     clock.speed = q.has('vel') ? Number(q.get('vel')) : 1;
     const follow = P3.makeFollow();
     let lay = P3.layout(g.innerWidth, g.innerHeight);
@@ -55,7 +56,8 @@
       if (ball.visible && !ball.held && ball.speed > 5) {
         for (let k = 1; k <= 5; k++) { rally.ball(Math.max(0, t - k * 0.014), bt); ball.trail.push([bt.x, bt.y, bt.z]); }
       }
-      follow.update(st[0], ball, snap ? 0 : clock.dt, ui.state.follow && !ui.state.reduce, false);
+      const moving = ui.state.follow && !ui.state.reduce;
+      if (first || clock.paused) follow.jump(st[0], ball, moving); else follow.update(st[0], ball, clock.dt, moving);
       closeK = P3.clamp(closeK + (ui.state.close ? 1 : -1) * clock.dt / 0.5, 0, 1);
       const rings = [];
       if (!ui.state.reduce) for (const e of rally.events) { const age = t - e.t; if (age >= 0 && age < 0.32 && e.type !== 'suelta') rings.push({ e, age }); }

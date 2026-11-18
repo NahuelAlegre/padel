@@ -42,15 +42,23 @@ FPS = {'listo': 8, 'correr': 16, 'lateral_izq': 16.67, 'lateral_der': 16.67}
 STROKE_FPS = 15
 CELL_M = (3.5, 3.9)          # celda en metros (ancho, alto en el plano de la imagen)
 CENTER_Z = 1.15              # altura a la que apunta la cámara
-OUTLINE = 0.026              # ≈ 1 px CSS de tinta a la escala por defecto
+QUALITY = int(os.environ.get('SPRITE_Q', '80'))   # calidad WebP de las hojas
+OUTLINE = 0.019              # ancho de la tinta en metros del personaje (igual que en tiempo real)
 
 
 def frame_times(clip):
+    """Tiempos de los cuadros. En los golpes, un cuadro cae justo en el impacto."""
     if clip.loop:
         n = max(4, int(round(clip.dur * FPS.get(clip.name, 12))))
         return [clip.dur * i / n for i in range(n)], n / clip.dur
-    n = int(round(clip.dur * STROKE_FPS)) + 1
-    return [min(clip.dur, i / STROKE_FPS) for i in range(n)], STROKE_FPS
+    anchor = clip.contact if clip.contact is not None else 0.0
+    t0 = anchor - math.floor(anchor * STROKE_FPS) / STROKE_FPS
+    times = []
+    t = t0
+    while t <= clip.dur + 1e-6:
+        times.append(t)
+        t += 1.0 / STROKE_FPS
+    return times, STROKE_FPS
 
 
 def render_view(name, V):
@@ -125,11 +133,11 @@ def pack(name, V, frames, cell, anchor):
     img.file_format = 'WEBP'
     path = os.path.join(OUT, name + '.webp')
     img.filepath_raw = path
-    img.save(filepath=path, quality=90)
+    img.save(filepath=path, quality=QUALITY)
     clips = {}
     for f in frames:
         c = animaciones.CLIPS[f['clip']]
-        e = clips.setdefault(f['clip'], dict(dur=c.dur, loop=c.loop, fps=round(f['fps'], 3), frames=[]))
+        e = clips.setdefault(f['clip'], dict(dur=c.dur, loop=c.loop, fps=round(f['fps'], 3), t0=round(f['t'], 4), frames=[]))
         hh, ww = f['img'].shape[:2]
         e['frames'].append([int(f['x']), int(f['y']), int(ww), int(hh), round(float(f['ax']), 1), round(float(f['ay']), 1)])
     print('HOJA', name, W, H, len(frames), 'cuadros', os.path.getsize(path), 'bytes')

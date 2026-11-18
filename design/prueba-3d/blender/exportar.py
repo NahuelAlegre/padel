@@ -124,12 +124,17 @@ meta = {
 
 nb = len(rig.NAMES)
 for clip in animaciones.all_clips():
-    frames = int(round(clip.dur * FPS)) + (0 if clip.loop else 1)
+    # en los golpes, las muestras se alinean con el impacto: así ese cuadro es exacto y la pala
+    # llega justo a la pelota aunque el gesto sea muy rápido
+    t0 = 0.0
+    if clip.contact is not None:
+        t0 = clip.contact - math.floor(clip.contact * FPS) / FPS
+    frames = int(round(clip.dur * FPS)) if clip.loop else int(math.floor((clip.dur - t0) * FPS + 1e-6)) + 1
     quats = np.zeros((frames, nb, 4), dtype=np.float64)
     hips = np.zeros((frames, 3), dtype=np.float64)
     prev = None
     for f in range(frames):
-        solved = rig.solve(clip.sample(f / FPS))
+        solved = rig.solve(clip.sample(t0 + f / FPS))
         lq = rig.local_quats(solved)
         hips[f] = tuple(solved['hips'][0])
         for bi, n in enumerate(rig.NAMES):
@@ -144,7 +149,7 @@ for clip in animaciones.all_clips():
     # por componente y como diferencias entre cuadros
     tr = np.concatenate([qi.transpose(1, 2, 0).reshape(nb * 4, frames), hi_.transpose(1, 0)], axis=0)
     delta = np.concatenate([tr[:, :1], np.diff(tr, axis=1)], axis=1).astype(np.int16)
-    entry = {'name': clip.name, 'dur': clip.dur, 'loop': clip.loop, 'frames': frames, 'data': add(delta), 'label': clip.label}
+    entry = {'name': clip.name, 'dur': clip.dur, 'loop': clip.loop, 'frames': frames, 't0': round(t0, 5), 'data': add(delta), 'label': clip.label}
     if clip.contact is not None:
         s = rig.solve(clip.sample(clip.contact))
         entry['contact'] = clip.contact

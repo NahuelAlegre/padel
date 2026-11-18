@@ -9,22 +9,37 @@
   const ASSETS = (g.P3_ASSETS || 'assets/');
   const q = new URLSearchParams(g.location.search);
 
+  /* El personaje es un binario. Donde el hosting no sirve binarios genéricos (los Artifacts),
+     viaja como texto en base64 y se decodifica acá. */
+  async function loadCharacter(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(url + ' ' + r.status);
+    if (!/\.txt$/.test(url)) return r.arrayBuffer();
+    const bin = atob((await r.text()).trim());
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  }
+
   async function main() {
     const [court, buf] = await Promise.all([
       P3.loadCourt(ASSETS + 'cancha/'),
-      fetch(ASSETS + 'personaje.bin').then((r) => { if (!r.ok) throw new Error('personaje.bin ' + r.status); return r.arrayBuffer(); }),
+      loadCharacter(g.P3_CHAR || ASSETS + 'personaje.bin'),
     ]);
     const ch = P3.parseCharacter(buf);
     const R = P3.makeRenderer(canvas, court, ch);
+    R.measureGpu = q.get('gpu') === '1';
+    const skipChars = q.get('solo') === 'capas';
     const ui = P3.makeUI(scene, {
-      version: 'B', name: '3D toon en tiempo real',
-      other: g.P3_OTHER || { label: 'Ver versión A', href: 'sprites.html' },
+      version: 'B', name: 'Tiempo real',
+      other: g.P3_OTHER === undefined ? { label: 'Ver versión A', href: 'sprites.html' } : g.P3_OTHER,
       note: 'Malla 3D dibujada en cada cuadro con WebGL2: ' + R.triangles.toLocaleString('es-AR') + ' triángulos por personaje.',
     });
     const nb = ch.meta.bones.names.length, n = nb * 4 + 3;
     let rally = P3.buildRally(ch.meta.clips, P3.SCALES[ui.state.scale]);
     const clock = P3.makeClock(rally.duration);
     if (q.has('t')) { clock.t = Number(q.get('t')); clock.paused = true; ui.state.paused = true; }
+    if (q.has('desde')) clock.t = Number(q.get('desde'));
     clock.speed = q.has('vel') ? Number(q.get('vel')) : 1;
     const follow = P3.makeFollow();
     let lay = P3.layout(g.innerWidth, g.innerHeight);
@@ -40,6 +55,7 @@
     const mk = () => ({
       st: { x: 0, y: 0 }, clip: null, pose: new Float32Array(n), target: new Float32Array(n), from: new Float32Array(n), mix: 1,
       mats: new Float32Array(26 * 16), work: { rot: new Float32Array(nb * 9), pos: new Float32Array(nb * 3) },
+      life: P3.makeLife(ch),
     });
     const players = [mk(), mk()];
     const palettes = ['jugador', 'rival'];
@@ -68,14 +84,21 @@
           P3.blendPose(nb, p.from, p.target, P3.smooth(p.mix), p.pose);
         } else p.pose.set(p.target);
         P3.poseToMatrices(ch, p.pose, p.mats, p.work);
-        chars.push({ x: st.x, y: st.y, yaw: st.yaw, k: st.k, mats: p.mats, palette: palettes[i], depth: 1 });
+        chars.push({ x: st.x, y: st.y, yaw: st.yaw, k: st.k, mats: p.mats, palette: palettes[i], depth: 1, stroke: !clip.loop });
       }
       rally.ball(t, ball);
+      /* vida propia del tiempo real: la cabeza sigue la pelota y la trenza se mueve con resorte */
+      for (let i = 0; i < 2; i++) {
+        const p = players[i];
+        p.life.apply(p.pose, p.work, chars[i], ball, clock.paused ? 0 : dt, chars[i].stroke ? 0.4 : 0.8);
+        P3.poseToMatrices(ch, p.pose, p.mats, p.work);
+      }
       ball.trail.length = 0;
       if (ball.visible && !ball.held && ball.speed > 5) {
         for (let k = 1; k <= 5; k++) { rally.ball(Math.max(0, t - k * 0.014), bt); ball.trail.push([bt.x, bt.y, bt.z]); }
       }
-      follow.update(players[0].st, ball, snap ? 0 : clock.dt, ui.state.follow && !ui.state.reduce, false);
+      const moving = ui.state.follow && !ui.state.reduce;
+      if (first || clock.paused) follow.jump(players[0].st, ball, moving); else follow.update(players[0].st, ball, clock.dt, moving);
       let cam = P3.followCamera(null, follow);
       if (ui.state.close) cam = P3.closeCamera(players[0].st, cam, follow, clock.dt);
       else follow.close = 0;
@@ -94,11 +117,11 @@
       prevT = t;
       const fade = rally.fade(t);
       veil.style.opacity = clock.paused ? 0 : (1 - fade) * 0.9;
-      R.draw({ cam, lay, chars, ball, rings, fade, skyShift: -follow.x * P3.PARALLAX.cielo * 20, nearAlpha: P3.NEAR_WALL_ALPHA });
+      R.draw({ skipChars, cam, lay, chars, ball, rings, fade, skyShift: -follow.x * P3.PARALLAX.cielo * 20, nearAlpha: P3.NEAR_WALL_ALPHA });
       if (first) {
         first = false;
         loading.remove();
-        g.__p3 = { version: 'B', firstFrame: performance.now(), ui, renderer: R, clock, gl: R.gl };
+        g.__p3 = { version: 'B', firstFrame: performance.now(), ui, renderer: R, clock, gl: R.gl, players, character: ch, rally: () => rally, ball };
       }
       ui.tick(performance.now() - w0);
       requestAnimationFrame(frame);

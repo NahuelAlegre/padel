@@ -205,12 +205,12 @@ Medido con `herramientas/pesar.mjs`, que parte el archivo y comprime cada parte 
 | Pieza: bigote | 0,2 | 0,2 | 0,2 | 10 vértices |
 | Caras: 4 expresiones | 3,1 | 1,6 | 1,3 | 130 vértices que se mueven |
 | Clips: espera activa | 6,2 | 1,7 | 1,5 | 1 clip, 30 cuadros |
-| Clips: locomoción | 20,4 | 8,8 | 7,7 | 7 clips, 99 cuadros |
-| Clips: golpes | 62,0 | 30,2 | 25,4 | 10 clips, 301 cuadros |
+| Clips: locomoción | 20,4 | 9,1 | 7,9 | 7 clips, 99 cuadros |
+| Clips: golpes | 62,0 | 30,2 | 25,5 | 10 clips, 301 cuadros |
 | Clips: reacciones | 22,7 | 6,3 | 5,4 | 3 clips, 110 cuadros |
 | Clips: manías | 10,9 | 4,7 | 4,1 | 3 clips, 53 cuadros |
 | Metadatos (JSON) | 18,4 | 3,7 | 3,2 | Huesos, paletas, personajes y clips |
-| **Archivo completo** | **253,6** | **115,0** | **83,5** | 4.676 vértices, 5.848 triángulos, 24 clips |
+| **Archivo completo** | **253,6** | **115,3** | **83,5** | 4.676 vértices, 5.848 triángulos, 24 clips |
 
 Contra la ronda 3:
 
@@ -223,11 +223,11 @@ Contra la ronda 3:
 | Caras | 1 | 5 |
 
 - **Hay más del doble de animación y el archivo pesa menos.** Lo pagó la dieta de la malla.
-- **Los clips son ahora la mitad del peso.** Un golpe pesa entre 2 y 4 KB; un ciclo de locomoción, 1,2 a 1,6 KB.
+- **Los clips son ahora la mitad del peso.** Un golpe pesa entre 2 y 4 KB; un ciclo de locomoción, 1,3 a 1,6 KB.
 - Los giros se guardan con 11 bits por componente en vez de 16. Ahorra un 30 % en los clips. El costo: un pie quieto se mueve hasta 1,5 mm, contra 0,1 mm con 16 bits. Con 10 bits se ahorran otros 6 KB y el pie quieto se mueve hasta 3,5 mm; no se hizo para que no tiemble en la vista de cerca.
 - **GitHub Pages**: no se verificó que comprima los `.bin`. Si no lo hace, viajarían los 254 KB enteros. Hay dos salidas: publicarlo ya comprimido y abrirlo con `DecompressionStream('gzip')`, o servirlo con una extensión que el hosting sí comprima.
 
-Por clip, con gzip, en KB: listo 1,7 · correr 1,6 · correr_atras 1,2 · lateral_izq 1,2 · lateral_der 1,2 · split_step 1,8 · arranque 1,3 · frenada 1,6 · saque 3,9 · derecha 3,6 · reves 3,3 · volea 2,2 · volea_reves 2,1 · bandeja 3,5 · remate 4,2 · globo 3,6 · estirada 2,9 · estirada_reves 3,0 · espera 1,8 · festejo 2,5 · lamento 2,1 · mania_gorra 1,2 · mania_zapatilla 1,8 · mania_saludo 2,0.
+Por clip, con gzip, en KB: listo 1,7 · correr 1,6 · correr_atras 1,3 · lateral_izq 1,3 · lateral_der 1,3 · split_step 1,8 · arranque 1,3 · frenada 1,6 · saque 3,9 · derecha 3,6 · reves 3,3 · volea 2,2 · volea_reves 2,1 · bandeja 3,5 · remate 4,2 · globo 3,6 · estirada 2,9 · estirada_reves 3,0 · espera 1,8 · festejo 2,5 · lamento 2,1 · mania_gorra 1,2 · mania_zapatilla 1,8 · mania_saludo 2,0.
 
 ### Qué se verificó
 
@@ -239,7 +239,7 @@ node design/prueba-3d/herramientas/verificar-pasos.mjs
 
 El detalle por clip está en [`pasos.json`](pasos.json).
 
-- **Los pies no patinan.** Un pie apoyado se aparta, como mucho, 7,7 mm de donde apoyó (el pie de atrás del paso lateral). En correr son 4,5 mm; en el resto de la locomoción, menos de 3,5 mm. Al tamaño de juego, 7,7 mm es un tercio de píxel.
+- **Los pies no patinan.** Un pie apoyado se aparta, como mucho, 7,7 mm de donde apoyó (el pie de atrás del paso lateral). En correr son 4,5 mm; en el resto de la locomoción, 3,4 mm o menos. Al tamaño de juego, 7,7 mm es un tercio de píxel.
 - **De dónde sale ese resto**: los clips se guardan a 30 cuadros por segundo y entre cuadro y cuadro se interpola. Con los giros a 16 bits el número casi no cambia (7,2 mm): es la interpolación, no la precisión. En la fuente, antes de exportar, el pie apoyado se mueve 1,6 mm como mucho en la locomoción (`blender/verificar_pasos.py`).
 - **Los empalmes son exactos**: de la espera al arranque, del arranque a correr, de correr a la frenada y de la frenada a la espera, la última pose de un clip y la primera del siguiente coinciden (0,0 mm).
 - **El contacto es exacto**: en el cuadro de contacto, la pala queda a 1,3 mm o menos del punto que declaran los metadatos.
@@ -268,9 +268,8 @@ Con el criterio de «Exigencia visual» de `CLAUDE.md`. Lo que sigue está mirad
 
 - **El ritmo no está probado.** Anticipación lenta, impacto seco y freno están en los tiempos de las claves (entre 0,09 y 0,19 s del final del armado al contacto), pero no pude ver si se sienten así. Es lo primero que hay que mirar en el celular, a velocidad normal y a un cuarto.
 - **Todo el elenco se mueve igual.** Tempo y amplitud cambian cuánto y qué tan rápido, no cómo. Beto hace el mismo remate con tijera que Romina, y a los 55 años y con esa panza no debería. Falta un gesto propio por personaje en el armado; `docs/personajes.md` los llama gestos delatores y el motor ya los tiene en su versión gris.
-- **El revés es el golpe más flojo.** El cuerpo queda encogido en el impacto y el contacto sale bajo. La volea de revés tapa el torso con la pala.
-- **La carrera hacia atrás es correcta y sosa**: los brazos casi no se mueven.
-- **El paso lateral tiene el tren superior duro.** Las manos quedan en la posición de espera y solo suben y bajan.
+- **El revés sigue siendo el golpe menos vistoso**, aun después de una segunda pasada (más erguido, la cadera sale antes que la pala y el final va arriba). Desde la cámara del rival, el armado queda delante del cuerpo y se lee poco. La volea de revés tapa el torso con la pala.
+- **La carrera hacia atrás y el paso lateral son los ciclos con menos carácter.** Tuvieron una segunda pasada de brazos y hombros, y siguen pareciendo ejercicios: correctos, sin intención. En el lateral, las manos casi no salen de la posición de espera.
 - **Las manos siguen siendo dos.** La izquierda está siempre abierta y la derecha siempre cerrada sobre el mango. No hay puño para festejar ni dedos que señalen.
 - **Las caras son correctas y genéricas.** Cuatro expresiones iguales para todos. Los dientes son un rectángulo. De cerca, el borde de la sombra en la mejilla se ve quebrado, porque sigue los polígonos.
 - **La dieta se nota de cerca.** Las zapatillas tienen facetas en la puntera y el cuello es un anillo de ocho lados. Las puntas de los dedos son pirámides.
@@ -284,7 +283,7 @@ Con el criterio de «Exigencia visual» de `CLAUDE.md`. Lo que sigue está mirad
 
 - **Mirarlos en movimiento en el celular** y ajustar tiempos. Los clips son datos: cambiar un tiempo y volver a exportar tarda 3 segundos.
 - **Un gesto propio por personaje** en el armado de los golpes, y una forma propia de correr para Beto y para Chela.
-- **Revés y volea de revés**: otra pasada.
+- **Revés y volea de revés**: otra pasada, mirándolos en movimiento.
 - **Pegar en movimiento**: un clip de derecha y uno de revés en carrera, o una capa de piernas debajo del golpe.
 - **Más manos**: un puño y un índice que señala, como piezas o como una expresión más.
 - **Busto con expresión** para el marcador, usando la vista de cerca.
@@ -391,7 +390,7 @@ Todos traen `name`, `dur`, `loop`, `frames`, `t0`, `data`, `label` y `grupo` (`b
 | `frenada` | locomoción | 0,47 s | | | Avanza 0,46 m |
 | `saque` | golpe | 1,40 s | 0,84 s, cuadro 25 | −0,21 · −0,48 · 0,62 | Suelta la pelota a los 0,20 s |
 | `derecha` | golpe | 1,02 s | 0,52 s, cuadro 15 | −0,75 · −0,60 · 0,87 | |
-| `reves` | golpe | 1,02 s | 0,52 s, cuadro 15 | 0,43 · −0,75 · 0,91 | |
+| `reves` | golpe | 1,02 s | 0,52 s, cuadro 15 | 0,42 · −0,78 · 0,94 | |
 | `volea` | golpe | 0,66 s | 0,26 s, cuadro 7 | −0,66 · −0,70 · 1,41 | |
 | `volea_reves` | golpe | 0,66 s | 0,26 s, cuadro 7 | 0,39 · −0,67 · 1,38 | |
 | `bandeja` | golpe | 1,05 s | 0,52 s, cuadro 15 | −0,40 · −0,38 · 2,05 | Sin saltar |

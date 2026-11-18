@@ -95,13 +95,13 @@ def atras_pose(ph):
     yl, ll, hl, al = _atras_foot(ph)
     yr, lr, hr, ar = _atras_foot(ph + 0.5)
     return pose(
-        hips=(0.016 * sn, 0.075, -0.115 + 0.018 * bob), hips_rot=(15, 7 * s, -2 * sn),
-        spine=(7, -6 * s, 0), chest=(2, -6 * s, 0), head=(0, 0, 0), look=(0.0, -6.0, 4.2),
+        hips=(0.016 * sn, 0.075, -0.115 + 0.018 * bob), hips_rot=(15, 9 * s, -2 * sn),
+        spine=(7, -8 * s, 0), chest=(2, -9 * s, 3 * sn), head=(0, 0, 0), look=(0.0, -6.0, 4.2),
         footL=(0.12 + 0.015 * al, yl, ll), footL_rot=(12, hl), kneeL=(0,),
         footR=(-0.12 - 0.015 * ar, yr, lr), footR_rot=(-12, hr), kneeR=(0,),
-        handR=(-0.27, -0.26 + 0.04 * s, 1.27 + 0.012 * bob), elbowR=(-0.8, 0.5, -0.3),
-        racket=(-0.08, -0.05, 0.99), face=(0.25, -0.95, 0.15),
-        handL=(0.33, -0.36 - 0.05 * s, 1.08 - 0.012 * bob), elbowL=(0.8, 0.5, -0.4),
+        handR=(-0.27, -0.26 + 0.09 * s, 1.27 + 0.03 * bob + 0.03 * s), elbowR=(-0.8, 0.5, -0.3),
+        racket=(-0.08 + 0.06 * s, -0.05 - 0.08 * s, 0.99), face=(0.25, -0.95, 0.15),
+        handL=(0.33, -0.34 - 0.12 * s, 1.08 - 0.02 * bob - 0.06 * s), elbowL=(0.8, 0.5, -0.4),
         fingersL=(0.25, -0.75, 0.60), palmL=(-0.5, 0.3, -0.8),
         braid=(-6 * sn, -14 + 4 * bob, -10 * sn, -22 + 6 * bob),
     )
@@ -142,6 +142,7 @@ def lateral_pose(ph, sign):
                                [(0.0, 46.0), (0.35, 30.0), (0.8, 10.0), (1.0, 14.0)], 0.09)
     hop = math.cos(TAU * (ph - 0.80))        # +1 en el medio del vuelo
     push = ramp(0.30, 0.56, ph) * ramp(0.72, 0.56, ph)      # el empujón de la pierna de atrás
+    sw = math.cos(TAU * (ph - 0.47))         # los hombros y las manos se quedan cuando empuja y se adelantan en el vuelo
     if sign > 0:
         fl, fr = (xa, -0.12, la), (xb, -0.10, lb)
         rl, rr = (16, ha), (-14, hb)
@@ -150,12 +151,12 @@ def lateral_pose(ph, sign):
         rl, rr = (14, hb), (-16, ha)
     return pose(
         hips=(sign * (0.035 + 0.03 * math.cos(TAU * (ph - 0.05))), 0.06, -0.165 + 0.034 * hop),
-        hips_rot=(19, 3 * sign, sign * (3 + 3 * push)), spine=(10, -2 * sign, -sign * 2 * push), chest=(6, -1 * sign, 0),
+        hips_rot=(19, 3 * sign, sign * (3 + 3 * push)), spine=(10, -2 * sign, -sign * 3 * push), chest=(6, -1 * sign - 5 * sign * sw, -sign * 4 * sw),
         head=(0, 0, 0), look=MIRA,
         footL=fl, footL_rot=rl, kneeL=(0,), footR=fr, footR_rot=rr, kneeR=(0,),
-        handR=(-0.09 - 0.02 * sign * push, -0.40, 0.995 + 0.035 * hop), elbowR=(-0.8, 0.3, -0.5),
-        racket=(0.42, -0.40, 0.82), face=(0.8, 0.55, -0.1),
-        handL=(0.115 - 0.02 * sign * push, -0.455, 1.095 + 0.035 * hop), elbowL=(0.8, 0.3, -0.5),
+        handR=(-0.09 - 0.06 * sign * sw, -0.40 + 0.03 * sw, 0.995 + 0.055 * hop), elbowR=(-0.8 - 0.15 * hop, 0.3, -0.5),
+        racket=(0.42 + 0.10 * sign * sw, -0.40, 0.82), face=(0.8, 0.55, -0.1),
+        handL=(0.115 - 0.06 * sign * sw, -0.455 + 0.03 * sw, 1.095 + 0.055 * hop), elbowL=(0.8 + 0.15 * hop, 0.3, -0.5),
         fingersL=(-0.55, -0.45, 0.70), palmL=(-0.6, 0.7, 0.2),
         braid=(-13 * sign - 5 * sign * hop, 4 + 6 * hop, -21 * sign - 8 * sign * hop, 6 + 9 * hop),
     )

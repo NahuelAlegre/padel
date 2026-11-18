@@ -52,15 +52,15 @@
   {
    "nombre": "Clips: locomoción",
    "bytes": 20394,
-   "gzip": 8801,
-   "brotli": 7669,
+   "gzip": 9076,
+   "brotli": 7887,
    "nota": "7 clips, 99 cuadros"
   },
   {
    "nombre": "Clips: golpes",
    "bytes": 62006,
-   "gzip": 30164,
-   "brotli": 25426,
+   "gzip": 30197,
+   "brotli": 25487,
    "nota": "10 clips, 301 cuadros"
   },
   {
@@ -80,16 +80,16 @@
   {
    "nombre": "Metadatos (JSON: huesos, paletas, personajes, clips)",
    "bytes": 18352,
-   "gzip": 3741,
-   "brotli": 3177,
+   "gzip": 3747,
+   "brotli": 3182,
    "nota": ""
   }
  ],
  "total": {
   "nombre": "Archivo completo",
   "bytes": 253568,
-  "gzip": 114995,
-  "brotli": 83490,
+  "gzip": 115310,
+  "brotli": 83493,
   "nota": "4676 vértices, 5848 triángulos, 24 clips"
  },
  "clips": [
@@ -112,21 +112,21 @@
    "grupo": "locomocion",
    "cuadros": 12,
    "bytes": 2472,
-   "gzip": 1187
+   "gzip": 1254
   },
   {
    "clip": "lateral_izq",
    "grupo": "locomocion",
    "cuadros": 12,
    "bytes": 2472,
-   "gzip": 1187
+   "gzip": 1321
   },
   {
    "clip": "lateral_der",
    "grupo": "locomocion",
    "cuadros": 12,
    "bytes": 2472,
-   "gzip": 1181
+   "gzip": 1307
   },
   {
    "clip": "split_step",
@@ -168,7 +168,7 @@
    "grupo": "golpe",
    "cuadros": 31,
    "bytes": 6386,
-   "gzip": 3299
+   "gzip": 3280
   },
   {
    "clip": "volea",

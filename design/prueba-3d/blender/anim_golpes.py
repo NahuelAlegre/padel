@@ -66,32 +66,40 @@ def _derecha():
 # Revés: de costado, la mano izquierda acompaña la pala en el armado y después abre para atrás
 # ---------------------------------------------------------------------------
 def _reves():
-    cruza = (0.02, -0.42, 0.0)                    # el pie derecho cruza adelante
+    cruza = (0.04, -0.46, 0.0)                    # el pie derecho cruza adelante
     arm = pose(
-        hips=(0.09, 0.03, -0.17), hips_rot=(12, 58, 0), spine=(6, 20, -2), chest=(4, 26, -3), look=(0.9, -3.0, 1.0),
-        footR=cruza, footR_rot=(52, 0), footL=PIE_L, footL_rot=(76, 0),
-        handR=(0.38, 0.12, 1.12), elbowR=(-0.2, -0.5, -0.8), racket=(0.30, 0.52, 0.80), face=(-0.5, 0.75, -0.4),
-        handL=(0.47, 0.20, 1.22), elbowL=(0.6, 0.6, -0.5), fingersL=(-0.3, 0.3, 0.9), palmL=(-0.8, -0.5, 0),
+        hips=(0.10, 0.04, -0.13), hips_rot=(8, 60, 0), spine=(4, 20, -2), chest=(2, 28, -3), look=(0.9, -3.0, 1.0),
+        footR=cruza, footR_rot=(54, 0), footL=PIE_L, footL_rot=(78, 0),
+        handR=(0.44, 0.06, 1.00), elbowR=(-0.3, -0.4, -0.9), racket=(0.22, 0.62, 0.75), face=(-0.5, 0.75, -0.4),
+        handL=(0.52, 0.17, 1.10), elbowL=(0.7, 0.6, -0.4), fingersL=(-0.3, 0.3, 0.9), palmL=(-0.8, -0.5, 0),
         braid=(-14, 2, -22, 4),
     )
-    load = pose(arm, hips=(0.11, 0.05, -0.23), hips_rot=(15, 66, 0), chest=(4, 30, -4), handR=(0.44, 0.20, 1.10), handL=(0.52, 0.28, 1.20),
-                racket=(0.40, 0.62, 0.68), braid=(-18, 6, -28, 8))
+    load = pose(arm, hips=(0.13, 0.07, -0.20), hips_rot=(10, 68, 0), chest=(2, 32, -4), handR=(0.50, 0.14, 0.98), handL=(0.58, 0.25, 1.08),
+                racket=(0.34, 0.70, 0.63), braid=(-18, 6, -28, 8))
+    drop = pose(                                    # la cadera sale primero; la pala todavía viene atrás y abajo
+        hips=(0.09, -0.04, -0.17), hips_rot=(9, 52, 0), spine=(4, 18, 0), chest=(2, 26, 0), look=(0.6, -1.4, 0.95),
+        footR=cruza, footR_rot=(48, 0), footL=PIE_L, footL_rot=(72, 20),
+        handR=(0.46, -0.18, 0.88), elbowR=(0.0, -0.2, -1.0), racket=(0.55, 0.62, -0.20), face=(-0.3, 0.8, -0.5),
+        handL=(0.52, 0.24, 1.10), elbowL=(0.7, 0.6, -0.4), fingersL=(0.1, 0.6, 0.6), palmL=(-0.6, -0.4, -0.6),
+        braid=(-6, 4, -10, 6),
+    )
     hit = pose(
-        hips=(0.05, -0.12, -0.15), hips_rot=(12, 40, 0), spine=(6, 12, 0), chest=(4, 12, 0), look=(0.55, -0.92, 0.95),
-        footR=cruza, footR_rot=(42, 0), footL=PIE_L, footL_rot=(68, 34),
-        handR=(0.18, -0.66, 1.02), elbowR=(0.3, 0.2, -0.9), racket=(0.90, -0.42, -0.08), face=(0.1, 1.0, -0.12),
-        handL=(0.40, 0.36, 1.12), elbowL=(0.7, 0.5, -0.5), fingersL=(0.5, 0.8, -0.3), palmL=(0, 0, -1),
+        hips=(0.05, -0.16, -0.10), hips_rot=(7, 40, 0), spine=(3, 10, 0), chest=(1, 8, 0), look=(0.50, -0.95, 1.0),
+        footR=cruza, footR_rot=(42, 0), footL=PIE_L, footL_rot=(66, 40),
+        handR=(0.16, -0.70, 1.04), elbowR=(0.3, 0.2, -0.9), racket=(0.92, -0.38, -0.04), face=(0.1, 1.0, -0.10),
+        handL=(0.44, 0.44, 1.18), elbowL=(0.6, 0.7, -0.3), fingersL=(0.45, 0.85, -0.2), palmL=(0, 0, -1),
         braid=(20, 6, 30, 10),
     )
     follow = pose(
-        hips=(0.03, -0.18, -0.10), hips_rot=(10, 26, 0), spine=(4, 6, 0), chest=(2, 4, 0), look=(0.3, -2.0, 1.2),
-        footR=cruza, footR_rot=(34, 0), footL=PIE_L, footL_rot=(60, 52),
-        handR=(-0.36, -0.62, 1.28), elbowR=(0.2, 0.3, -0.9), racket=(-0.52, -0.50, 0.69), face=(-0.5, 0.75, 0.3),
-        handL=(0.44, 0.46, 0.98), elbowL=(0.7, 0.5, -0.5), fingersL=(0.4, 0.85, -0.3), palmL=(0, 0, -1),
+        hips=(0.02, -0.22, -0.05), hips_rot=(5, 24, 0), spine=(1, 4, 0), chest=(-2, 0, 0), look=(0.3, -2.0, 1.3),
+        footR=cruza, footR_rot=(34, 0), footL=PIE_L, footL_rot=(58, 56),
+        handR=(-0.40, -0.58, 1.40), elbowR=(0.2, 0.3, -0.9), racket=(-0.48, -0.36, 0.80), face=(-0.5, 0.75, 0.3),
+        handL=(0.48, 0.52, 1.00), elbowL=(0.7, 0.5, -0.5), fingersL=(0.4, 0.85, -0.3), palmL=(0, 0, -1),
         braid=(24, 8, 34, 12),
     )
-    end = pose(follow, handR=(-0.46, -0.52, 1.38), racket=(-0.60, -0.30, 0.74), hips_rot=(9, 20, 0), look=(0.0, -6.0, 1.9), braid=(-8, 4, -12, 6))
-    return _golpe('reves', 1.02, 0.52, [K(0.0, pose(), True), K(0.20, arm), K(0.40, load, True), K(0.52, hit), K(0.62, follow),
+    end = pose(follow, hips=(0.02, -0.22, -0.03), handR=(-0.50, -0.46, 1.50), racket=(-0.52, -0.16, 0.84), hips_rot=(5, 18, 0),
+               look=(0.0, -6.0, 1.9), braid=(-8, 4, -12, 6))
+    return _golpe('reves', 1.02, 0.52, [K(0.0, pose(), True), K(0.20, arm), K(0.40, load, True), K(0.47, drop), K(0.52, hit), K(0.62, follow),
                                         K(0.75, end, True), K(1.02, pose(), True)], 'Revés', (0.20, 0.40), 'reves')
 
 

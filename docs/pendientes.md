@@ -99,6 +99,10 @@ Cuando se retome, va como un solo diseño:
   - Plan probable: conexión directa entre los dos jugadores (WebRTC) con un servidor mínimo que solo los presenta, y rollback, aprovechando que la simulación ya es determinista y registra entradas.
   - Para no cerrarse la puerta desde ya: que la simulación dé **exactamente el mismo resultado en cualquier navegador y procesador**. Evitar en `src/sim/` funciones como `Math.sin`, `Math.cos`, `Math.pow` y `Math.exp`, que pueden variar entre motores, o usar versiones propias. Agregar un test que compare un partido grabado contra un resultado de referencia.
   - Un "controlador remoto" es solo otro tipo de controlador, junto al humano y la IA.
+  - **Cada uno ve desde atrás de su jugador** (pregunta del usuario, 2026-11-18). La cancha horneada es una sola foto desde un lado, así que el segundo jugador ve el mundo **espejado**: x → −x, y → −y, solo en la presentación, sin tocar la simulación.
+    - No hay que hornear otra cancha ni sumar descarga.
+    - Hoy el render asume que el equipo 0 está cerca de la cámara (`src/render/stage/director.ts`). Esa vista tiene que salir de "mi equipo".
+    - Revisar las asimetrías que hoy dependen de "persona contra IA", como `HUMAN_REACH` y `latencyCompensation`, para que entre dos personas sean parejas.
   - Desconexiones: pausa, reconexión y que la IA tome el lugar si el otro se va.
 - Modo dobles jugable: ver "Dobles posicional" arriba. Torneos y opciones de partido.
 - PWA, y después Capacitor para las tiendas.

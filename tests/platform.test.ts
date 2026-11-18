@@ -76,7 +76,9 @@ describe('preparado para ser una app', () => {
       // A namespace URI inside a string is not a request; an address to fetch is.
       const urls = text.match(/https?:\/\/[^\s'"`)]+/g) ?? [];
       for (const url of urls) offences.push(`${file.path}: ${url}`);
-      if (/\bfetch\(|XMLHttpRequest|new WebSocket|importScripts|sendBeacon/.test(text)) offences.push(`${file.path}: network call`);
+      if (/XMLHttpRequest|new WebSocket|importScripts|sendBeacon/.test(text)) offences.push(`${file.path}: network call`);
+      // The game's own files are read in one place only, by a path relative to its folder.
+      if (/\bfetch\(|new Image\(/.test(text) && file.path !== 'platform/web.ts') offences.push(`${file.path}: loads a file`);
     }
     expect(offences).toEqual([]);
   });

@@ -7,22 +7,40 @@ import type { CameraName } from './view';
 /**
  * Everything a renderer needs to draw one frame, already interpolated between
  * two simulation steps. This is the whole contract between the game and its
- * looks: a renderer never reads the simulation directly, so the final art can
- * replace the grey prototype without touching the rules or the physics.
+ * looks: a renderer never reads the simulation directly, so how the game
+ * looks can change without touching the rules or the physics.
  */
+/**
+ * How much help is on screen. The default is very little: the game is for
+ * somebody who wants something simple and does not want to read.
+ */
+export type AidLevel = 'full' | 'minimal' | 'none';
+
 export interface Scene {
   /** Interpolated simulation time, in seconds. */
   time: number;
   ball: SceneBall;
   players: ScenePlayer[];
+  /** Who is about to serve or serving, by position in `players`; -1 during a rally. */
+  serving: number;
+  /**
+   * How much help was asked for, and with the minimal help how much of it is
+   * left (0..1): it fades as the person gets it right. What exists at each
+   * level is already decided below; this is for how to show it.
+   */
+  aids: AidLevel;
+  aidStrength: number;
   /**
    * Where the ball lands next, when the aid is on. `first` is false once the
    * ball has already bounced: that next landing is the one that loses the point.
    */
   bounce: { x: number; y: number; eta: number; first: boolean } | null;
-  /** Where and when the person meets the ball, when the aid is on. */
+  /**
+   * Where and when the person meets the ball. With the minimal help it is
+   * shown as one signal in the last instant; with all of it, with its windows.
+   */
   contact: SceneContact | null;
-  /** Where the person is aiming, on the rival's court. */
+  /** Where the person is aiming, on the rival's court. With the minimal help, only while the thumb is down. */
   aim: SceneAim | null;
   /** Advice on where to stand, when the aid is on. */
   guide: { x: number; y: number } | null;
@@ -40,8 +58,16 @@ export interface SceneBall {
   x: number;
   y: number;
   z: number;
+  /** Metres per second. */
+  vx: number;
+  vy: number;
+  vz: number;
   /** False while the ball should not be drawn. */
   visible: boolean;
+  /** In the server's hand, before the serve. */
+  held: boolean;
+  /** In play: from the serve until the point is over. A dead ball is still drawn, but nobody follows it. */
+  live: boolean;
 }
 
 export interface ScenePlayer {
@@ -58,6 +84,12 @@ export interface ScenePlayer {
   anim: 'idle' | 'swing' | 'whiff' | 'serve';
   /** Progress of the animation: below 0 the swing is armed, 0..1 it plays. */
   animPhase: number;
+  /**
+   * Seconds until the racket of the stroke meets the ball: positive before,
+   * negative after. Infinity with no stroke, and while the player is armed
+   * with no ball within reach yet.
+   */
+  contactIn: number;
   /** World-x side of the body the racket works on during the animation. */
   animSide: 1 | -1;
   /** World-x side the racket rests on: the player's hand, seen from the camera. */
@@ -160,19 +192,25 @@ export function createPointerFeedback(): PointerFeedback {
 
 /**
  * What the game asks of whatever draws it. The game holds nothing but this
- * interface, so the grey prototype, the final art in Canvas 2D or a WebGL
- * renderer can be swapped without touching anything else.
+ * interface: whether a frame comes out in 3D with WebGL2 or in plain Canvas
+ * 2D is the renderer's own business.
  *
- * How a renderer builds its picture is its own business. The scenery only
- * depends on what `resize` and `setCamera` give it, so it can be painted or
- * baked once and copied every frame; if baking takes a while (compiling a
- * shader, say), the renderer starts with something quick and swaps it in when
- * it is ready: nobody waits for it, and none of these calls is asynchronous.
+ * None of these calls is asynchronous. A renderer that needs files or a
+ * graphics context gets them on its own and draws with what it has in the
+ * meantime: nobody waits for it.
  */
 export interface Renderer {
+  /** Which look is on screen right now: the 3D one or the plain one it falls back to. */
+  readonly look: '3d' | '2d';
+  /**
+   * Called when what the renderer can draw changed and nobody asked it for a
+   * frame: its files arrived, the graphics context went away or came back.
+   * Whoever is showing a still picture (a menu, a pause) draws it again.
+   */
+  onChange: (() => void) | null;
   /** The canvas changed size, pixel density or safe area. */
   resize(width: number, height: number, pixelRatio: number, safeArea: Insets): void;
-  /** Which of the framings to use. */
+  /** Which camera to watch the game with. A renderer that cannot move its camera keeps it still. */
   setCamera(name: CameraName): void;
   /**
    * Where a point of the court falls on screen, in CSS pixels. For what is

@@ -1,6 +1,7 @@
 import { CHARACTER_IDS } from '../characters/cast';
 import type { RivalId } from '../config';
 import type { ControlScheme } from '../input/pointer';
+import type { AidLevel } from '../render/scene';
 import type { CameraName } from '../render/view';
 
 export type QualityName = 'auto' | 'high' | 'medium' | 'low';
@@ -16,14 +17,16 @@ export interface Settings {
   rival: RivalId;
   /** Game speed, 1 = real time. For playing at one's own pace. */
   speed: number;
-  bounceMarker: boolean;
-  timingAid: boolean;
-  /** Footprints where it would be best to stand. */
-  positionGuide: boolean;
+  /**
+   * How much help is on screen. Very little by default: one signal for when
+   * to hit. Everything is still there for whoever wants or needs it.
+   */
+  aids: AidLevel;
   /** The rival's speech bubbles. Nothing needed to play is ever said in them. */
   lines: LineFrequency;
   reduceMotion: boolean;
   vibration: boolean;
+  /** Some like the camera that goes with the play, some the still one. With reduced motion it is always still. */
   camera: CameraName;
   quality: QualityName;
   fullscreen: boolean;
@@ -46,13 +49,11 @@ export function defaultSettings(reduceMotion: boolean): Settings {
     assistedMovement: false,
     rival: 'beto',
     speed: 1,
-    bounceMarker: true,
-    timingAid: true,
-    positionGuide: true,
+    aids: 'minimal',
     lines: 'many',
     reduceMotion,
     vibration: true,
-    camera: 'mid',
+    camera: 'follow',
     quality: 'auto',
     fullscreen: false,
     showFps: false,
@@ -75,13 +76,11 @@ export function readSettings(saved: unknown, reduceMotion: boolean): Settings {
     assistedMovement: flag('assistedMovement'),
     rival: pick(data.rival, RIVALS, base.rival),
     speed: pick(data.speed, SPEEDS, base.speed),
-    bounceMarker: flag('bounceMarker'),
-    timingAid: flag('timingAid'),
-    positionGuide: flag('positionGuide'),
+    aids: pick(data.aids, ['full', 'minimal', 'none'] as const, base.aids),
     lines: pick(data.lines, ['many', 'few', 'none'] as const, base.lines),
     reduceMotion: flag('reduceMotion'),
     vibration: flag('vibration'),
-    camera: pick(data.camera, ['low', 'mid', 'high'] as const, base.camera),
+    camera: pick(data.camera, ['follow', 'fixed'] as const, base.camera),
     quality: pick(data.quality, ['auto', 'high', 'medium', 'low'] as const, base.quality),
     fullscreen: flag('fullscreen'),
     showFps: flag('showFps'),

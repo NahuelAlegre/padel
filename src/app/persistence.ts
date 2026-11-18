@@ -70,6 +70,11 @@ export interface Profile {
   pointsWon: number;
   pointsLost: number;
   hits: Record<Quality, number>;
+  /**
+   * 0..1: how much of the minimal help the person still gets. It starts at 1
+   * and fades as hits come off; a few misses bring it back.
+   */
+  assist: number;
   /** Only the rivals the person has met are in here. */
   rivals: Partial<Record<RivalId, RivalRecord>>;
 }
@@ -95,6 +100,7 @@ export function emptyProfile(): Profile {
     pointsWon: 0,
     pointsLost: 0,
     hits: { perfect: 0, good: 0, early: 0, late: 0 },
+    assist: 1,
     rivals: {},
   };
 }
@@ -160,6 +166,7 @@ function readProfile(saved: unknown): Profile {
       early: count(hits.early),
       late: count(hits.late),
     },
+    assist: Math.min(1, count(data.assist, 1)),
   };
 }
 

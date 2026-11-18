@@ -120,7 +120,7 @@ class Devtools {
  * Opens a page that behaves like a phone held upright: small viewport, dense
  * screen, touch input. Returns helpers to drive it and a `close` to clean up.
  */
-export async function openPhone({ width = 360, height = 800, dpr = 3, headed = false } = {}) {
+export async function openPhone({ width = 360, height = 800, dpr = 3, headed = false, gpu = true } = {}) {
   // A throwaway profile in an absolute, writable temporary folder, never the
   // person's own, and no error dialogs: if the browser has a problem it must
   // not put a window on somebody's screen.
@@ -138,6 +138,11 @@ export async function openPhone({ width = 360, height = 800, dpr = 3, headed = f
     `--window-size=${width},${height + 90}`,
     'about:blank',
   ];
+  // The game draws with WebGL2: ask for the real graphics card, which a
+  // headless browser does not always use by itself. Without it the page
+  // still works, on a software renderer or on the 2D look.
+  if (gpu) args.unshift('--enable-gpu', '--ignore-gpu-blocklist', '--use-angle=d3d11');
+  else args.unshift('--disable-gpu');
   if (!headed) args.unshift('--headless=new');
   const browser = spawn(findBrowser(), args, { stdio: ['ignore', 'ignore', 'pipe'] });
 
@@ -241,8 +246,20 @@ export async function openPhone({ width = 360, height = 800, dpr = 3, headed = f
      * and reports the ones that changed, but a touchEnd lifts exactly the
      * fingers it lists (all of them when the list is empty) and leaves the
      * others where they were.
+     *
+     * And one more thing it does not say: when two different fingers move
+     * within the same frame, the emulation merges the moves and delivers the
+     * second one with its coordinates divided by the pixel density. A real
+     * touch screen has no such step. So a move of another finger waits for
+     * the frame of the previous one to be over.
      */
     fingers: new Map(),
+    lastMove: { id: -1, at: 0 },
+    async settle(id) {
+      const wait = this.lastMove.id !== id ? 34 - (Date.now() - this.lastMove.at) : 0;
+      if (wait > 0) await sleep(wait);
+      this.lastMove = { id, at: Date.now() };
+    },
     touchPoints(only) {
       return [...this.fingers]
         .filter(([id]) => only === undefined || id === only)
@@ -254,6 +271,7 @@ export async function openPhone({ width = 360, height = 800, dpr = 3, headed = f
     },
     async touchMove(id, x, y) {
       if (!this.fingers.has(id)) return;
+      await this.settle(id);
       this.fingers.set(id, { x, y });
       await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: this.touchPoints() });
     },
@@ -276,6 +294,19 @@ export async function openPhone({ width = 360, height = 800, dpr = 3, headed = f
       await send('Network.enable');
       devtools.listeners.push((method, params) => {
         if (method === 'Network.requestWillBeSent') this.requests.push(params.request.url);
+      });
+    },
+
+    /** What every file weighed as it travelled, headers included: what a visit really downloads. */
+    transfers: [],
+    async watchTransfers() {
+      await send('Network.enable');
+      const urls = new Map();
+      devtools.listeners.push((method, params) => {
+        if (method === 'Network.requestWillBeSent') urls.set(params.requestId, params.request.url);
+        else if (method === 'Network.loadingFinished' && urls.has(params.requestId)) {
+          this.transfers.push({ url: urls.get(params.requestId), bytes: params.encodedDataLength });
+        }
       });
     },
 
@@ -339,10 +370,10 @@ export async function openPhone({ width = 360, height = 800, dpr = 3, headed = f
       await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
     },
 
-    /** Saves a PNG of the page as the phone shows it. */
-    async screenshot(path) {
+    /** Saves a PNG of the page as the phone shows it, or of a part of it: `clip` is { x, y, width, height } in CSS pixels. */
+    async screenshot(path, clip) {
       const { writeFileSync } = await import('node:fs');
-      const { data } = await send('Page.captureScreenshot', { format: 'png' });
+      const { data } = await send('Page.captureScreenshot', { format: 'png', ...(clip ? { clip: { ...clip, scale: 1 } } : {}) });
       writeFileSync(path, Buffer.from(data, 'base64'));
     },
 

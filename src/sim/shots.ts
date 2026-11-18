@@ -181,6 +181,22 @@ export interface ResolvedShot {
   risk: number;
 }
 
+/** Which shot an intent turns into in a given situation. See `resolveShot`. */
+export function shotKind(ctx: ShotContext, intent: ShotIntent, config: GameConfig): ShotKind {
+  const { player: pc, shots } = config;
+  const netDistance = Math.abs(ctx.ballY);
+  if (isPastPlayer(ctx.team, ctx.playerY, ctx.ballY, ctx.bounces, config)) return 'backWall';
+  if (intent.lob) return 'lob';
+  if (clamp(intent.depth, 0, 1) <= shots.dropAt) return 'drop';
+  if (ctx.ballZ >= pc.overheadZ && netDistance <= pc.smashMaxNetDistance) return 'smash';
+  if (ctx.ballZ >= pc.overheadZ && netDistance <= pc.overheadMaxNetDistance) {
+    return Math.abs(clamp(intent.aim, -1, 1)) >= shots.viboraAim ? 'vibora' : 'bandeja';
+  }
+  if (ctx.bounces === 0 && netDistance <= pc.volleyMaxNetDistance) return 'volley';
+  if (ctx.bounces >= 1 && ctx.walls >= 1) return 'wallExit';
+  return 'drive';
+}
+
 /**
  * Decides which shot comes out and where it goes.
  *
@@ -199,30 +215,11 @@ export interface ResolvedShot {
  * It is a pure function, so the aim marker shows exactly what will happen.
  */
 export function resolveShot(ctx: ShotContext, intent: ShotIntent, config: GameConfig): ResolvedShot {
-  const { player: pc, shots, court } = config;
+  const { shots, court } = config;
   const dir = teamDir(ctx.team);
-  const netDistance = Math.abs(ctx.ballY);
   const aim = clamp(intent.aim, -1, 1);
   const depth = clamp(intent.depth, 0, 1);
-
-  let kind: ShotKind;
-  if (isPastPlayer(ctx.team, ctx.playerY, ctx.ballY, ctx.bounces, config)) {
-    kind = 'backWall';
-  } else if (intent.lob) {
-    kind = 'lob';
-  } else if (depth <= shots.dropAt) {
-    kind = 'drop';
-  } else if (ctx.ballZ >= pc.overheadZ && netDistance <= pc.smashMaxNetDistance) {
-    kind = 'smash';
-  } else if (ctx.ballZ >= pc.overheadZ && netDistance <= pc.overheadMaxNetDistance) {
-    kind = Math.abs(aim) >= shots.viboraAim ? 'vibora' : 'bandeja';
-  } else if (ctx.bounces === 0 && netDistance <= pc.volleyMaxNetDistance) {
-    kind = 'volley';
-  } else if (ctx.bounces >= 1 && ctx.walls >= 1) {
-    kind = 'wallExit';
-  } else {
-    kind = 'drive';
-  }
+  const kind = shotKind(ctx, intent, config);
 
   const spec = shots.specs[kind];
   const deep = clamp((depth - shots.dropAt) / (1 - shots.dropAt), 0, 1);

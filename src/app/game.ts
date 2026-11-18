@@ -14,14 +14,16 @@ import {
 import { AIController } from '../control/ai';
 import { HumanController } from '../control/human';
 import { NO_INSETS, type Insets } from '../core/layout';
+import { clamp } from '../core/math';
 import { AutoQuality, FrameStats } from '../core/perf';
 import { Rng } from '../core/rng';
 import { KeyboardInput } from '../input/keyboard';
 import { PointerInput } from '../input/pointer';
 import { InputState } from '../input/state';
 import type { Platform } from '../platform/types';
-import { PrototypeRenderer } from '../render/prototype/renderer';
 import type { Renderer, Scene } from '../render/scene';
+import { figureScale } from '../render/stage/camera';
+import { StageRenderer } from '../render/stage/renderer';
 import { VIEW } from '../render/view';
 import { Viewport } from '../render/viewport';
 import { Match, type PlayerEntry, type SimEvent } from '../sim/match';
@@ -29,7 +31,7 @@ import { isGoldenPoint, pointLabel } from '../sim/score';
 import { Hud } from '../ui/hud';
 import { Screens, type ScreenInfo } from '../ui/screens';
 import { QUALITY_SCALE, RIVALS, type Settings } from '../ui/settings';
-import { TEXT } from '../ui/text';
+import { shotName, TEXT } from '../ui/text';
 import {
   newRivalRecord,
   saveMatch,
@@ -52,8 +54,17 @@ const MAX_STEPS_PER_FRAME = 12;
 const HUMAN_REACH = 1.3;
 /** With assisted movement on, the player is helped but not instantaneous. */
 const ASSISTED_REACTION = 0.12;
-/** How far above the feet a speech bubble points, in metres of the court. */
+/** How far above the feet a speech bubble points, in metres of a player at life size. */
 const BUBBLE_HEIGHT = 2.05;
+/**
+ * The minimal aids fade as the person gets it right: this much less of them
+ * after every hit that comes off, this much more after one that does not.
+ * With these two, they fade for somebody who gets four out of five right.
+ * They never go below the floor: "none" is there for whoever wants nothing.
+ */
+const ASSIST_FADE = 0.03;
+const ASSIST_RETURN = 0.12;
+const ASSIST_FLOOR = 0.25;
 
 /** Today as yyyy-mm-dd on the person's own calendar, for the history with each rival. */
 function today(): string {
@@ -100,9 +111,8 @@ export class Game {
   private readonly scene: Scene;
   private readonly autoQuality = new AutoQuality();
   private readonly options: SceneOptions = {
-    bounceMarker: true,
-    timingAid: true,
-    positionGuide: true,
+    aids: 'minimal',
+    aidStrength: 1,
     reduceMotion: false,
     debug: false,
     cueLead: 0,
@@ -140,7 +150,15 @@ export class Game {
     this.personality = new Personality(new Rng((Date.now() ^ 0x9e3779b9) >>> 0));
     this.config = createConfig();
     this.viewport = new Viewport(canvas, VIEW.dprCap);
-    this.renderer = new PrototypeRenderer(canvas, this.config.court);
+    this.renderer = new StageRenderer(
+      canvas,
+      this.config.court,
+      platform.assets,
+      { shotName, quality: TEXT.quality, tooFar: TEXT.whiffFar },
+      { allow3d: !platform.launch.flag('2d') },
+    );
+    // Behind a menu the game is a still picture: it is drawn again when the renderer has something new to show.
+    this.renderer.onChange = () => this.draw();
     this.pointer = new PointerInput(canvas, this.input);
     this.pointer.onTouch = () => this.skipPause();
     this.keyboard = new KeyboardInput(
@@ -273,7 +291,7 @@ export class Game {
   private placeBubble(): void {
     const who = this.match.players[this.rivalIndex];
     if (!who) return;
-    this.renderer.project(who.x, who.y, BUBBLE_HEIGHT * VIEW.figureScale, this.anchor);
+    this.renderer.project(who.x, who.y, BUBBLE_HEIGHT * figureScale(who.y), this.anchor);
     this.hud.placeBubble(this.anchor.x, this.anchor.y, this.viewport.width);
   }
 
@@ -442,7 +460,8 @@ export class Game {
     this.pointer.options.scheme = settings.scheme;
     this.pointer.options.stickSide = settings.stickSide;
     this.hud.scheme = settings.scheme;
-    this.renderer.setCamera(settings.camera);
+    this.hud.hints = settings.aids === 'full';
+    this.renderer.setCamera(settings.reduceMotion ? 'fixed' : settings.camera);
     this.platform.sound.setEnabled(true);
     this.personality.frequency = settings.lines;
     this.hud.calm = settings.reduceMotion;
@@ -520,6 +539,10 @@ export class Game {
       case 'hit':
         this.onHit(event);
         break;
+      case 'whiff':
+        // Not getting there is a miss too.
+        if (playing && event.reason === 'far' && this.match.players[event.player]?.isHuman) this.learn(false);
+        break;
       case 'bounce':
         sound.play('bounce', Math.min(1, event.speed / 12));
         break;
@@ -577,12 +600,20 @@ export class Game {
     }
     if (event.kind === 'serve') return;
     this.profile.hits[event.quality]++;
+    // A shot armed early came off too: whoever plays like that is not waiting for a signal.
+    this.learn(event.quality !== 'late');
     // The first rally hit that comes off ends the first-time help.
     if (!this.profile.introDone && event.quality !== 'late') {
       this.profile.introDone = true;
       saveProfile(this.platform.storage, this.profile);
       analytics.track('intro_done');
     }
+  }
+
+  /** The minimal aids fade as the person gets it right, and come back when they do not. */
+  private learn(good: boolean): void {
+    const profile = this.profile;
+    profile.assist = clamp(profile.assist + (good ? -ASSIST_FADE : ASSIST_RETURN), 0, 1);
   }
 
   private screenInfo(): ScreenInfo {
@@ -672,9 +703,9 @@ export class Game {
     const settings = this.settings;
     const playing = (this.state === 'playing' || this.state === 'paused') && this.mode !== 'demo';
     const options = this.options;
-    options.bounceMarker = settings.bounceMarker && this.state !== 'menu';
-    options.timingAid = settings.timingAid && playing;
-    options.positionGuide = settings.positionGuide && playing;
+    // Behind the start screen the court is only scenery.
+    options.aids = this.state === 'menu' ? 'none' : settings.aids;
+    options.aidStrength = ASSIST_FLOOR + (1 - ASSIST_FLOOR) * this.profile.assist;
     options.reduceMotion = settings.reduceMotion;
     options.debug = settings.showFps;
     options.cueLead = CONTROLS.cueLead[settings.scheme];
@@ -699,10 +730,19 @@ export class Game {
 
     const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
-    const workStart = performance.now();
-
-    this.syncViewport();
     this.pointer.update(now);
+    this.advance(dt);
+  };
+
+  /**
+   * One frame of the game: `dt` seconds of match, and the picture of where
+   * that leaves it. The loop calls it with the time that really went by; a
+   * tool can stop the loop and call it itself, to look at the game frame by
+   * frame.
+   */
+  advance(dt: number): void {
+    const workStart = performance.now();
+    this.syncViewport();
 
     // Fixed-step simulation: run as many steps as real time asks for.
     if (this.hitStop > 0) this.hitStop -= dt;
@@ -726,7 +766,7 @@ export class Game {
     if (this.stats.fresh) this.onStats();
 
     if (this.match.phase === 'matchOver') this.finish();
-  };
+  }
 
   private onStats(): void {
     const stats = this.stats;
@@ -736,7 +776,7 @@ export class Game {
         `${stats.fps.toFixed(0)} fps\n` +
           `${stats.frameMs.toFixed(1)} ms (peor ${stats.worstMs.toFixed(0)})\n` +
           `cpu ${stats.workMs.toFixed(2)} ms\n` +
-          `${Math.round(canvas.width * canvas.pixelRatio)}×${Math.round(canvas.height * canvas.pixelRatio)}`,
+          `${this.renderer.look} ${Math.round(canvas.width * canvas.pixelRatio)}×${Math.round(canvas.height * canvas.pixelRatio)}`,
       );
     }
     // The first seconds include start-up work that says nothing about the device.

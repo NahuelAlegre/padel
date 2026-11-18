@@ -1,11 +1,78 @@
 import type { Insets } from '../core/layout';
 import { createLocalAnalytics, createMemoryStore, silentSound } from './memory';
-import type { Display, Haptics, HapticStrength, KeyValueStore, Launch, Lifecycle, Platform } from './types';
+import type { Assets, Display, Haptics, HapticStrength, KeyValueStore, Launch, Lifecycle, Picture, Platform } from './types';
 
 /**
  * The browser implementation of the platform. Everything that is specific to
  * running inside a web page lives in this file.
  */
+
+function loadImage(path: string): Promise<Picture> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = 'async';
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`Could not load ${path}`));
+    image.src = path;
+  });
+}
+
+/** One white pixel as AVIF. Whether the browser decodes it says whether it can show the format. */
+const AVIF_PROBE =
+  'data:image/avif;base64,AAAAIGZ0eXBhdmlmAAAAAGF2aWZtaWYxbWlhZk1BMUIAAADrbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAcGljdAAAAAAAAAAAAAAAAAAAAAAOcGl0bQAAAAAAAQAAAB5pbG9jAAAAAEQAAAEAAQAAAAEAAAETAAAAIgAAAChpaW5mAAAAAAABAAAAGmluZmUCAAAAAAEAAGF2MDFDb2xvcgAAAABqaXBycAAAAEtpcGNvAAAAFGlzcGUAAAAAAAAAAQAAAAEAAAAQcGl4aQAAAAADCAgIAAAADGF2MUOBAAwAAAAAE2NvbHJuY2x4AAEADQAGgAAAABdpcG1hAAAAAAAAAAEAAQQBAoMEAAAAKm1kYXQSAAoIGAAGiAhoNCAyFBlHh4Yhh5555oJAAJBBGex24O9g';
+
+async function fetchBytes(path: string): Promise<ArrayBuffer> {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error(`Could not load ${path}: ${response.status}`);
+  return response.arrayBuffer();
+}
+
+/**
+ * Paths are relative to the page, so the same build works in a subfolder, in
+ * a native shell and from disk. From disk the browser refuses to read plain
+ * files with `fetch`: pictures still load, the rest does not.
+ */
+function createWebAssets(): Assets {
+  // Asked once. Without this, a browser that cannot decode AVIF would
+  // download every picture in it for nothing before falling back.
+  const avif = loadImage(AVIF_PROBE).then(
+    (image) => image.width > 0,
+    () => false,
+  );
+  return {
+    async image(all) {
+      const paths = (await avif) ? all : all.filter((path) => !path.endsWith('.avif'));
+      let last: unknown = new Error('No picture to load');
+      for (const path of paths) {
+        try {
+          return await loadImage(path);
+        } catch (error) {
+          // This device cannot decode that format, or the file is not there: try the next one.
+          last = error;
+        }
+      }
+      throw last;
+    },
+    async bytes(path) {
+      // A host of static files does not always compress a file it does not
+      // know, so the big ones are shipped twice: as they are, and gzipped.
+      // A browser that can unpack asks for the small one.
+      if (typeof DecompressionStream === 'function') {
+        try {
+          const packed = await fetchBytes(`${path}.gz`);
+          const head = new Uint8Array(packed, 0, 2);
+          // Some servers unpack a .gz on the way: then this is the file itself already.
+          if (head[0] !== 0x1f || head[1] !== 0x8b) return packed;
+          const unpacked = new Blob([packed]).stream().pipeThrough(new DecompressionStream('gzip'));
+          return await new Response(unpacked).arrayBuffer();
+        } catch {
+          // No packed twin, or it would not unpack: the file as it is.
+        }
+      }
+      return fetchBytes(path);
+    },
+  };
+}
 
 function createWebStore(): KeyValueStore {
   let backing: Storage | null = null;
@@ -143,6 +210,7 @@ function createWebLaunch(): Launch {
 
 export function createWebPlatform(): Platform {
   return {
+    assets: createWebAssets(),
     storage: createWebStore(),
     haptics: createWebHaptics(),
     sound: silentSound,

@@ -11,6 +11,7 @@ import type { Insets } from '../core/layout';
  * enforces it.
  */
 export interface Platform {
+  assets: Assets;
   storage: KeyValueStore;
   haptics: Haptics;
   sound: Sound;
@@ -18,6 +19,29 @@ export interface Platform {
   lifecycle: Lifecycle;
   analytics: Analytics;
   launch: Launch;
+}
+
+/** A picture that is decoded and can be drawn or uploaded as a texture. */
+export type Picture = CanvasImageSource & { width: number; height: number };
+
+/**
+ * The game's own files: the pictures of the court and the character. They
+ * travel with the game and are asked for by a path relative to its folder,
+ * never by an address on the internet.
+ */
+export interface Assets {
+  /**
+   * A picture, decoded. Several paths are the same picture in several
+   * formats, best first: the first one this device can decode is the answer.
+   */
+  image(paths: readonly string[]): Promise<Picture>;
+  /**
+   * A file as bytes. It fails where the shell cannot read files this way (a
+   * page opened straight from disk): the game then goes without that file.
+   * A big file may travel packed (a gzipped twin next to it, `<path>.gz`);
+   * what comes back is always the file itself.
+   */
+  bytes(path: string): Promise<ArrayBuffer>;
 }
 
 /**

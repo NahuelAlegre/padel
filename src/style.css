@@ -1,13 +1,18 @@
+/*
+ * The colours of the club at dusk, the same ones the court is painted with:
+ * plum for what is behind, cream for what is read, mustard for what is marked.
+ */
 :root {
   color-scheme: dark;
-  --bg: #0c0d10;
-  --stage: #15171b;
-  --panel: #1b1e23;
-  --raised: #272b32;
-  --ink: #f3f4f6;
-  --muted: #aab0ba;
-  --line: rgba(255, 255, 255, 0.16);
-  --accent: #e8f23a;
+  --bg: #120d18;
+  --stage: #291f34;
+  --panel: #241b2d;
+  --raised: #33273f;
+  --ink: #fff5d6;
+  --muted: #c2b3c4;
+  --line: rgba(255, 245, 214, 0.18);
+  --accent: #f0c14a;
+  --on-ink: #2a1b2e;
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
 }
 
@@ -58,6 +63,23 @@ body {
   }
 }
 
+/*
+ * Two canvases, one over the other: the 3D world below, and over it the 2D
+ * one, which is also where the fingers land.
+ */
+#world {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+#world[hidden] {
+  display: none;
+}
+
 #court {
   position: absolute;
   inset: 0;
@@ -98,7 +120,7 @@ body {
   padding: 7px 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(12, 13, 16, 0.78);
+  background: rgba(34, 24, 42, 0.78);
   font-variant-numeric: tabular-nums;
 }
 
@@ -162,7 +184,7 @@ body {
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(12, 13, 16, 0.78);
+  background: rgba(34, 24, 42, 0.78);
   color: var(--ink);
   cursor: pointer;
 }
@@ -201,7 +223,7 @@ body {
   margin-top: 4px;
   font-size: 15px;
   font-weight: 600;
-  color: #dfe2e7;
+  color: #efe6d8;
 }
 
 /*
@@ -219,7 +241,7 @@ body {
   padding: 6px 10px 7px;
   border-radius: 12px;
   background: var(--ink);
-  color: #101114;
+  color: var(--on-ink);
   font-size: 14px;
   font-weight: 700;
   line-height: 1.2;
@@ -275,7 +297,7 @@ body {
   padding: 4px 7px;
   border-radius: 7px;
   background: rgba(0, 0, 0, 0.6);
-  color: #d5d9df;
+  color: #e3d9d0;
   font: 600 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   text-align: right;
 }
@@ -293,7 +315,7 @@ body {
   place-items: center;
   padding: calc(12px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px))
     calc(12px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
-  background: rgba(8, 9, 11, 0.78);
+  background: rgba(22, 14, 28, 0.78);
 }
 
 #overlay.open {
@@ -303,7 +325,7 @@ body {
 /* The start screen sits at the bottom: the main button is where the thumb already is. */
 #overlay.low {
   place-items: end center;
-  background: linear-gradient(to bottom, rgba(8, 9, 11, 0.25), rgba(8, 9, 11, 0.86) 55%);
+  background: linear-gradient(to bottom, rgba(22, 14, 28, 0.25), rgba(22, 14, 28, 0.86) 55%);
 }
 
 .panel {
@@ -381,7 +403,7 @@ body {
 .btn.primary {
   border-color: transparent;
   background: var(--ink);
-  color: #101114;
+  color: var(--on-ink);
 }
 
 .btn.quiet {
@@ -419,7 +441,7 @@ body {
   bottom: -18px;
   margin: 16px -18px -18px;
   padding: 14px 18px 18px;
-  background: linear-gradient(to bottom, rgba(27, 30, 35, 0), var(--panel) 30%);
+  background: linear-gradient(to bottom, rgba(36, 27, 45, 0), var(--panel) 30%);
 }
 
 .panel .sticky .btn {
@@ -466,7 +488,7 @@ body {
 .seg button[aria-pressed='true'] {
   border-color: transparent;
   background: var(--ink);
-  color: #101114;
+  color: var(--on-ink);
   font-weight: 800;
 }
 

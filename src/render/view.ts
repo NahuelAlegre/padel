@@ -1,29 +1,16 @@
-import type { CameraPreset } from './camera';
+/**
+ * Which camera the game is watched with. The player chooses: some like one,
+ * some the other.
+ *
+ *   follow   goes with the play, a little: it pans sideways and zooms gently
+ *   fixed    the whole court, still
+ */
+export type CameraName = 'follow' | 'fixed';
 
-export type CameraName = 'low' | 'mid' | 'high';
-
-/** Everything about how the game is framed and drawn that is worth tuning. */
+/** Everything about how the game is drawn that is worth tuning and is not the camera itself. */
 export const VIEW = {
   /** The backing store never goes above this many device pixels per CSS pixel. */
   dprCap: 2,
-  /** Widest the game column gets on a desktop, as width / height. */
-  maxAspect: 9 / 16,
-  cameras: {
-    low: { pitch: 38, distance: 30 },
-    mid: { pitch: 45, distance: 40 },
-    high: { pitch: 52, distance: 46 },
-  } satisfies Record<CameraName, CameraPreset>,
-  /** Room kept free of the court: the scoreboard on top, the thumb at the bottom. */
-  insetTop: 78,
-  insetBottomFraction: 0.12,
-  insetSide: 8,
-  /** Where the court sits in the remaining free height (0 = top, 1 = bottom). */
-  align: 0.3,
-  /** The ball is drawn bigger than it is: at its real size it would be a dot. */
-  ballRadius: 0.125,
-  ballMinPixels: 3,
-  /** Players are drawn a little larger than life so they read on a phone. */
-  figureScale: 1.2,
   /** Seconds the game freezes on a perfect hit and on a smash, to give them weight. */
   hitStopPerfect: 0.03,
   hitStopSmash: 0.055,

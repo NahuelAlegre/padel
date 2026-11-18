@@ -214,21 +214,32 @@ export class Screens {
       ),
 
       el('h3', '', s.aids),
+      this.choice<'aids'>(
+        s.aidLevel,
+        'aids',
+        [
+          ['full', s.aidsFull],
+          ['minimal', s.aidsMinimal],
+          ['none', s.aidsNone],
+        ],
+        s.aidsHint[this.settings.aids],
+      ),
       this.choice(s.assisted, 'assistedMovement', onOff, s.assistedHint),
-      this.choice(s.positionGuide, 'positionGuide', onOff),
-      this.choice(s.bounceMarker, 'bounceMarker', onOff),
-      this.choice(s.timingAid, 'timingAid', onOff),
       this.choice(s.reduceMotion, 'reduceMotion', onOff),
     );
     if (info.canVibrate) panel.append(this.choice(s.vibration, 'vibration', onOff));
 
     panel.append(
       el('h3', '', s.video),
-      this.choice(s.camera, 'camera', [
-        ['low', s.cameraLow],
-        ['mid', s.cameraMid],
-        ['high', s.cameraHigh],
-      ]),
+      this.choice<'camera'>(
+        s.camera,
+        'camera',
+        [
+          ['follow', s.cameraFollow],
+          ['fixed', s.cameraFixed],
+        ],
+        this.settings.reduceMotion ? s.cameraStill : s.cameraHint[this.settings.camera],
+      ),
       this.choice(s.quality, 'quality', [
         ['auto', s.qualityAuto],
         ['high', s.qualityHigh],

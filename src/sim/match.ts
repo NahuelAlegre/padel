@@ -21,12 +21,13 @@ import {
   qualityFromError,
   resolveShot,
   serveTarget,
+  shotKind,
   solveBackWall,
   solveShot,
   type Launch,
   type ShotContext,
 } from './shots';
-import { predictTrajectory, type Trajectory } from './trajectory';
+import { pointAt, predictTrajectory, type Trajectory } from './trajectory';
 import {
   createIntent,
   otherTeam,
@@ -173,6 +174,17 @@ export class Match {
   private afterPause: 'serve' | 'matchOver' = 'serve';
   private serveHitAt = 0;
   private serveIntent: ShotIntent | null = null;
+  private readonly kindContext: ShotContext = {
+    team: 0,
+    hand: 1,
+    playerX: 0,
+    playerY: 0,
+    ballX: 0,
+    ballY: 0,
+    ballZ: 0,
+    bounces: 0,
+    walls: 0,
+  };
   private rallyStartedAt = 0;
 
   constructor(options: MatchOptions) {
@@ -394,6 +406,7 @@ export class Match {
     server.anim.kind = 'serve';
     server.anim.t0 = this.time;
     server.anim.duration = rules.serveWindup + 0.3;
+    server.anim.contactAt = this.serveHitAt;
     server.anim.side = (server.hand * teamDir(server.team)) as 1 | -1;
     server.anim.shot = 'serve';
     server.anim.reachX = this.ball.x - server.x;
@@ -516,7 +529,38 @@ export class Match {
     }
     if (this.phase !== 'rally') return;
     const resting = anim.kind === 'idle' || this.time - anim.t0 >= anim.duration;
-    if (armed || resting) this.playSwing(player, 'swing', Infinity, cue);
+    if (!armed && !resting) return;
+    this.playSwing(player, 'swing', Infinity, cue);
+    // It has not swung yet, but it knows which ball it is waiting for.
+    const plan = player.plan;
+    if (plan) {
+      anim.contactAt = plan.t;
+      anim.reachX = plan.x - player.x;
+      anim.reachY = plan.y - player.y;
+      anim.reachZ = plan.z;
+    }
+  }
+
+  /**
+   * The shot an intent will turn into when the player meets the ball it is
+   * waiting for. Only for show: it lets the windup be the right one before
+   * the contact decides for real.
+   */
+  private predictKind(player: Player, intent: ShotIntent): ShotKind {
+    const plan = player.plan;
+    const point = plan && this.trajectory ? pointAt(this.trajectory, plan.t) : null;
+    if (!plan || !point) return intent.lob ? 'lob' : intent.depth <= this.config.shots.dropAt ? 'drop' : 'drive';
+    const context = this.kindContext;
+    context.team = player.team;
+    context.hand = player.hand;
+    context.playerX = player.x;
+    context.playerY = player.y;
+    context.ballX = plan.x;
+    context.ballY = plan.y;
+    context.ballZ = plan.z;
+    context.bounces = point.bounces;
+    context.walls = point.walls;
+    return shotKind(context, intent, this.config);
   }
 
   private playSwing(player: Player, kind: 'swing' | 'whiff', t0: number, intent: ShotIntent): void {
@@ -524,9 +568,10 @@ export class Match {
     anim.kind = kind;
     anim.t0 = t0;
     anim.duration = SWING_DURATION;
+    anim.contactAt = t0 + SWING_LEAD;
     // The final name of the shot is only known at contact; until then the
-    // racket is held the way the intent asks for.
-    anim.shot = intent.lob ? 'lob' : intent.depth <= this.config.shots.dropAt ? 'drop' : 'drive';
+    // racket is held for the shot this would be with the ball it is waiting for.
+    anim.shot = this.predictKind(player, intent);
     const plan = player.plan;
     anim.side = (plan ? plan.x >= player.x : this.ball.x >= player.x) ? 1 : -1;
   }
@@ -540,11 +585,14 @@ export class Match {
       if (!plan) {
         // Nothing within reach yet: stay armed.
         player.anim.t0 = Infinity;
+        player.anim.contactAt = Infinity;
         continue;
       }
       // Start the stroke so the racket arrives together with the ball.
       const anim = player.anim;
       anim.t0 = plan.t - SWING_LEAD;
+      anim.contactAt = plan.t;
+      anim.shot = this.predictKind(player, swing.intent);
       anim.side = plan.x >= player.x ? 1 : -1;
       anim.reachX = plan.x - player.x;
       anim.reachY = plan.y - player.y;
@@ -635,6 +683,7 @@ export class Match {
     player.swing = null;
     player.anim.kind = 'swing';
     player.anim.t0 = this.time - SWING_LEAD;
+    player.anim.contactAt = this.time;
     player.anim.shot = shot.kind;
     player.anim.side = ball.x >= player.x ? 1 : -1;
     player.anim.reachX = x - player.x;

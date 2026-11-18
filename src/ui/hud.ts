@@ -22,6 +22,11 @@ const BUBBLE_MS = 1200;
 export class Hud {
   /** Which gestures the hints talk about. */
   scheme: ControlScheme = 'two';
+  /**
+   * Whether to say in words what to do. Off unless every aid was asked for:
+   * the first time, ghost thumbs show the gestures, and nobody has to read.
+   */
+  hints = false;
 
   private readonly root: HTMLElement;
   private readonly rows: HTMLElement[];
@@ -79,7 +84,10 @@ export class Hud {
         this.showScore(match);
         const server = match.players[event.server];
         if (event.attempt > 1) this.say(TEXT.secondServe, '');
-        if (server?.isHuman) this.hint.textContent = this.usesKeys ? TEXT.serveHint.keys : TEXT.serveHint[this.scheme];
+        // Keys cannot be shown with a ghost thumb: whoever is on a keyboard is told which ones.
+        if (server?.isHuman && this.usesKeys) this.hint.textContent = TEXT.serveHint.keys;
+        else if (!this.hints) this.hint.textContent = '';
+        else if (server?.isHuman) this.hint.textContent = TEXT.serveHint[this.scheme];
         else this.hint.textContent = humanTeam >= 0 ? TEXT.rivalServes(rival) : '';
         break;
       }

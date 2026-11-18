@@ -21,6 +21,11 @@ export interface PlayerAnim {
   /** Simulation time the animation started at. */
   t0: number;
   duration: number;
+  /**
+   * Simulation time at which the racket meets the ball, as far as it is known:
+   * Infinity while the player is armed with no ball within reach.
+   */
+  contactAt: number;
   /** World-x side of the body the racket swings on. */
   side: 1 | -1;
   shot: ShotKind;
@@ -112,7 +117,7 @@ export function createPlayer(id: number, team: TeamId, index: number, setup: Pla
     swingLockUntil: 0,
     cue: null,
     cueAt: 0,
-    anim: { kind: 'idle', t0: 0, duration: 0, side: 1, shot: 'drive', reachX: 0.6, reachY: 0.2, reachZ: 0.9 },
+    anim: { kind: 'idle', t0: 0, duration: 0, contactAt: Infinity, side: 1, shot: 'drive', reachX: 0.6, reachY: 0.2, reachZ: 0.9 },
     homeMode: 'back',
   };
 }

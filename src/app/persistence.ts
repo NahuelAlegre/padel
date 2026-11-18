@@ -1,8 +1,9 @@
+import { CHARACTER_IDS } from '../characters/cast';
 import { PHYSICS_VERSION, type FormatName, type RivalId } from '../config';
 import type { KeyValueStore } from '../platform/types';
 import type { MatchSnapshot } from '../sim/match';
 import type { Quality } from '../sim/types';
-import { readSettings, RIVALS, type Settings } from '../ui/settings';
+import { readSettings, type Settings } from '../ui/settings';
 
 /**
  * What the game keeps between visits. There are no accounts, so all of it
@@ -16,6 +17,44 @@ const KEYS = {
   profile: 'padel.profile.v1',
   match: 'padel.match.v1',
 } as const;
+
+/**
+ * The history with one rival. It is what lets a character recognise the
+ * person ("¡Otra vez vos!") and offer a rematch; nothing is ever lost by losing.
+ */
+export interface RivalRecord {
+  /** Dates as yyyy-mm-dd. */
+  firstMet: string;
+  lastPlayed: string;
+  /** Matches played to the end. */
+  played: number;
+  /** Matches the person won and lost. */
+  wins: number;
+  losses: number;
+  /** Above 0, wins in a row of the person; below 0, of the rival. */
+  streak: number;
+  goldenWon: number;
+  goldenLost: number;
+  /** Hits of the longest rally against this rival. */
+  longestRally: number;
+  /** The rival has already given its tell away (it does it once, to somebody it keeps beating). */
+  hintShown: boolean;
+}
+
+export function newRivalRecord(today: string): RivalRecord {
+  return {
+    firstMet: today,
+    lastPlayed: today,
+    played: 0,
+    wins: 0,
+    losses: 0,
+    streak: 0,
+    goldenWon: 0,
+    goldenLost: 0,
+    longestRally: 0,
+    hintShown: false,
+  };
+}
 
 /** What the person has done so far. Counts only: nothing that identifies anybody. */
 export interface Profile {
@@ -31,7 +70,8 @@ export interface Profile {
   pointsWon: number;
   pointsLost: number;
   hits: Record<Quality, number>;
-  byRival: Record<RivalId, { played: number; won: number }>;
+  /** Only the rivals the person has met are in here. */
+  rivals: Partial<Record<RivalId, RivalRecord>>;
 }
 
 /** A match in progress, saved at the start of every point. */
@@ -55,7 +95,7 @@ export function emptyProfile(): Profile {
     pointsWon: 0,
     pointsLost: 0,
     hits: { perfect: 0, good: 0, early: 0, late: 0 },
-    byRival: { lola: { played: 0, won: 0 }, tincho: { played: 0, won: 0 }, mora: { played: 0, won: 0 } },
+    rivals: {},
   };
 }
 
@@ -71,14 +111,37 @@ function parse(text: string | null): unknown {
 const count = (value: unknown, fallback = 0): number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback;
 
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function readRival(saved: unknown): RivalRecord | null {
+  if (typeof saved !== 'object' || saved === null) return null;
+  const data = saved as Partial<Record<keyof RivalRecord, unknown>>;
+  // Without its dates a record cannot say when anybody met: it is dropped.
+  if (typeof data.firstMet !== 'string' || !DATE.test(data.firstMet)) return null;
+  const lastPlayed = typeof data.lastPlayed === 'string' && DATE.test(data.lastPlayed) ? data.lastPlayed : data.firstMet;
+  return {
+    firstMet: data.firstMet,
+    lastPlayed,
+    played: count(data.played),
+    wins: count(data.wins),
+    losses: count(data.losses),
+    streak: typeof data.streak === 'number' && Number.isFinite(data.streak) ? Math.trunc(data.streak) : 0,
+    goldenWon: count(data.goldenWon),
+    goldenLost: count(data.goldenLost),
+    longestRally: count(data.longestRally),
+    hintShown: data.hintShown === true,
+  };
+}
+
 function readProfile(saved: unknown): Profile {
   const base = emptyProfile();
   if (typeof saved !== 'object' || saved === null) return base;
   const data = saved as Partial<Record<keyof Profile, unknown>>;
   const hits = (data.hits ?? {}) as Partial<Record<Quality, unknown>>;
-  const byRival = (data.byRival ?? {}) as Partial<Record<RivalId, { played?: unknown; won?: unknown }>>;
-  for (const rival of RIVALS) {
-    base.byRival[rival] = { played: count(byRival[rival]?.played), won: count(byRival[rival]?.won) };
+  const rivals = (typeof data.rivals === 'object' && data.rivals !== null ? data.rivals : {}) as Record<string, unknown>;
+  for (const rival of CHARACTER_IDS) {
+    const record = readRival(rivals[rival]);
+    if (record) base.rivals[rival] = record;
   }
   return {
     ...base,
@@ -106,7 +169,7 @@ function readMatch(saved: unknown): SavedMatch | null {
   // A match saved with other physics or with a shape we do not know is dropped, not guessed at.
   if (data.version !== PHYSICS_VERSION) return null;
   if (data.format !== 'quick' && data.format !== 'match') return null;
-  if (!data.rival || !RIVALS.includes(data.rival)) return null;
+  if (!data.rival || !CHARACTER_IDS.includes(data.rival)) return null;
   const score = data.snapshot?.score;
   if (!score || !Array.isArray(score.points) || !Array.isArray(score.games) || score.winner !== null) return null;
   return data as SavedMatch;

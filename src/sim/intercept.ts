@@ -157,7 +157,9 @@ export function planIntercept(
       }
       continue;
     }
-    const cost = contactCost(point, stance.y, slack, now, config);
+    let cost = contactCost(point, stance.y, slack, now, config);
+    // Some players like the glass and wait for it; others would rather not.
+    if (point.walls > 0) cost -= player.wallBias;
     if (cost < bestCost) {
       best = point;
       bestCost = cost;

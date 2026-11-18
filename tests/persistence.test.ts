@@ -5,6 +5,7 @@ import {
   exportData,
   importData,
   loadData,
+  newRivalRecord,
   saveMatch,
   saveProfile,
   saveSettings,
@@ -21,7 +22,7 @@ const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve,
 function matchInProgress(): SavedMatch {
   const score = createScore(0);
   for (const team of [0, 0, 0, 0, 1, 0] as const) awardPoint(score, team, FORMATS.quick, [1, 1]);
-  return { version: PHYSICS_VERSION, format: 'quick', rival: 'tincho', snapshot: { score, serveAttempt: 2 } };
+  return { version: PHYSICS_VERSION, format: 'quick', rival: 'romina', snapshot: { score, serveAttempt: 2 } };
 }
 
 describe('guardado local', () => {
@@ -36,7 +37,7 @@ describe('guardado local', () => {
     const settings = defaultSettings(false);
     expect(settings.assistedMovement).toBe(false);
     expect(settings.scheme).toBe('two');
-    expect(settings.rival).toBe('lola');
+    expect(settings.rival).toBe('beto');
   });
 
   it('respeta la preferencia del sistema de reducir movimiento', async () => {
@@ -46,10 +47,10 @@ describe('guardado local', () => {
 
   it('lo que se guarda vuelve igual', async () => {
     const store = createMemoryStore();
-    const settings = { ...defaultSettings(false), scheme: 'one' as const, rival: 'mora' as const, speed: 0.8, assistedMovement: true };
+    const settings = { ...defaultSettings(false), scheme: 'one' as const, rival: 'chela' as const, speed: 0.8, assistedMovement: true };
     const profile = { ...emptyProfile(), introDone: true, opens: 3, matchesStarted: 2, matchesWon: 1, firstHitSeconds: 3.4 };
     profile.hits.perfect = 12;
-    profile.byRival.mora = { played: 2, won: 1 };
+    profile.rivals.chela = { ...newRivalRecord('2026-11-03'), lastPlayed: '2026-11-17', played: 2, wins: 1, losses: 1, streak: -1, goldenWon: 1, longestRally: 14, hintShown: true };
     const match = matchInProgress();
 
     saveSettings(store, settings);
@@ -98,7 +99,7 @@ describe('guardado local', () => {
 
   it('todo se puede exportar como un texto y llevarse a otro dispositivo', async () => {
     const here = createMemoryStore();
-    saveSettings(here, { ...defaultSettings(false), rival: 'mora', scheme: 'one' });
+    saveSettings(here, { ...defaultSettings(false), rival: 'chela', scheme: 'one' });
     saveProfile(here, { ...emptyProfile(), introDone: true, matchesWon: 5 });
     saveMatch(here, matchInProgress());
     await settle();

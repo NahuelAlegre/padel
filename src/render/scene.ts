@@ -1,6 +1,8 @@
+import type { CharacterId, MannerismClip, TellCue, TellPose } from '../characters/types';
 import type { Insets } from '../core/layout';
 import type { SimEvent } from '../sim/match';
 import type { ShotKind, TeamId } from '../sim/types';
+import type { CameraName } from './view';
 
 /**
  * Everything a renderer needs to draw one frame, already interpolated between
@@ -68,6 +70,31 @@ export interface ScenePlayer {
   reachX: number;
   reachY: number;
   reachZ: number;
+  /** Who this is, for its looks. Null for a player with no character (the person, today). */
+  character: CharacterId | null;
+  /** The shot it has decided to play and is winding up for. Null while there is none. */
+  tell: SceneTell | null;
+  /** A tic it is in the middle of, between points. It never delays anything. */
+  act: SceneAct | null;
+}
+
+/** What the windup of a player gives away, before it swings. */
+export interface SceneTell {
+  /** What is coming: through, over or short. */
+  kind: TellCue;
+  /** The variant of the windup this character shows for it, or null for the plain one. */
+  pose: TellPose | null;
+  /** Where the ball is meant to go, in metres across the court from where the player stands. */
+  aimX: number;
+  /** Seconds since it made up its mind. */
+  t: number;
+}
+
+export interface SceneAct {
+  clip: MannerismClip;
+  /** Seconds into it, and how long it lasts. */
+  t: number;
+  duration: number;
 }
 
 export interface SceneContact {
@@ -131,9 +158,28 @@ export function createPointerFeedback(): PointerFeedback {
   };
 }
 
+/**
+ * What the game asks of whatever draws it. The game holds nothing but this
+ * interface, so the grey prototype, the final art in Canvas 2D or a WebGL
+ * renderer can be swapped without touching anything else.
+ *
+ * How a renderer builds its picture is its own business. The scenery only
+ * depends on what `resize` and `setCamera` give it, so it can be painted or
+ * baked once and copied every frame; if baking takes a while (compiling a
+ * shader, say), the renderer starts with something quick and swaps it in when
+ * it is ready: nobody waits for it, and none of these calls is asynchronous.
+ */
 export interface Renderer {
   /** The canvas changed size, pixel density or safe area. */
   resize(width: number, height: number, pixelRatio: number, safeArea: Insets): void;
+  /** Which of the framings to use. */
+  setCamera(name: CameraName): void;
+  /**
+   * Where a point of the court falls on screen, in CSS pixels. For what is
+   * drawn outside the canvas but belongs to something on court (a speech
+   * bubble over a player).
+   */
+  project(x: number, y: number, z: number, out: { x: number; y: number }): void;
   /** Something happened in the simulation: start an effect, a sound, an animation. */
   onEvent(event: SimEvent, scene: Scene): void;
   /** Draws one frame. `dt` is the real time since the previous frame, in seconds. */

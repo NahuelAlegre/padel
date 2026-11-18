@@ -7,9 +7,10 @@
  * Opens the production build in a headless Chrome set up as a portrait phone
  * with a touch screen and goes through what a person would:
  *
- *   - the first visit, straight onto the court;
+ *   - the first visit, straight onto the court, with the rival saying hello;
  *   - a whole match with two thumbs: one on the stick, the other holding,
- *     aiming and letting go;
+ *     aiming and letting go, while the rival gives its shots away, has its
+ *     tics and says its lines;
  *   - the start screen, the options, and a few points with one hand:
  *     dragging to move and flicking to hit;
  *   - closing the game in the middle of a match and picking it up again;
@@ -79,6 +80,10 @@ async function main() {
         score: m.score.points.concat(m.score.games),
         introDone: g.profile.introDone,
         tutorial: m.tutorial,
+        // The rival: what its windup gives away, the tic it is in, and what it is saying.
+        tell: g.scene.players[1]?.tell?.pose ?? null,
+        act: g.scene.players[1]?.act?.clip ?? null,
+        bubble: document.querySelector('#bubble.show')?.textContent ?? null,
       };
     })()`);
   const reaches = async (expected, timeoutMs = 2500) => {
@@ -282,6 +287,19 @@ async function main() {
     check('sin menú ni pantalla de título en el medio', s.screen === null);
     check('el primer peloteo es el tutorial', s.tutorial === true && s.introDone === false);
     await sleep(300);
+    s = await look();
+    check('el rival saluda con un globito que no frena nada', s.bubble === '¡Hola! Soy Beto, el profe.' && s.serving, s.bubble ?? 'sin globito');
+    const hello = await phone.evaluate(`(() => {
+      const g = window.padel, who = g.match.players[1], at = { x: 0, y: 0 };
+      g.renderer.project(who.x, who.y, 2.4, at);
+      const r = document.querySelector('#bubble').getBoundingClientRect();
+      return { head: at, left: r.left, right: r.right, bottom: r.bottom, top: r.top };
+    })()`);
+    check(
+      'el globito está sobre la cabeza del rival, dentro de la pantalla',
+      hello.left >= 0 && hello.right <= WIDTH && hello.head.x > hello.left && hello.head.x < hello.right && Math.abs(hello.bottom - hello.head.y) < 40,
+      `termina a ${Math.round(hello.head.y - hello.bottom)} px de la cabeza`,
+    );
     await shot('01-primera-visita');
     await watchEvents();
 
@@ -295,6 +313,11 @@ async function main() {
     let skipped = null;
     let skipDetail = 'no hubo una pausa en la que probarlo';
     let shots = 0;
+    const tells = new Set();
+    const tics = new Set();
+    const said = new Set();
+    let helloClosed = null;
+    let tellShot = false;
     await playTwoThumbs({
       maxMs: 420_000,
       shots: {
@@ -318,6 +341,17 @@ async function main() {
       },
       until: async (state) => {
         if (state.state === 'over') return true;
+        if (state.tell) {
+          tells.add(state.tell);
+          if (!tellShot) {
+            tellShot = true;
+            await shot('03b-gesto-delator');
+          }
+        }
+        if (state.act) tics.add(state.act);
+        if (state.bubble) said.add(state.bubble);
+        // The first serve of the match closes the hello at once.
+        if (helloClosed === null && state.phase !== 'serve') helloClosed = state.bubble !== '¡Hola! Soy Beto, el profe.';
         // Once, between two points: the pause button, and skipping the wait.
         if (!pausedOnce && state.phase === 'pointOver' && state.time > 8) {
           pausedOnce = true;
@@ -365,6 +399,10 @@ async function main() {
     check('un toque en la pausa entre puntos la saltea', skipped === true, skipDetail);
     check('hubo saques propios', all.some((e) => e.type === 'hit' && e.team === 0 && e.kind === 'serve'));
     check('el tutorial termina solo después del primer golpe bueno', s.introDone === true);
+    check('el saque cierra el saludo: nadie espera a que termine', helloClosed === true);
+    check('el rival delata su golpe antes de pegar: Beto señala', tells.has('pointAim'), [...tells].join(', '));
+    check('entre puntos tiene sus manías', tics.size > 0, [...tics].join(', '));
+    console.log('        dijo:   ', [...said].join(' · ') || '(nada más que el saludo)');
     console.log('\n        timing: ', tally(mine, 'quality'));
     console.log('        golpes: ', tally(mine, 'kind'));
     console.log('        puntos: ', all.filter((e) => e.type === 'point').length, '  rival:', tally(all.filter((e) => e.type === 'hit' && e.team === 1), 'kind'));
@@ -373,12 +411,18 @@ async function main() {
     section('Final, inicio y opciones');
     const rematch = await buttonAt('Revancha');
     check('al terminar, "Revancha" es el botón principal y ya está enfocado', !!rematch?.visible && rematch.focused && rematch.primary);
+    const quote = await phone.evaluate(`document.querySelector('.panel .quote')?.textContent ?? null`);
+    check('el rival pide la revancha al lado del botón', !!quote && quote.startsWith('Beto: «'), quote ?? 'sin frase');
+    const history = await phone.evaluate(`JSON.stringify(window.padel.profile.rivals.beto)`);
+    check('queda la historia con ese rival', /"played":1/.test(history), history);
     await tapButton('Menú');
     await sleep(200);
     await shot('06-inicio');
     const quick = await buttonAt('Partida rápida');
     check('en el inicio, "Partida rápida" es el botón principal', !!quick?.visible && quick.primary && quick.focused);
     check('y queda en la mitad de abajo, al alcance del pulgar', !!quick && quick.y > HEIGHT * 0.5, `a ${Math.round(quick?.y ?? 0)} px de ${HEIGHT}`);
+    const about = await phone.evaluate(`[...document.querySelectorAll('[data-key="rival"] .note')].map((n) => n.textContent).join(' | ')`);
+    check('el inicio dice quién es el rival y cómo van', about.includes('«el Profe» ★') && /Vas 1 a 0|Te lleva 1 a 0/.test(about), about);
     await tapButton('Opciones');
     await sleep(150);
     await shot('07-opciones');
@@ -386,12 +430,17 @@ async function main() {
     await tapButton('Una mano');
     check('se puede cambiar de esquema desde las opciones', (await phone.evaluate('window.padel.settings.scheme')) === 'one');
     check('el movimiento asistido viene apagado', (await phone.evaluate('window.padel.settings.assistedMovement')) === false);
+    await tapButton('Ninguna');
+    check('las frases del rival se pueden apagar', (await phone.evaluate('window.padel.settings.lines')) === 'none');
+    await tapButton('Muchas');
     await tapButton('Volver');
 
     // ------------------------------------------------------------ one hand
     section('Una mano: arrastrar para moverse, deslizar rápido para pegar');
     await tapButton('Partida rápida');
     check('"Partida rápida" empieza a un toque', await reaches('playing'));
+    await sleep(200);
+    check('al que ya conoce lo saluda distinto', (await look()).bubble === '¡Volviste! Me alegra.', (await look()).bubble ?? 'sin globito');
     await watchEvents();
     await playOneHand({
       maxMs: 150_000,

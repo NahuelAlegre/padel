@@ -226,8 +226,8 @@ describe('la IA juega con las paredes', () => {
       config: cfg,
       seed: 21,
       teams: [
-        { name: 'A', players: [aiEntry(cfg, 'mora', 5)] },
-        { name: 'B', players: [aiEntry(cfg, 'mora', 6)] },
+        { name: 'A', players: [aiEntry(cfg, 'hard', 5)] },
+        { name: 'B', players: [aiEntry(cfg, 'hard', 6)] },
       ],
     });
 
@@ -258,8 +258,8 @@ describe('la IA juega con las paredes', () => {
       config: cfg,
       seed: 3,
       teams: [
-        { name: 'A', players: [aiEntry(cfg, 'mora', 1)] },
-        { name: 'B', players: [aiEntry(cfg, 'mora', 2)] },
+        { name: 'A', players: [aiEntry(cfg, 'hard', 1)] },
+        { name: 'B', players: [aiEntry(cfg, 'hard', 2)] },
       ],
     });
     // Put the match in the middle of a rally with that ball in the air.

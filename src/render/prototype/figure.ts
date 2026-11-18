@@ -1,3 +1,4 @@
+import type { MannerismClip, TellPose } from '../../characters/types';
 import { clamp, lerp } from '../../core/math';
 import type { ScenePlayer } from '../scene';
 
@@ -103,6 +104,122 @@ function solvePose(player: ScenePlayer): number {
   return 0;
 }
 
+/**
+ * What a character does with its body on top of the stroke or of standing
+ * still: the windup that gives its shot away, or a tic between points. Each is
+ * a few targets for the limbs and how much of them to apply.
+ */
+const overlay = {
+  weight: 0,
+  /** Racket arm: a pose that replaces the one of the stroke. */
+  racket: null as Pose | null,
+  /** Free hand: metres from the middle of the body toward the free side, and height. */
+  free: false,
+  freeX: 0,
+  freeY: 0,
+  /** Free hand measured across the screen instead (pointing somewhere on court). */
+  freeAcross: false,
+  /** Extra distance of each foot from the middle. */
+  stance: 0,
+  /** How far the hips drop. */
+  crouch: 0,
+  /** Head off to one side. */
+  head: 0,
+};
+
+const TELL_RACKET: Record<'plantWide' | 'crouchOpenFace' | 'stepIn', Pose> = {
+  plantWide: { hx: 0.2, hy: 1.74, rx: -0.14, ry: 2.1 },
+  crouchOpenFace: { hx: 0.5, hy: 0.62, rx: 0.98, ry: 0.5 },
+  stepIn: { hx: 0.4, hy: 1.02, rx: 0.72, ry: 1.2 },
+};
+const ACT_RACKET: Record<'kissRacket' | 'shoeTap', Pose> = {
+  kissRacket: { hx: 0.12, hy: 1.4, rx: 0.02, ry: 1.74 },
+  shoeTap: { hx: 0.26, hy: 0.62, rx: 0.14, ry: 0.2 },
+};
+
+/** How much of a tell is showing `t` seconds after the player made up its mind. */
+export function tellWeight(t: number): number {
+  const k = clamp(t / 0.14, 0, 1);
+  return 1 - (1 - k) * (1 - k);
+}
+
+function resetOverlay(): void {
+  overlay.weight = 0;
+  overlay.racket = null;
+  overlay.free = false;
+  overlay.freeAcross = false;
+  overlay.stance = 0;
+  overlay.crouch = 0;
+  overlay.head = 0;
+}
+
+function freeHand(x: number, y: number, across = false): void {
+  overlay.free = true;
+  overlay.freeX = x;
+  overlay.freeY = y;
+  overlay.freeAcross = across;
+}
+
+function setTell(pose: TellPose, kind: 'drive' | 'lob' | 'drop', aimX: number, t: number): void {
+  overlay.weight = tellWeight(t);
+  switch (pose) {
+    case 'pointAim':
+      // The free hand points to where the ball will go: to that side, and up for a lob.
+      freeHand(clamp(aimX / 2.4, -1, 1) * 0.62, kind === 'lob' ? 1.9 : kind === 'drop' ? 1.04 : 1.44, true);
+      break;
+    case 'plantWide':
+      overlay.racket = TELL_RACKET.plantWide;
+      overlay.stance = 0.2;
+      overlay.crouch = 0.07;
+      freeHand(0.44, 1.2);
+      break;
+    case 'crouchOpenFace':
+      overlay.racket = TELL_RACKET.crouchOpenFace;
+      overlay.crouch = 0.24;
+      overlay.stance = 0.06;
+      freeHand(0.4, 0.92);
+      break;
+    case 'stepIn':
+      // The step itself is taken by whoever places the figure on the court.
+      overlay.racket = TELL_RACKET.stepIn;
+      break;
+  }
+}
+
+function setAct(clip: MannerismClip, t: number, duration: number): void {
+  // In and out in a blink, so it can be cut at any moment without a jump.
+  overlay.weight = clamp(Math.min(t, duration - t) / 0.12, 0, 1);
+  const beat = Math.sin(t * 16);
+  switch (clip) {
+    case 'cap':
+      freeHand(0.1, 1.76);
+      break;
+    case 'glasses':
+      freeHand(0.04, 1.86);
+      break;
+    case 'whistle':
+      freeHand(0.05, 1.6);
+      break;
+    case 'sleeves':
+      // The free hand goes across to the other shoulder and tugs.
+      freeHand(-0.2, 1.4 + beat * 0.03);
+      break;
+    case 'wave':
+      freeHand(0.42 + beat * 0.12, 1.96);
+      break;
+    case 'neck':
+      overlay.head = Math.sin((t / duration) * Math.PI * 2) * 0.08;
+      break;
+    case 'kissRacket':
+      overlay.racket = ACT_RACKET.kissRacket;
+      break;
+    case 'shoeTap':
+      overlay.racket = ACT_RACKET.shoeTap;
+      overlay.crouch = 0.1 + Math.abs(beat) * 0.03;
+      break;
+  }
+}
+
 /** Limbs are capsules: [x0, y0, x1, y1, width] in screen pixels. */
 const limbs = new Float32Array(5 * 5);
 
@@ -139,6 +256,10 @@ const ARM = 0.72;
  * racket is taken to where the ball really is: the arm stretches and, when
  * that is not enough, the body leans after it.
  *
+ * A character adds two things on top, both small and both whole-body so they
+ * read at the size of a rival: the windup that gives its shot away, and a tic
+ * between points.
+ *
  * Everything is stroked twice, first wide in the outline colour and then in
  * the body colour, so the silhouette gets a single clean outline.
  *
@@ -173,7 +294,26 @@ export function drawFigure(
   const reachWeight = solvePose(player);
   const resting = player.anim === 'idle' || player.animPhase >= 1;
   const side = resting ? player.restSide : player.animSide;
-  const shoulderY = 1.42 - bob;
+
+  // What the character adds: its tell while the racket is back, a tic while it rests.
+  resetOverlay();
+  const tell = player.tell;
+  const act = player.act;
+  if (tell?.pose && player.anim === 'swing' && player.animPhase <= 0) setTell(tell.pose, tell.kind, tell.aimX, tell.t);
+  else if (act && resting) setAct(act.clip, act.t, act.duration);
+  const w = overlay.weight;
+
+  const drop = overlay.crouch * w;
+  const shoulderY = 1.42 - bob - drop;
+  if (overlay.racket && w > 0) {
+    pose.hx = lerp(pose.hx, overlay.racket.hx, w);
+    pose.hy = lerp(pose.hy - drop, overlay.racket.hy, w);
+    pose.rx = lerp(pose.rx, overlay.racket.rx, w);
+    pose.ry = lerp(pose.ry - drop, overlay.racket.ry, w);
+  } else {
+    pose.hy -= drop;
+    pose.ry -= drop;
+  }
 
   // Racket head and hand, in figure metres, from the pose of the stroke.
   let headX = lean + side * pose.rx;
@@ -204,18 +344,26 @@ export function drawFigure(
   const X = (m: number): number => sx + m * scale;
   const Y = (m: number): number => sy - m * scale;
 
-  const hipY = 0.9 - bob;
+  const hipY = 0.9 - bob - drop;
   const hipX = lean * 0.3;
-  setLimb(0, X(hipX - 0.085), Y(hipY), X(-0.115 + spread), Y(0.06 + Math.max(0, sin) * lift), 0.13 * scale);
-  setLimb(1, X(hipX + 0.085), Y(hipY), X(0.115 - spread), Y(0.06 + Math.max(0, -sin) * lift), 0.13 * scale);
+  const apart = 0.115 + overlay.stance * w;
+  setLimb(0, X(hipX - 0.085), Y(hipY), X(-apart + spread), Y(0.06 + Math.max(0, sin) * lift), 0.13 * scale);
+  setLimb(1, X(hipX + 0.085), Y(hipY), X(apart - spread), Y(0.06 + Math.max(0, -sin) * lift), 0.13 * scale);
   setLimb(2, X(hipX), Y(hipY + 0.06), X(lean), Y(shoulderY - 0.08), 0.36 * scale);
   // Free arm, then racket arm.
-  setLimb(3, X(lean - side * 0.17), Y(shoulderY - 0.04), X(lean - side * 0.3), Y(1.0 - bob), 0.09 * scale);
+  let freeX = lean - side * 0.3;
+  let freeY = 1.0 - bob - drop;
+  if (overlay.free && w > 0) {
+    const targetX = overlay.freeAcross ? lean + overlay.freeX : lean - side * overlay.freeX;
+    freeX = lerp(freeX, targetX, w);
+    freeY = lerp(freeY, overlay.freeY - drop, w);
+  }
+  setLimb(3, X(lean - side * 0.17), Y(shoulderY - 0.04), X(freeX), Y(freeY), 0.09 * scale);
   setLimb(4, X(lean + side * 0.17), Y(shoulderY - 0.04), X(handX), Y(handY), 0.09 * scale);
 
   const headRadius = 0.135 * scale;
-  const headCx = X(lean * 1.2);
-  const headCy = Y(1.66 - bob);
+  const headCx = X(lean * 1.2 + overlay.head * w);
+  const headCy = Y(1.66 - bob - drop);
   const outline = Math.max(2, scale * 0.045);
 
   ctx.lineCap = 'round';

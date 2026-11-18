@@ -5,9 +5,10 @@ import { shotName, TEXT } from '../../ui/text';
 import { Camera, type Projected } from '../camera';
 import type { Insets } from '../../core/layout';
 import type { Renderer, Scene, ScenePlayer } from '../scene';
+import type { Scenery, SceneryBaker, SceneryPatch } from '../scenery';
 import { VIEW, type CameraName } from '../view';
-import { drawCourtBack, drawCourtFront, drawNet } from './court';
-import { drawFigure } from './figure';
+import { paintScenery } from './court';
+import { drawFigure, tellWeight } from './figure';
 import { FONT, PAL } from './palette';
 
 interface Effect {
@@ -43,10 +44,11 @@ const GHOST_LOOP = 2;
 /**
  * Grey-box renderer: simple shapes, readable at phone size, cheap to draw.
  *
- * The court never changes, so it is painted once into an offscreen layer and
- * each frame starts by copying it. On top go, back to front: marks on the
- * floor, shadows, the far players, the net, the near players, the edges of the
- * near wall and finally the aids and messages.
+ * The court never changes, so it is painted once (see `Scenery`) and each
+ * frame starts by copying it. On top go, back to front: marks on the floor,
+ * shadows, the far players, the net, the near players, the near wall and
+ * finally the aids and messages. The net and the near wall are copied from
+ * their own pieces of the scenery.
  *
  * Text is slow to draw on a canvas, so every label is painted once into a
  * small bitmap and copied from there.
@@ -54,8 +56,9 @@ const GHOST_LOOP = 2;
 export class PrototypeRenderer implements Renderer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly camera = new Camera();
-  private readonly back: HTMLCanvasElement;
-  private readonly backCtx: CanvasRenderingContext2D;
+  private scenery: Scenery | null = null;
+  /** Goes up every time the scenery has to be made again: a late bake for an old size is dropped. */
+  private sceneryVersion = 0;
   private width = 1;
   private height = 1;
   private ratio = 1;
@@ -85,19 +88,24 @@ export class PrototypeRenderer implements Renderer {
   constructor(
     canvas: HTMLCanvasElement,
     private readonly court: CourtConfig,
+    /** Optional: makes a better scenery in its own time. The painted one is used meanwhile. */
+    private readonly bake: SceneryBaker | null = null,
   ) {
     const ctx = canvas.getContext('2d', { alpha: false });
-    this.back = document.createElement('canvas');
-    const backCtx = this.back.getContext('2d', { alpha: false });
-    if (!ctx || !backCtx) throw new Error('Canvas 2D is not available');
+    if (!ctx) throw new Error('Canvas 2D is not available');
     this.ctx = ctx;
-    this.backCtx = backCtx;
   }
 
   setCamera(name: CameraName): void {
     if (name === this.cameraName) return;
     this.cameraName = name;
     this.rebuild();
+  }
+
+  project(x: number, y: number, z: number, out: { x: number; y: number }): void {
+    const p = this.camera.project(x, y, z, this.q);
+    out.x = p.x;
+    out.y = p.y;
   }
 
   resize(width: number, height: number, pixelRatio: number, safeArea: Insets): void {
@@ -114,7 +122,7 @@ export class PrototypeRenderer implements Renderer {
     this.message.active = false;
   }
 
-  /** Fits the camera to the viewport and repaints the cached court. */
+  /** Fits the camera to the viewport and makes the scenery again. */
   private rebuild(): void {
     // The court keeps clear of the scoreboard on top, of the thumbs at the
     // bottom and of whatever the device reserves around the screen.
@@ -124,10 +132,26 @@ export class PrototypeRenderer implements Renderer {
       side: VIEW.insetSide + Math.max(this.safe.left, this.safe.right),
       align: VIEW.align,
     });
-    this.back.width = Math.max(1, Math.round(this.width * this.ratio));
-    this.back.height = Math.max(1, Math.round(this.height * this.ratio));
-    this.backCtx.setTransform(this.ratio, 0, 0, this.ratio, 0, 0);
-    drawCourtBack(this.backCtx, this.camera, this.court, this.width, this.height);
+    const view = {
+      camera: this.camera,
+      court: this.court,
+      width: this.width,
+      height: this.height,
+      pixelRatio: this.ratio,
+    };
+    // Painted now, so there is a court on the very next frame. A baked one
+    // replaces it whenever it is ready, unless the screen has changed again.
+    this.scenery = paintScenery(view);
+    const version = ++this.sceneryVersion;
+    if (this.bake) {
+      void this.bake(view)
+        .then((baked) => {
+          if (baked && version === this.sceneryVersion) this.scenery = baked;
+        })
+        .catch(() => {
+          // The painted scenery stays.
+        });
+    }
     this.trailCount = 0;
     // Labels were painted for the old pixel density.
     this.labels.clear();
@@ -232,9 +256,10 @@ export class PrototypeRenderer implements Renderer {
   render(scene: Scene, dt: number): void {
     this.clock += dt;
     const ctx = this.ctx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(this.back, 0, 0);
+    const scenery = this.scenery;
+    if (!scenery) return;
     ctx.setTransform(this.ratio, 0, 0, this.ratio, 0, 0);
+    ctx.drawImage(scenery.back, 0, 0, this.width, this.height);
 
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const effect = this.effects[i]!;
@@ -247,8 +272,8 @@ export class PrototypeRenderer implements Renderer {
     }
 
     this.drawFloor(scene);
-    this.drawEntities(scene);
-    drawCourtFront(ctx, this.camera, this.court);
+    this.drawEntities(scene, scenery.net);
+    this.copy(scenery.front);
     this.drawContact(scene);
     this.drawOverlays(scene);
     this.drawPointer(scene);
@@ -381,8 +406,12 @@ export class PrototypeRenderer implements Renderer {
     }
   }
 
+  private copy(patch: SceneryPatch): void {
+    this.ctx.drawImage(patch.image, patch.x, patch.y, patch.width, patch.height);
+  }
+
   /** Players, ball and net, sorted from the far wall toward the camera. */
-  private drawEntities(scene: Scene): void {
+  private drawEntities(scene: Scene, net: SceneryPatch): void {
     const items = this.items;
     let count = 0;
     const add = (kind: number, index: number, y: number): void => {
@@ -415,13 +444,16 @@ export class PrototypeRenderer implements Renderer {
       const item = items[i]!;
       if (item.kind === 0) this.drawPlayer(scene.players[item.index]!);
       else if (item.kind === 1) this.drawBall(scene);
-      else drawNet(this.ctx, this.camera, this.court);
+      else this.copy(net);
     }
     if (!scene.ball.visible) this.trailCount = 0;
   }
 
   private drawPlayer(player: ScenePlayer): void {
-    const p = this.camera.project(player.x, player.y, 0, this.p);
+    // One of the tells is a small step toward the net.
+    const tell = player.tell;
+    const step = tell?.pose === 'stepIn' ? tellWeight(tell.t) * 0.3 * (player.team === 0 ? 1 : -1) : 0;
+    const p = this.camera.project(player.x, player.y + step, 0, this.p);
     const scale = p.scale * VIEW.figureScale;
     // Where the ball of this stroke is met, in the metres of the drawn figure.
     const ball = this.camera.project(

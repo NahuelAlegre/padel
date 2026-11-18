@@ -1,5 +1,6 @@
+import { CAST } from '../characters/cast';
 import type { FormatName } from '../config';
-import { RIVALS, SPEEDS, type Settings } from './settings';
+import { RIVALS, SPEEDS, type LineFrequency, type Settings } from './settings';
 import { TEXT } from './text';
 
 export type ScreenName = 'menu' | 'pause' | 'options' | 'over';
@@ -20,6 +21,8 @@ export interface ScreenHandlers {
 export interface ScreenInfo {
   /** Score of the match that can be continued, or null. */
   saved: string | null;
+  /** About the rival that is selected: who it is, how it plays, and the history with it. */
+  rival: { who: string; style: string; record: string };
   /** Lines for "data on this device". */
   stats: string[];
   canVibrate: boolean;
@@ -30,6 +33,8 @@ export interface MatchResult {
   won: boolean;
   /** Games of the person and of the rival. */
   games: [number, number];
+  /** What the rival has to say about a rematch, if anything. */
+  quote: { who: string; text: string } | null;
 }
 
 type Child = Node | string;
@@ -61,7 +66,7 @@ function button(label: string, className: string, onClick: () => void, note = ''
 export class Screens {
   current: ScreenName | null = null;
   private cameFrom: ScreenName = 'menu';
-  private result: MatchResult = { won: false, games: [0, 0] };
+  private result: MatchResult = { won: false, games: [0, 0], quote: null };
 
   constructor(
     private readonly root: HTMLElement,
@@ -105,7 +110,6 @@ export class Screens {
   /** One touch and you are playing: the quick match is always the main button. */
   private menu(): HTMLElement {
     const info = this.info();
-    const rival = TEXT.rivals[this.settings.rival];
     const panel = el('section', 'panel', el('h1', '', TEXT.title));
     if (info.saved) {
       panel.append(button(TEXT.resumeMatch, 'btn', this.handlers.onContinue, info.saved));
@@ -116,8 +120,8 @@ export class Screens {
       this.choice(
         TEXT.rival,
         'rival',
-        RIVALS.map((id) => [id, TEXT.rivals[id].name] as const),
-        rival.style,
+        RIVALS.map((id) => [id, CAST[id].name] as const),
+        [`${info.rival.who} · ${info.rival.style}`, info.rival.record],
       ),
       el(
         'div',
@@ -142,15 +146,20 @@ export class Screens {
   }
 
   private over(): HTMLElement {
-    const { won, games } = this.result;
-    return el(
+    const { won, games, quote } = this.result;
+    const panel = el(
       'section',
       'panel',
       el('h2', '', won ? TEXT.win : TEXT.lose),
       el('p', 'result', `${games[0]} – ${games[1]} ${TEXT.games}`),
+    );
+    // The rival asks for another one right where the button is. No extra screen.
+    if (quote) panel.append(el('p', 'quote', el('b', '', `${quote.who}: `), `«${quote.text}»`));
+    panel.append(
       button(TEXT.rematch, 'btn primary', this.handlers.onRestart),
       button(TEXT.menu, 'btn', this.handlers.onMenu),
     );
+    return panel;
   }
 
   private options(): HTMLElement {
@@ -190,6 +199,18 @@ export class Screens {
         'speed',
         SPEEDS.map((value) => [value, TEXT.speedLabel(value)] as [number, string]),
         s.speedHint,
+      ),
+
+      el('h3', '', s.rivalGroup),
+      this.choice<'lines'>(
+        s.lines,
+        'lines',
+        [
+          ['many', s.linesMany],
+          ['few', s.linesFew],
+          ['none', s.linesNone],
+        ] satisfies Array<[LineFrequency, string]>,
+        s.linesHint,
       ),
 
       el('h3', '', s.aids),
@@ -235,7 +256,7 @@ export class Screens {
     label: string,
     key: K,
     options: ReadonlyArray<readonly [Settings[K], string]>,
-    note = '',
+    note: string | string[] = '',
   ): HTMLElement {
     const group = el('div', 'seg');
     group.setAttribute('role', 'group');
@@ -253,7 +274,9 @@ export class Screens {
     }
     const field = el('div', 'field', el('span', 'label', label), group);
     field.dataset.key = key;
-    if (note) field.append(el('p', 'note', note));
+    for (const line of typeof note === 'string' ? [note] : note) {
+      if (line) field.append(el('p', 'note', line));
+    }
     return field;
   }
 }

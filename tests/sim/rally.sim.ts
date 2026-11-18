@@ -6,13 +6,13 @@ import { aiEntry, humanEntry, playMatch, SKILLS, testConfig } from '../helpers';
 
 /**
  * Prints every hit of one match, to read how rallies actually unfold.
- *   SIM_RIVAL=mora SIM_SEED=3 npx vitest run --config vitest.sim.config.ts rally
+ *   SIM_RIVAL=chela SIM_SEED=3 npx vitest run --config vitest.sim.config.ts rally
  * With SIM_PERSON=average (or beginner, expert) the near side is a simulated person.
  */
 const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env;
 
 it('rally log', () => {
-  const rival = (env?.SIM_RIVAL ?? 'mora') as RivalId;
+  const rival = (env?.SIM_RIVAL ?? 'romina') as RivalId;
   const seed = Number(env?.SIM_SEED ?? 1);
   const person = env?.SIM_PERSON as keyof typeof SKILLS | undefined;
   const config = testConfig();

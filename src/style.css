@@ -204,6 +204,57 @@ body {
   color: #dfe2e7;
 }
 
+/*
+ * What the rival says: a small bubble that follows its head. It is flavour,
+ * never something needed to play, so it is kept from screen readers (the score
+ * and the result of every point are announced on their own).
+ */
+#bubble {
+  --x: 0px;
+  --y: 0px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: 64%;
+  padding: 6px 10px 7px;
+  border-radius: 12px;
+  background: var(--ink);
+  color: #101114;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  transform: translate(calc(var(--x) - 50%), calc(var(--y) - 100% - 8px)) scale(0.7);
+  transform-origin: 50% 100%;
+  opacity: 0;
+  transition:
+    opacity 0.1s ease-out,
+    transform 0.14s ease-out;
+}
+
+/* The tail, pointing down at whoever is speaking. */
+#bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-top-color: var(--ink);
+  border-bottom-width: 0;
+}
+
+#bubble.show {
+  opacity: 1;
+  transform: translate(calc(var(--x) - 50%), calc(var(--y) - 100% - 8px)) scale(1);
+}
+
+/* Reduced motion: it fades in where it is, without the pop. */
+#hud.calm #bubble {
+  transform: translate(calc(var(--x) - 50%), calc(var(--y) - 100% - 8px));
+  transition: opacity 0.1s ease-out;
+}
+
 #hint {
   position: absolute;
   left: 0;
@@ -292,6 +343,17 @@ body {
   color: var(--muted);
   font-size: 15px;
   line-height: 1.4;
+}
+
+/* What the rival says next to the rematch button. */
+.panel .quote {
+  margin-top: 12px;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.panel .quote b {
+  font-weight: 800;
 }
 
 .panel .result {
@@ -441,6 +503,12 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   #banner {
+    transition: none;
+  }
+
+  #bubble,
+  #bubble.show {
+    transform: translate(calc(var(--x) - 50%), calc(var(--y) - 100% - 8px));
     transition: none;
   }
 }

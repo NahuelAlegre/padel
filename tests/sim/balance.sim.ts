@@ -82,7 +82,7 @@ function report(title: string, makeTeams: (seed: number) => [PlayerEntry[], Play
 }
 
 describe('balance', () => {
-  const rivals: RivalId[] = ['lola', 'tincho', 'mora'];
+  const rivals: RivalId[] = ['beto', 'romina', 'chela'];
 
   for (const rival of rivals) {
     it(`${rival} contra sí misma`, () => {
@@ -105,18 +105,18 @@ describe('balance', () => {
   }
 
   it('persona con movimiento asistido', () => {
-    report('Persona promedio (movimiento asistido) vs tincho', (seed) => {
+    report('Persona promedio (movimiento asistido) vs romina', (seed) => {
       const config = testConfig();
-      return [[humanEntry(seed, SKILLS.average, { manual: false, reaction: 0.12 })], [aiEntry(config, 'tincho', seed + 1)]];
+      return [[humanEntry(seed, SKILLS.average, { manual: false, reaction: 0.12 })], [aiEntry(config, 'romina', seed + 1)]];
     });
   });
 
   it('dobles: cuatro IA', () => {
-    report('Dobles tincho', (seed) => {
+    report('Dobles (nivel medio)', (seed) => {
       const config = testConfig();
       return [
-        [aiEntry(config, 'tincho', seed), aiEntry(config, 'tincho', seed + 1)],
-        [aiEntry(config, 'tincho', seed + 2), aiEntry(config, 'tincho', seed + 3)],
+        [aiEntry(config, 'medium', seed), aiEntry(config, 'medium', seed + 1)],
+        [aiEntry(config, 'medium', seed + 2), aiEntry(config, 'medium', seed + 3)],
       ];
     });
   });

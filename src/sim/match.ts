@@ -270,6 +270,7 @@ export class Match {
         resetIntent(intent);
         this.controllers[i]!.update(this, player, intent);
         if (intent.home) player.homeMode = intent.home;
+        this.showCue(player, intent.cue);
         if (this.recorder && player.isHuman) this.recorder.capture(this.tick, i, intent);
       }
     }
@@ -346,6 +347,7 @@ export class Match {
       player.guide = null;
       player.swing = null;
       player.swingLockUntil = 0;
+      player.cue = null;
       player.homeMode = 'back';
       player.anim.kind = 'idle';
     }
@@ -495,6 +497,28 @@ export class Match {
     this.playSwing(player, 'swing', Infinity, intent);
   }
 
+  /**
+   * A player that has decided its shot takes the racket back for it before it
+   * swings. Nothing else changes: this is only what the opponent gets to see.
+   */
+  private showCue(player: Player, cue: ShotIntent | null): void {
+    if (cue !== player.cue) {
+      if (cue && !player.cue) player.cueAt = this.time;
+      player.cue = cue;
+    }
+    // A swing that was asked for owns the animation.
+    if (player.swing) return;
+    const anim = player.anim;
+    const armed = anim.kind === 'swing' && anim.t0 === Infinity;
+    if (!cue) {
+      if (armed) anim.kind = 'idle';
+      return;
+    }
+    if (this.phase !== 'rally') return;
+    const resting = anim.kind === 'idle' || this.time - anim.t0 >= anim.duration;
+    if (armed || resting) this.playSwing(player, 'swing', Infinity, cue);
+  }
+
   private playSwing(player: Player, kind: 'swing' | 'whiff', t0: number, intent: ShotIntent): void {
     const anim = player.anim;
     anim.kind = kind;
@@ -587,7 +611,7 @@ export class Match {
       low * shots.lowPenalty +
       shot.risk * shots.riskPenalty +
       this.heat * config.rules.heatError;
-    scale *= player.errorScale;
+    scale *= player.errorScale * (intent.scatter ?? 1);
 
     // A weak ball lands short and floats.
     const dir = teamDir(player.team);

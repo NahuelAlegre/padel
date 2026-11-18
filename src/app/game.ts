@@ -1,3 +1,6 @@
+import { CAST } from '../characters/cast';
+import { CHARACTER_TEXT } from '../characters/lines.es';
+import { toAILevel } from '../characters/style';
 import {
   CONTROLS,
   FORMATS,
@@ -18,16 +21,25 @@ import { PointerInput } from '../input/pointer';
 import { InputState } from '../input/state';
 import type { Platform } from '../platform/types';
 import { PrototypeRenderer } from '../render/prototype/renderer';
-import type { Scene } from '../render/scene';
+import type { Renderer, Scene } from '../render/scene';
 import { VIEW } from '../render/view';
 import { Viewport } from '../render/viewport';
 import { Match, type PlayerEntry, type SimEvent } from '../sim/match';
-import { pointLabel } from '../sim/score';
+import { isGoldenPoint, pointLabel } from '../sim/score';
 import { Hud } from '../ui/hud';
 import { Screens, type ScreenInfo } from '../ui/screens';
 import { QUALITY_SCALE, RIVALS, type Settings } from '../ui/settings';
 import { TEXT } from '../ui/text';
-import { saveMatch, saveProfile, saveSettings, type Profile, type SavedData, type SavedMatch } from './persistence';
+import {
+  newRivalRecord,
+  saveMatch,
+  saveProfile,
+  saveSettings,
+  type Profile,
+  type SavedData,
+  type SavedMatch,
+} from './persistence';
+import { isClassic, noteMatch, Personality } from './personality';
 import { createScene, fillScene, type SceneOptions } from './scene';
 
 export type AppState = 'menu' | 'playing' | 'paused' | 'over';
@@ -40,6 +52,15 @@ const MAX_STEPS_PER_FRAME = 12;
 const HUMAN_REACH = 1.3;
 /** With assisted movement on, the player is helped but not instantaneous. */
 const ASSISTED_REACTION = 0.12;
+/** How far above the feet a speech bubble points, in metres of the court. */
+const BUBBLE_HEIGHT = 2.05;
+
+/** Today as yyyy-mm-dd on the person's own calendar, for the history with each rival. */
+function today(): string {
+  const now = new Date();
+  const two = (n: number): string => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
+}
 
 /**
  * Glue between the simulation and the device: owns the match, feeds it the
@@ -62,7 +83,15 @@ export class Game {
   private saved: SavedMatch | null;
   private rival: RivalId;
   private readonly viewport: Viewport;
-  private readonly renderer: PrototypeRenderer;
+  /** Whatever draws the game. Nothing here knows which renderer it is. */
+  private readonly renderer: Renderer;
+  /** What the rival says and the tics it has. It listens to the match and never touches it. */
+  private readonly personality: Personality;
+  /** Place in `match.players` of the rival with a personality, or -1 when there is none. */
+  private rivalIndex = -1;
+  /** The point being played is a golden point. */
+  private golden = false;
+  private readonly anchor = { x: 0, y: 0 };
   private readonly input = new InputState();
   private readonly pointer: PointerInput;
   private readonly keyboard: KeyboardInput;
@@ -78,6 +107,8 @@ export class Game {
     debug: false,
     cueLead: 0,
     tutorial: null,
+    cast: [],
+    acts: [],
   };
   private ais: AIController[] = [];
   private safeArea: Insets = NO_INSETS;
@@ -105,6 +136,8 @@ export class Game {
     this.profile = data.profile;
     this.saved = data.match;
     this.rival = this.settings.rival;
+    // Its own dice: what is said and when never shares a generator with the simulation.
+    this.personality = new Personality(new Rng((Date.now() ^ 0x9e3779b9) >>> 0));
     this.config = createConfig();
     this.viewport = new Viewport(canvas, VIEW.dprCap);
     this.renderer = new PrototypeRenderer(canvas, this.config.court);
@@ -163,10 +196,12 @@ export class Game {
     else this.start('quick');
   }
 
-  start(mode: PlayMode, saved: SavedMatch | null = null): void {
+  start(mode: PlayMode, saved: SavedMatch | null = null, greet = true): void {
     this.mode = mode;
     this.rival = saved?.rival ?? this.settings.rival;
     this.match = this.createMatch(mode, saved);
+    // A match that is picked up again was already opened: nobody says hello twice.
+    const opening = this.meetRival(greet && !saved);
     this.renderer.reset();
     this.input.clear();
     this.pointer.release();
@@ -182,13 +217,64 @@ export class Game {
     this.setInputEnabled(true);
     if (mode !== 'demo' && !saved) {
       this.profile.matchesStarted++;
-      this.profile.byRival[this.rival].played++;
       saveProfile(this.platform.storage, this.profile);
       this.platform.analytics.track('match_start', { format: mode, rival: this.rival });
     }
     if (this.settings.fullscreen) this.setImmersive(true);
     this.drainEvents();
+    if (opening) this.say(opening);
     this.startLoop();
+  }
+
+  /**
+   * Works out who is on court. For a rival, that is also the history with it
+   * and what it says to open the match, which is what this returns.
+   */
+  private meetRival(greet: boolean): string | null {
+    const players = this.match.players;
+    const { cast, acts } = this.options;
+    cast.length = 0;
+    acts.length = 0;
+    for (let i = 0; i < players.length; i++) {
+      cast.push(null);
+      acts.push(null);
+    }
+    this.golden = false;
+    if (this.mode === 'demo') {
+      // Two of the cast play each other, and nobody talks.
+      cast[0] = CAST[this.demoRival()];
+      cast[1] = CAST[this.rival];
+      this.rivalIndex = -1;
+      this.personality.clear();
+      return null;
+    }
+    this.rivalIndex = players.findIndex((player) => !player.isHuman);
+    const rival = players[this.rivalIndex];
+    if (!rival) return null;
+    cast[this.rivalIndex] = CAST[this.rival];
+    const record = (this.profile.rivals[this.rival] ??= newRivalRecord(today()));
+    const opening = this.personality.begin(this.rival, rival.team, record, today(), greet);
+    // It gives its tell away once, to somebody it keeps beating.
+    if (opening.hint) record.hintShown = true;
+    return opening.line;
+  }
+
+  /** In the demo, who plays against the selected rival: the next one of the cast. */
+  private demoRival(): RivalId {
+    return RIVALS[(RIVALS.indexOf(this.rival) + 1) % RIVALS.length]!;
+  }
+
+  /** Puts a line in the rival's speech bubble, over its head. */
+  private say(text: string): void {
+    this.hud.speak(text);
+    this.placeBubble();
+  }
+
+  private placeBubble(): void {
+    const who = this.match.players[this.rivalIndex];
+    if (!who) return;
+    this.renderer.project(who.x, who.y, BUBBLE_HEIGHT * VIEW.figureScale, this.anchor);
+    this.hud.placeBubble(this.anchor.x, this.anchor.y, this.viewport.width);
   }
 
   private continueSaved(): void {
@@ -200,7 +286,8 @@ export class Game {
       this.profile.rematches++;
       this.platform.analytics.track('rematch');
     }
-    this.start(this.mode);
+    // The rival has just said its piece next to the button.
+    this.start(this.mode, null, false);
   }
 
   pause(): void {
@@ -249,7 +336,13 @@ export class Game {
     this.setInputEnabled(false);
     this.stopLoop();
     const games = this.match.score.games;
-    this.screens.show('over', { won: this.match.score.winner === 0, games: [games[0], games[1]] });
+    const won = this.match.score.winner === 0;
+    const line = this.mode === 'demo' ? null : this.personality.rematchLine(won);
+    this.screens.show('over', {
+      won,
+      games: [games[0], games[1]],
+      quote: line ? { who: CAST[this.rival].name, text: line } : null,
+    });
     this.draw();
   }
 
@@ -282,31 +375,35 @@ export class Game {
     this.ais = [];
 
     const seed = (Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0;
-    const ai = (id: RivalId, offset: number): PlayerEntry => {
+    const ai = (id: RivalId, offset: number, firstMatch = false): PlayerEntry => {
+      const who = CAST[id];
       const level = config.rivals[id];
+      // A coach feeds more balls to somebody he has just met.
+      if (firstMatch) level.feed = toAILevel(who, true).feed;
       const controller = new AIController(level, new Rng(seed + offset));
       this.ais.push(controller);
       return {
-        name: TEXT.rivals[id].name,
+        name: who.name,
         isHuman: false,
         manual: false,
         speedFactor: level.speedFactor,
         reaction: level.reaction,
         errorScale: level.errorScale,
         reachScale: 1,
-        hand: 1,
+        hand: who.hand,
+        wallBias: level.wallBias,
         controller,
       };
     };
 
     if (mode === 'demo') {
-      const other = RIVALS[(RIVALS.indexOf(this.rival) + 1) % RIVALS.length]!;
+      const other = this.demoRival();
       return new Match({
         config,
         seed,
         teams: [
-          { name: TEXT.rivals[other].name, players: [ai(other, 1)] },
-          { name: TEXT.rivals[this.rival].name, players: [ai(this.rival, 2)] },
+          { name: CAST[other].name, players: [ai(other, 1)] },
+          { name: CAST[this.rival].name, players: [ai(this.rival, 2)] },
         ],
       });
     }
@@ -328,7 +425,7 @@ export class Game {
       seed,
       teams: [
         { name: TEXT.you, players: [human] },
-        { name: TEXT.rivals[this.rival].name, players: [ai(this.rival, 1)] },
+        { name: CAST[this.rival].name, players: [ai(this.rival, 1, !this.profile.rivals[this.rival]?.played)] },
       ],
       resume: saved?.snapshot,
       // The first rally ever is the tutorial: the rival goes easy until a point is won.
@@ -347,13 +444,18 @@ export class Game {
     this.hud.scheme = settings.scheme;
     this.renderer.setCamera(settings.camera);
     this.platform.sound.setEnabled(true);
+    this.personality.frequency = settings.lines;
+    this.hud.calm = settings.reduceMotion;
+    if (settings.lines === 'none') this.hud.hush();
 
     // A new rival takes over the match in progress, unless it is a continued one against somebody else.
     if (this.mode !== 'demo' && this.state !== 'paused') this.rival = settings.rival;
     if (this.mode !== 'demo' && this.state === 'paused' && settings.rival !== this.rival) {
       this.rival = settings.rival;
-      this.match.teamNames[1] = TEXT.rivals[this.rival].name;
+      this.match.teamNames[1] = CAST[this.rival].name;
       this.hud.showScore(this.match);
+      // Somebody else walks on in the middle of the match, without a word.
+      this.meetRival(false);
     }
     const level = this.config.rivals[this.rival];
     for (const player of this.match.players) {
@@ -364,6 +466,7 @@ export class Game {
         player.speedFactor = level.speedFactor;
         player.reaction = level.reaction;
         player.errorScale = level.errorScale;
+        player.wallBias = level.wallBias;
       }
     }
     if (this.mode !== 'demo') for (const controller of this.ais) controller.level = level;
@@ -390,8 +493,16 @@ export class Game {
   private react(event: SimEvent): void {
     const { sound, storage, analytics } = this.platform;
     const playing = this.mode !== 'demo';
+    const record = playing ? this.profile.rivals[this.rival] : undefined;
+    if (playing) {
+      // The rival has its say. The serve closes its bubble: nothing waits for it.
+      const reaction = this.personality.onEvent(event, this.match);
+      if (reaction?.hush) this.hud.hush();
+      if (reaction?.say) this.say(reaction.say);
+    }
     switch (event.type) {
       case 'serveReady':
+        this.golden = isGoldenPoint(this.match.score, this.match.format);
         // A touch that began during the pause must not turn into the serve.
         this.pointer.release();
         this.input.takeSwing();
@@ -422,6 +533,11 @@ export class Game {
         if (!playing) break;
         if (event.winner === 0) this.profile.pointsWon++;
         else this.profile.pointsLost++;
+        if (record) {
+          record.longestRally = Math.max(record.longestRally, this.match.rallyHits);
+          if (this.golden && event.winner === 0) record.goldenWon++;
+          else if (this.golden) record.goldenLost++;
+        }
         sound.play(event.winner === 0 ? 'pointWon' : 'pointLost');
         if (event.winner === 0 && this.profile.pointsWon === 1) analytics.track('first_point_won');
         saveProfile(storage, this.profile);
@@ -430,10 +546,8 @@ export class Game {
         if (!playing) break;
         this.profile.matchesFinished++;
         this.profile.introDone = true;
-        if (event.winner === 0) {
-          this.profile.matchesWon++;
-          this.profile.byRival[this.rival].won++;
-        }
+        if (event.winner === 0) this.profile.matchesWon++;
+        if (record) noteMatch(record, event.winner === 0, today());
         this.saved = null;
         saveMatch(storage, null);
         saveProfile(storage, this.profile);
@@ -479,7 +593,7 @@ export class Game {
     if (saved && begun) {
       const score = saved.snapshot.score;
       savedLabel =
-        `${TEXT.rivals[saved.rival].name} · ${score.games[0]}–${score.games[1]} · ` +
+        `${CAST[saved.rival].name} · ${score.games[0]}–${score.games[1]} · ` +
         `${pointLabel(score, 0)}–${pointLabel(score, 1)}`;
     }
     const stats: string[] = [];
@@ -491,8 +605,22 @@ export class Game {
       if (hits > 0) stats.push(TEXT.stats.perfect(Math.round((profile.hits.perfect / hits) * 100)));
       if (profile.firstHitSeconds !== null) stats.push(TEXT.stats.firstHit(profile.firstHitSeconds));
     }
+    // Who the selected rival is, and how things stand with it.
+    const who = CAST[this.settings.rival];
+    const history = profile.rivals[who.id];
+    let standing: string = TEXT.record.never;
+    if (history && history.played > 0) {
+      const { wins, losses } = history;
+      standing = wins === losses ? TEXT.record.even(wins) : wins > losses ? TEXT.record.ahead(wins, losses) : TEXT.record.behind(wins, losses);
+      if (isClassic(history)) standing += ` ${TEXT.record.classic}`;
+    }
     return {
       saved: savedLabel,
+      rival: {
+        who: `«${who.nickname}» ${'★'.repeat(who.stars)}`,
+        style: CHARACTER_TEXT[who.id].style,
+        record: standing,
+      },
       stats,
       canVibrate: this.platform.haptics.available,
       canGoFullscreen: this.platform.display.canGoImmersive,
@@ -588,8 +716,11 @@ export class Game {
     }
     if (steps === MAX_STEPS_PER_FRAME) this.accumulator = 0;
 
+    // The rival's tic, if it is in the middle of one, and its bubble over its head.
+    if (this.rivalIndex >= 0) this.options.acts[this.rivalIndex] = this.personality.actAt(this.match.time);
     fillScene(this.scene, this.match, this.accumulator / SIM_DT, this.input, this.sceneOptions());
     this.renderer.render(this.scene, dt);
+    if (this.hud.speaking) this.placeBubble();
 
     this.stats.push(dt, performance.now() - workStart);
     if (this.stats.fresh) this.onStats();

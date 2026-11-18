@@ -1,6 +1,7 @@
 import type { CourtConfig } from '../../config';
 import { netHeightAt } from '../../sim/court';
 import type { Camera, Projected } from '../camera';
+import type { Scenery, SceneryPatch, SceneryView } from '../scenery';
 import { PAL } from './palette';
 
 type Ctx = CanvasRenderingContext2D;
@@ -94,9 +95,9 @@ function floorLine(ctx: Ctx, camera: Camera, x0: number, y0: number, x1: number,
 
 /**
  * Everything that never moves and sits behind the players: floor, lines, the
- * far wall and both side walls. Drawn once into a cached layer.
+ * far wall and both side walls.
  */
-export function drawCourtBack(ctx: Ctx, camera: Camera, court: CourtConfig, width: number, height: number): void {
+function drawCourtBack(ctx: Ctx, camera: Camera, court: CourtConfig, width: number, height: number): void {
   const hw = court.halfWidth;
   const hl = court.halfLength;
 
@@ -141,8 +142,8 @@ export function drawCourtBack(ctx: Ctx, camera: Camera, court: CourtConfig, widt
   ctx.stroke();
 }
 
-/** The net, drawn between the far and the near players every frame. */
-export function drawNet(ctx: Ctx, camera: Camera, court: CourtConfig): void {
+/** The net, which goes between the far and the near players. */
+function drawNet(ctx: Ctx, camera: Camera, court: CourtConfig): void {
   const hw = court.halfWidth;
   path(ctx, camera, [-hw, 0, 0, hw, 0, 0, hw, 0, court.netPost, 0, 0, court.netCenter, -hw, 0, court.netPost]);
   ctx.fillStyle = PAL.netFill;
@@ -177,7 +178,7 @@ export function drawNet(ctx: Ctx, camera: Camera, court: CourtConfig): void {
  * The near back wall stands between the camera and the player, so only its
  * edges are drawn: enough to know where it is without hiding the action.
  */
-export function drawCourtFront(ctx: Ctx, camera: Camera, court: CourtConfig): void {
+function drawCourtFront(ctx: Ctx, camera: Camera, court: CourtConfig): void {
   const hw = court.halfWidth;
   const y = -court.halfLength;
 
@@ -197,4 +198,77 @@ export function drawCourtFront(ctx: Ctx, camera: Camera, court: CourtConfig): vo
   ctx.strokeStyle = PAL.frontEdge;
   ctx.lineWidth = 1.25;
   ctx.stroke();
+}
+
+/** Canvases are kept from one size to the next: only their contents change. */
+const canvases: Record<'back' | 'net' | 'front', HTMLCanvasElement | null> = { back: null, net: null, front: null };
+
+function canvasFor(name: 'back' | 'net' | 'front', alpha: boolean): { canvas: HTMLCanvasElement; ctx: Ctx } {
+  const canvas = (canvases[name] ??= document.createElement('canvas'));
+  const ctx = canvas.getContext('2d', { alpha });
+  if (!ctx) throw new Error('Canvas 2D is not available');
+  return { canvas, ctx };
+}
+
+/**
+ * A transparent piece just big enough for the box around some points of the
+ * court, with `draw` painting into it in screen coordinates.
+ */
+function patch(
+  name: 'net' | 'front',
+  view: SceneryView,
+  corners: readonly number[],
+  draw: (ctx: Ctx) => void,
+): SceneryPatch {
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+  for (let i = 0; i < corners.length; i += 3) {
+    view.camera.project(corners[i]!, corners[i + 1]!, corners[i + 2]!, p);
+    left = Math.min(left, p.x);
+    right = Math.max(right, p.x);
+    top = Math.min(top, p.y);
+    bottom = Math.max(bottom, p.y);
+  }
+  // Room for the width of the strokes.
+  const pad = 4;
+  const x = Math.floor(left - pad);
+  const y = Math.floor(top - pad);
+  const width = Math.ceil(right + pad) - x;
+  const height = Math.ceil(bottom + pad) - y;
+
+  const { canvas, ctx } = canvasFor(name, true);
+  const ratio = view.pixelRatio;
+  canvas.width = Math.max(1, Math.round(width * ratio));
+  canvas.height = Math.max(1, Math.round(height * ratio));
+  ctx.setTransform(ratio, 0, 0, ratio, -x * ratio, -y * ratio);
+  draw(ctx);
+  return { image: canvas, x, y, width, height };
+}
+
+/**
+ * The grey scenery, painted with Canvas 2D: quick enough to be there on the
+ * first frame. See `Scenery` for what each piece is.
+ */
+export function paintScenery(view: SceneryView): Scenery {
+  const { camera, court, width, height, pixelRatio } = view;
+  const hw = court.halfWidth;
+  const hl = court.halfLength;
+
+  const back = canvasFor('back', false);
+  back.canvas.width = Math.max(1, Math.round(width * pixelRatio));
+  back.canvas.height = Math.max(1, Math.round(height * pixelRatio));
+  back.ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  drawCourtBack(back.ctx, camera, court, width, height);
+
+  return {
+    back: back.canvas,
+    net: patch('net', view, [-hw, 0, 0, hw, 0, 0, -hw, 0, court.netPost, hw, 0, court.netPost], (ctx) =>
+      drawNet(ctx, camera, court),
+    ),
+    front: patch('front', view, [-hw, -hl, 0, hw, -hl, 0, -hw, -hl, court.backFence, hw, -hl, court.backFence], (ctx) =>
+      drawCourtFront(ctx, camera, court),
+    ),
+  };
 }

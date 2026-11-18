@@ -47,9 +47,16 @@ export interface PlayerSetup {
   reachScale: number;
   /** 1 = right handed, -1 = left handed. */
   hand: 1 | -1;
+  /**
+   * Taste for the ball that comes back off a wall, when the player chooses its
+   * own contact: above 0 it would rather wait for the rebound, below 0 it
+   * takes the ball before the glass when it can. Left out, it is 0.
+   */
+  wallBias?: number;
 }
 
 export interface Player extends PlayerSetup {
+  wallBias: number;
   id: number;
   team: TeamId;
   /** Position inside the team: 0 plays the right side, 1 the left. */
@@ -75,6 +82,9 @@ export interface Player extends PlayerSetup {
   contact: InterceptPlan;
   swing: PendingSwing | null;
   swingLockUntil: number;
+  /** The shot it has decided to play and is winding up for, and since when. */
+  cue: ShotIntent | null;
+  cueAt: number;
   anim: PlayerAnim;
   /** Resting position during the rally: the back of the court or the net. */
   homeMode: 'back' | 'net';
@@ -83,6 +93,7 @@ export interface Player extends PlayerSetup {
 export function createPlayer(id: number, team: TeamId, index: number, setup: PlayerSetup): Player {
   return {
     ...setup,
+    wallBias: setup.wallBias ?? 0,
     id,
     team,
     index,
@@ -99,6 +110,8 @@ export function createPlayer(id: number, team: TeamId, index: number, setup: Pla
     contact: { trajId: 0, t: 0, x: 0, y: 0, z: 0, stanceX: 0, stanceY: 0, kind: 'bounce', reachable: true, slack: 0 },
     swing: null,
     swingLockUntil: 0,
+    cue: null,
+    cueAt: 0,
     anim: { kind: 'idle', t0: 0, duration: 0, side: 1, shot: 'drive', reachX: 0.6, reachY: 0.2, reachZ: 0.9 },
     homeMode: 'back',
   };

@@ -1,3 +1,6 @@
+import { CAST } from './characters/cast';
+import { toAILevel } from './characters/style';
+import type { CharacterId } from './characters/types';
 import type { MatchFormat } from './sim/score';
 import type { Quality, ShotKind } from './sim/types';
 
@@ -227,6 +230,12 @@ export interface AILevel {
   timingSigma: number;
   /** Multiplier on the scatter of its shots (1 = same as a person). */
   errorScale: number;
+  /**
+   * 0..1, how often it mishits a ball it got to: the unforced error. Timing
+   * only makes a shot weak, and a player that plays safe would otherwise
+   * never miss.
+   */
+  mishit: number;
   /** 0..1, how often it picks the best target instead of a random one. */
   smart: number;
   lobChance: number;
@@ -235,9 +244,32 @@ export interface AILevel {
   netRush: number;
   /** Seconds it takes to serve once in position. */
   serveDelay: number;
+  /** Pace of its shots against the usual one (1 = the same as a person). */
+  power: number;
+  /**
+   * Taste for the ball that comes back off a wall: above 0 it waits for the
+   * rebound, below 0 it takes the ball before the glass when it can.
+   */
+  wallBias: number;
+  /** 0..1, how wide it aims: 0 plays through the middle, 1 hunts the side walls. */
+  angle: number;
+  /** 0..1, how often its ordinary shot is hard and deep instead of safe and to the middle. */
+  aggression: number;
+  /** 0..1, how often it plays the ball to the opponent instead of away, like a coach feeding balls. */
+  feed: number;
+  /** From this many hits into a rally, every further hit adds `impatience` to its scatter. */
+  impatientAfter: number;
+  impatience: number;
+  /** Multiplier on its scatter when it has to play the ball off the glass. */
+  wallScatter: number;
+  /** Reached late, it always lobs. */
+  lobUnderPressure: boolean;
+  /** Seconds before contact at which it has decided its shot, and its windup shows it. */
+  tellLead: number;
 }
 
-export type RivalId = 'lola' | 'tincho' | 'mora';
+/** The rivals are the characters of the cast. */
+export type RivalId = CharacterId;
 
 export interface GameConfig {
   court: CourtConfig;
@@ -379,43 +411,11 @@ const defaults: GameConfig = {
     heatMax: 0.45,
     heatError: 1.2,
   },
+  // How each character plays, worked out from its style (see src/characters).
   rivals: {
-    // Calm: stays back and puts everything in the middle.
-    lola: {
-      reaction: 0.4,
-      speedFactor: 0.74,
-      timingSigma: 0.2,
-      errorScale: 1.4,
-      smart: 0.25,
-      lobChance: 0.1,
-      dropChance: 0.02,
-      netRush: 0.1,
-      serveDelay: 1.2,
-    },
-    // Lobs a lot and takes the net behind them.
-    tincho: {
-      reaction: 0.28,
-      speedFactor: 0.88,
-      timingSigma: 0.11,
-      errorScale: 1.1,
-      smart: 0.55,
-      lobChance: 0.38,
-      dropChance: 0.06,
-      netRush: 0.8,
-      serveDelay: 1,
-    },
-    // Attacks: serve and volley, smashes whatever is short.
-    mora: {
-      reaction: 0.2,
-      speedFactor: 0.96,
-      timingSigma: 0.085,
-      errorScale: 1,
-      smart: 0.85,
-      lobChance: 0.14,
-      dropChance: 0.12,
-      netRush: 1,
-      serveDelay: 0.9,
-    },
+    beto: toAILevel(CAST.beto),
+    romina: toAILevel(CAST.romina),
+    chela: toAILevel(CAST.chela),
   },
 };
 

@@ -1,3 +1,4 @@
+import type { Character } from '../characters/types';
 import { SIM_DT } from '../config';
 import { lerp } from '../core/math';
 import type { InputState } from '../input/state';
@@ -11,8 +12,10 @@ import {
   createPointerFeedback,
   type PointerFeedback,
   type Scene,
+  type SceneAct,
   type SceneAim,
   type ScenePlayer,
+  type SceneTell,
   type SceneTutorial,
 } from '../render/scene';
 
@@ -25,6 +28,10 @@ export interface SceneOptions {
   /** How much earlier than the real contact the timing ring closes, in seconds. */
   cueLead: number;
   tutorial: SceneTutorial | null;
+  /** Who each player of the match is, by position in `match.players`. Null for nobody in particular. */
+  cast: Array<Character | null>;
+  /** The tic each of them is in the middle of, if any. */
+  acts: Array<SceneAct | null>;
 }
 
 export function createScene(pointer: PointerFeedback = createPointerFeedback()): Scene {
@@ -48,6 +55,8 @@ const bounce = { x: 0, y: 0, eta: 0, first: true };
 const contact = { x: 0, y: 0, z: 0, eta: 0, perfect: 0, good: 0 };
 const aim: SceneAim = { x: 0, y: 0, kind: 'drive', forehand: true, risk: 0, armed: false };
 const guide = { x: 0, y: 0 };
+/** One per player, reused: what its windup is giving away. */
+const tells: SceneTell[] = [];
 const intent: ShotIntent = { aim: 0, depth: 0.6, lob: false, power: 1 };
 const context: ShotContext = {
   team: 0,
@@ -111,6 +120,9 @@ export function fillScene(
         reachX: 0,
         reachY: 0,
         reachZ: 0,
+        character: null,
+        tell: null,
+        act: null,
       };
       scene.players[i] = out;
     }
@@ -133,6 +145,22 @@ export function fillScene(
     out.reachX = anim.reachX;
     out.reachY = anim.reachY;
     out.reachZ = anim.reachZ;
+
+    const who = options.cast[i] ?? null;
+    out.character = who ? who.id : null;
+    out.act = options.acts[i] ?? null;
+    // The windup gives the shot away while the racket is back, waiting for the ball.
+    const cue = player.cue;
+    if (cue && anim.kind === 'swing' && time < anim.t0) {
+      const tell = (tells[i] ??= { kind: 'drive', pose: null, aimX: 0, t: 0 });
+      tell.kind = cue.lob ? 'lob' : cue.depth <= match.config.shots.dropAt ? 'drop' : 'drive';
+      tell.pose = who?.tell.cues[tell.kind] ?? null;
+      tell.aimX = cue.aim * match.config.shots.specs.drive.aimRange - x;
+      tell.t = Math.max(0, time - player.cueAt);
+      out.tell = tell;
+    } else {
+      out.tell = null;
+    }
   }
   scene.players.length = match.players.length;
 

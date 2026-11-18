@@ -1,4 +1,4 @@
-import { createConfig, type GameConfig, type RivalId } from '../src/config';
+import { createConfig, type AILevel, type GameConfig, type RivalId } from '../src/config';
 import { AIController } from '../src/control/ai';
 import { HumanController } from '../src/control/human';
 import { Rng } from '../src/core/rng';
@@ -12,8 +12,36 @@ import type { PlayerIntent } from '../src/sim/types';
 /** Reach multiplier the game gives to a person (see src/app/game.ts). */
 export const HUMAN_REACH = 1.3;
 
-export function aiEntry(config: GameConfig, rival: RivalId, seed: number, name = 'IA'): PlayerEntry {
-  const level = config.rivals[rival];
+/** Nothing of a character: normal pace, no taste for the walls, aims wide, hits deep, no habits. */
+const plain = {
+  mishit: 0,
+  power: 1,
+  wallBias: 0,
+  angle: 1,
+  aggression: 1,
+  feed: 0,
+  impatientAfter: Infinity,
+  impatience: 0,
+  wallScatter: 1,
+  lobUnderPressure: false,
+  tellLead: 0.35,
+};
+
+/**
+ * Computer players of three strengths with no personality. The tests of the
+ * mechanics use these, so tuning a character does not move them.
+ */
+export const LEVELS = {
+  easy: { reaction: 0.4, speedFactor: 0.74, timingSigma: 0.2, errorScale: 1.4, smart: 0.25, lobChance: 0.1, dropChance: 0.02, netRush: 0.1, serveDelay: 1.2, ...plain },
+  medium: { reaction: 0.28, speedFactor: 0.88, timingSigma: 0.11, errorScale: 1.1, smart: 0.55, lobChance: 0.38, dropChance: 0.06, netRush: 0.8, serveDelay: 1, ...plain },
+  hard: { reaction: 0.2, speedFactor: 0.96, timingSigma: 0.085, errorScale: 1, smart: 0.85, lobChance: 0.14, dropChance: 0.12, netRush: 1, serveDelay: 0.9, ...plain },
+} satisfies Record<string, AILevel>;
+
+export type LevelName = keyof typeof LEVELS;
+
+/** A computer player: one of the plain levels, or a character of the cast as the game sets it up. */
+export function aiEntry(config: GameConfig, who: LevelName | RivalId, seed: number, name = 'IA'): PlayerEntry {
+  const level: AILevel = who in LEVELS ? LEVELS[who as LevelName] : config.rivals[who as RivalId];
   return {
     name,
     isHuman: false,
@@ -23,6 +51,7 @@ export function aiEntry(config: GameConfig, rival: RivalId, seed: number, name =
     errorScale: level.errorScale,
     reachScale: 1,
     hand: 1,
+    wallBias: level.wallBias,
     controller: new AIController(level, new Rng(seed)),
   };
 }

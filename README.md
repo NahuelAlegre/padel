@@ -44,7 +44,7 @@ npm run preview:host
 | `npm run dev:host` | Lo mismo, visible desde otros dispositivos de la red. |
 | `npm run build` | Chequea tipos y genera `dist/`. |
 | `npm run preview` | Sirve `dist/` tal como va a quedar publicado. |
-| `npm test` | Tests de física, reglas, puntuación, golpes, gestos, guardado y arquitectura (Vitest). |
+| `npm test` | Tests de física, reglas, puntuación, golpes, gestos, personajes, guardado y arquitectura (Vitest). |
 | `npm run sim` | Juega cientos de partidos sin pantalla e imprime estadísticas de balance. |
 | `npm run smoke` | Abre el build en un Chrome con emulación de celular y lo juega con toques reales. |
 | `npm run perf` | Mide los cuadros por segundo con emulación de celular y CPU frenada. |
@@ -55,7 +55,7 @@ Atajos de desarrollo en la URL: `?demo` arranca un partido de IA contra IA, `?lo
 
 ## Cómo se juega
 
-**La primera vez no hay menú.** El juego abre directo en la cancha, con tu saque listo y un pulgar fantasma que muestra el gesto. El primer peloteo es el tutorial: el rival devuelve una pelota lenta hacia donde estás y deja pasar la siguiente, hasta que ganás un punto. Una vez que te salió el primer golpe, las visitas siguientes abren en la pantalla de inicio, con "Partida rápida" como botón principal, abajo, donde ya está el pulgar.
+**La primera vez no hay menú.** El juego abre directo en la cancha, con tu saque listo, un pulgar fantasma que muestra el gesto y Beto, el profe, que saluda desde el otro lado. El primer peloteo es el tutorial: devuelve una pelota lenta hacia donde estás y deja pasar la siguiente, hasta que ganás un punto. Una vez que te salió el primer golpe, las visitas siguientes abren en la pantalla de inicio, con "Partida rápida" como botón principal, abajo, donde ya está el pulgar.
 
 | Formato | Qué es |
 | --- | --- |
@@ -122,13 +122,21 @@ Un timing mediocre no manda la pelota afuera. Los errores salen del riesgo que e
 
 ### Rivales
 
-| Rival | Estilo | Para quién |
-| --- | --- | --- |
-| Lola | Tranquila: se queda en el fondo y devuelve todo al medio. Reacciona tarde y corre poco. | El primer rival. Se le puede ganar el primer día. |
-| Tincho | Globero: tira muchos globos y sube a la red detrás. | Parejo para alguien que ya le agarró la mano. |
-| Mora | Atacante: saca y sube, volea y remata lo que quede corto. | Difícil. |
+Son los tres primeros del elenco diseñado en `docs/personajes.md` (rama de personajes). La idea es que se reconozcan por cómo juegan, no por el nombre:
 
-Ninguno hace trampa: predicen la pelota con la misma física que la marca de pique, y se equivocan en el timing y en la puntería como una persona.
+| Rival | Cómo juega | Cómo se le gana | Gesto delator |
+| --- | --- | --- | --- |
+| **Beto**, «el Profe» ★ | Pelotas cómodas, al medio y hacia vos. Poca potencia. | Con ángulos: se mueve poco de costado y se equivoca seguido. | Señala con la mano libre a dónde va a tirar. |
+| **Romina**, «la Topadora» ★★ | Pega plano y fuerte desde donde esté y sube a la red. | Con paciencia: después del cuarto golpe se va desordenando, y la pared le cuesta. | Se planta con las piernas abiertas y la pala detrás de la cabeza: viene un cañonazo. |
+| **Chela**, «la Astronauta» ★★★ | Globos altísimos, pared y casi ningún error. Si llega exigida, siempre tira globo. | Atacando y haciéndola correr: es lenta. | Se agacha con la pala abierta: viene globo. Un pasito adelante: viene chiquita. |
+
+Ninguno hace trampa: predicen la pelota con la misma física que la marca de pique.
+
+**El gesto delator no miente.** El rival decide el golpe entre 0,45 y 0,55 s antes del contacto y desde ese momento su armado lo muestra. No lo cambia salvo que cambie la pelota. La primera vez no se nota; a la quinta te anticipás.
+
+**Manías y frases, sin frenar nada.** Entre punto y punto el rival tiene un tic corto (Beto se acomoda la gorra, Romina golpea la pala contra la zapatilla, Chela saluda al banco) y a veces dice algo en un globito sobre su cabeza: en más o menos un tercio de los puntos, nunca tres seguidos y sin repetirse enseguida. Todo ocurre dentro de la pausa que ya existe: el saque cierra el globito y corta el tic, y el rival nunca demora su saque por esto. Las frases se pueden poner en "Pocas" o "Ninguna" y nunca dicen nada necesario para jugar.
+
+**Te reconocen.** El juego guarda la historia con cada rival en el dispositivo. La primera vez se presentan ("¡Hola! Soy Beto, el profe."), después te saludan distinto, y al terminar piden la revancha al lado del botón ("¿Otra? ¡De una!"). Si un rival te ganó tres veces seguidas, al empezar el siguiente partido te cuenta su gesto delator, una sola vez. No hay rachas que castiguen ni nada que se pierda por perder.
 
 ### Entre punto y punto
 
@@ -136,7 +144,7 @@ La pausa dura un segundo como mucho y se saltea con un toque. Al terminar el par
 
 ### Opciones
 
-Esquema de control y lado del joystick, velocidad del juego (60 %, 80 %, 100 %), movimiento asistido, guía de dónde pararse, marca de dónde pica, anillo de timing, reducir movimiento, vibración, cámara (tres encuadres para comparar), resolución, pantalla completa y contador de cuadros. Abajo se ven los datos guardados en el dispositivo.
+Esquema de control y lado del joystick, velocidad del juego (60 %, 80 %, 100 %), frases del rival (muchas, pocas, ninguna), movimiento asistido, guía de dónde pararse, marca de dónde pica, anillo de timing, reducir movimiento, vibración, cámara (tres encuadres para comparar), resolución, pantalla completa y contador de cuadros. Abajo se ven los datos guardados en el dispositivo.
 
 **Movimiento asistido** es una opción de accesibilidad y viene apagada: el jugador corre solo hacia la pelota y la persona solo pega.
 
@@ -146,6 +154,7 @@ Esquema de control y lado del joystick, velocidad del juego (60 %, 80 %, 100 %),
 src/
   config.ts          Todos los números ajustables del juego, en un solo lugar
   core/              Utilidades sin estado de juego: matemática, azar con semilla, estadísticas de cuadros
+  characters/        El elenco: estilo de juego, rasgos, gesto delator, manías y frases de cada personaje
   sim/               La simulación. No sabe nada de pantalla, DOM, reloj ni dispositivos
     ball.ts            Física de la pelota: gravedad, pique, vidrio, reja, red
     court.ts           Geometría de la cancha y perfiles de las paredes
@@ -160,16 +169,18 @@ src/
     match.ts           El partido: une todo y avanza de a un paso fijo
   control/           Quién decide por cada jugador
     human.ts           Lee la entrada abstracta
-    ai.ts              Los rivales, cada uno con su estilo
+    ai.ts              El rival: decide el golpe antes de pegar y lo muestra
     autopilot.ts       Movimiento automático, compartido por la IA y por el movimiento asistido
   input/             Táctil, mouse y teclado, traducidos a "quiero la pelota acá" y "me muevo hacia allá"
   platform/          Lo único que conoce el navegador: guardado, vibración, sonido, pantalla, ciclo de vida
   render/            Todo lo que se ve
     scene.ts           El contrato entre el juego y cualquier renderer
+    scenery.ts         El escenario en tres capas, pintado u horneado una vez
     camera.ts          Proyección pseudo-3D y encuadre automático
     prototype/         El renderer actual, de formas grises
   ui/                Marcador, menús, opciones y textos (DOM)
-  app/               El pegamento: bucle principal, armado de la escena, flujo de pantallas, guardado
+  app/               El pegamento: bucle principal, armado de la escena, flujo de pantallas, guardado,
+                     y lo que dice y hace el rival entre puntos
 tests/               Tests y simulaciones de balance
 scripts/             Medición de rendimiento y prueba de punta a punta en un navegador real
 ```
@@ -186,7 +197,26 @@ La simulación no usa `Math.random`, el reloj ni el navegador: todo el azar sale
 
 ### Render separado de la lógica
 
-Un renderer no lee la simulación. Recibe un `Scene` por cuadro (pelota, jugadores con su animación abstracta y hacia dónde se estiran, marca de pique, anillo de timing, marca de objetivo con el golpe que va a salir, pisadas, lo que hacen los pulgares, tutorial) y los eventos de lo que pasó (golpe con su nombre y calidad, pique, pared, punto). Para integrar el arte final alcanza con escribir otra clase que implemente `Renderer` ([src/render/scene.ts](src/render/scene.ts)) y cambiar una línea en [src/app/game.ts](src/app/game.ts). El renderer gris vive entero en [src/render/prototype/](src/render/prototype/).
+Un renderer no lee la simulación. Recibe un `Scene` por cuadro (pelota, jugadores con su animación abstracta y hacia dónde se estiran, qué personaje es cada uno, el gesto con el que delata su golpe y su manía, marca de pique, anillo de timing, marca de objetivo con el golpe que va a salir, pisadas, lo que hacen los pulgares, tutorial) y los eventos de lo que pasó (golpe con su nombre y calidad, pique, pared, punto). El juego solo conoce la interfaz `Renderer` ([src/render/scene.ts](src/render/scene.ts)): para integrar el arte final alcanza con escribir otra clase que la implemente y cambiar una línea en [src/app/game.ts](src/app/game.ts). El renderer gris vive entero en [src/render/prototype/](src/render/prototype/).
+
+### El escenario en tres capas
+
+Lo que no se mueve (cancha, paredes, red) solo depende del tamaño de la pantalla y de la cámara, así que se hace una vez y en cada cuadro se copia ([src/render/scenery.ts](src/render/scenery.ts)). Son tres piezas porque los jugadores van en el medio:
+
+| Capa | Qué tiene | Dónde va |
+| --- | --- | --- |
+| `back` | Piso, líneas, pared del fondo y laterales. Opaca, pantalla completa. | Primero. |
+| `net` | La red, recortada a su rectángulo. | Sobre los jugadores del fondo y debajo de los de adelante. |
+| `front` | La pared cercana, recortada a su rectángulo. | Sobre todo lo que hay en la cancha. |
+
+Hoy las pinta Canvas 2D (`paintScenery`). Es la misma separación que recomienda la investigación de gráficos livianos para hornear el escenario con WebGL2, y está preparada para eso sin implementarlo:
+
+- El renderer acepta un **horneador** opcional (`SceneryBaker`): una función que devuelve las tres piezas cuando las tenga, o `null` si no puede (no hay WebGL2, el shader no compila).
+- **Nunca se espera al horneado.** Al cambiar el tamaño se pinta el escenario 2D, que es inmediato, y el horneado lo reemplaza cuando llega. Uno que llega tarde, para una pantalla que ya cambió, se descarta. Ninguna llamada de `Renderer` es asíncrona.
+- Las piezas son `CanvasImageSource`: una vez horneadas se pueden copiar a un canvas 2D y soltar el contexto WebGL.
+- Para que el shader pinte exactamente la misma cancha, la cámara da su inversa: `Camera.eye` y `Camera.ray(px, py)`.
+
+Un renderer WebGL2 propio para todo el juego (la segunda etapa de esa investigación) es otra clase detrás de la misma interfaz. El renderer recibe el canvas y él pide el contexto, así que cada uno pide el suyo; el de Canvas 2D queda como respaldo. El marcador, los menús y los globitos no se enteran: son DOM, y lo que necesitan de la cancha (dónde está la cabeza de un jugador) lo piden con `Renderer.project`.
 
 El marcador, los mensajes y los menús son DOM encima del canvas: texto nítido a cualquier resolución, botones de verdad, foco de teclado y lectores de pantalla sin trabajo extra.
 
@@ -209,6 +239,28 @@ Un `Match` recibe dos equipos con la cantidad de jugadores que sea, y cada jugad
 Pedir un golpe no es pegar: **arma** al jugador con una intención (lado, profundidad, por arriba o no). El contacto ocurre cuando la pelota llega, y ahí `resolveShot` decide qué golpe sale y a dónde va. Es una función pura, así que la marca de objetivo muestra exactamente lo que va a pasar. El error de timing es la diferencia entre el momento en que se pidió el golpe y el del contacto.
 
 Para un jugador que se mueve a mano, el contacto se recalcula en cada paso para el lugar donde está parado (`contactNear`): la pelota a su alcance que quede mejor ubicada y sea más cómoda. Un jugador automático, en cambio, elige el contacto y corre hacia él (`planIntercept`).
+
+### Rivales con personalidad
+
+Un personaje es un dato ([src/characters/](src/characters/)). Lo que cambia cómo juega entra a la simulación como números; todo lo demás es presentación y no toca un peloteo.
+
+**Lo que juega.** `toAILevel` traduce el estilo (once valores de 0 a 1: agresividad, red, pared, globo, chiquita, potencia, precisión, errores, velocidad, lectura, ángulo) y los rasgos a los parámetros de la IA. Los ganchos nuevos en el motor son pocos:
+
+| Gancho | Qué hace |
+| --- | --- |
+| `PlayerIntent.cue` | El golpe que el jugador ya decidió. No cambia nada del peloteo: es lo que muestra su armado. |
+| `power` | Multiplica la velocidad de sus golpes (el remate tiene tope). |
+| `wallBias` | Gusto por la pelota que vuelve de la pared, al elegir el contacto. |
+| `angle`, `aggression` | Qué tan abierto apunta, y cuánto prefiere el golpe fuerte y profundo al seguro. |
+| `feed` | Juega hacia el rival en vez de lejos, como un profe (rasgo de Beto; más la primera vez). |
+| `impatientAfter`, `impatience` | Dispersión que crece con cada golpe del peloteo (rasgo de Romina). |
+| `wallScatter` | Dispersión al jugar de pared (rasgo de Romina). |
+| `lobUnderPressure` | Exigida, siempre globo (rasgo de Chela). |
+| `mishit` | Cada tanto le pega mal. Sin esto, un rival que juega seguro no erraría nunca, porque el timing solo debilita el golpe. |
+
+**Lo que se ve y se lee.** `Personality` ([src/app/personality.ts](src/app/personality.ts)) escucha los eventos del partido y decide frases y manías. Tiene su propio generador de azar, distinto del de la simulación: con las frases prendidas o apagadas el partido es idéntico, golpe por golpe, y hay un test que lo verifica. El globito es DOM y sigue a la cabeza del rival; los gestos y las manías son poses de cuerpo entero, para que se lean al tamaño del rival.
+
+**Lo que se dejó afuera** del diseño del elenco, por ahora: los otros siete personajes, las reacciones propias al ganar o perder un punto, el busto en el marcador, la tarjeta de presentación, la escalera del club, el rival sugerido en la partida rápida, los compañeros y sus avisos en dobles, y las voces.
 
 ### Los errores salen de la física
 
@@ -256,7 +308,8 @@ No hay cuentas ni registro. Son tres documentos JSON chicos, detrás de `platfor
 
 - **Opciones.**
 - **Partido en curso**: formato, rival, marcador, quién saca y qué intento de saque es. Se guarda al empezar cada punto y se borra al terminar el partido.
-- **Perfil**: solo cuentas. Partidos empezados, terminados y ganados, por rival; puntos; golpes por calidad de timing; revanchas; y cuántos segundos pasaron desde abrir el juego hasta el primer golpe.
+- **Perfil**: solo cuentas. Partidos empezados, terminados y ganados; puntos; golpes por calidad de timing; revanchas; y cuántos segundos pasaron desde abrir el juego hasta el primer golpe.
+- **Historia con cada rival** (unos 150 bytes por rival): cuándo se conocieron y cuándo jugaron por última vez, partidos ganados y perdidos, racha, puntos de oro, el peloteo más largo y si ya contó su gesto delator.
 
 `exportData` e `importData` pasan todo a un único texto y de vuelta, para llevarse el progreso a otro dispositivo. Todavía no hay un botón que los use.
 
@@ -272,7 +325,9 @@ Casi todo lo que define cómo se siente el juego está en [src/config.ts](src/co
 | Velocidad, altura y profundidad de cada golpe | `shots.specs` |
 | Cuánto cuesta cada calidad de timing, estirarse, el riesgo | `shots.quality` y los `*Penalty` |
 | Velocidad y alcance de los jugadores, desde dónde se remata o se volea | `player` |
-| Rivales | `rivals` |
+| Rivales: estilo, rasgos, gesto delator, manías | [src/characters/cast.ts](src/characters/cast.ts) |
+| Cómo el estilo se vuelve juego | [src/characters/style.ts](src/characters/style.ts) |
+| Frases | [src/characters/lines.es.ts](src/characters/lines.es.ts) |
 | Formatos de partido | `FORMATS` |
 | Pausas, aceleración de los peloteos largos | `rules` |
 | Gestos: joystick, distancias para apuntar, qué es un deslizamiento rápido | `CONTROLS` |
@@ -283,13 +338,15 @@ El alcance extra de la persona (`HUMAN_REACH`) está en [src/app/game.ts](src/ap
 
 `npm run sim` sirve para ver el efecto de un cambio sin jugar. Usa un jugador simulado que pasa por la misma entrada que una persona: empuja el joystick hacia las pisadas, con demora y con error, y suelta el golpe mirando el anillo. Con los valores actuales, sobre 40 partidas rápidas por casilla:
 
-| Jugador simulado | contra Lola | contra Tincho | contra Mora |
+| Jugador simulado | contra Beto ★ | contra Romina ★★ | contra Chela ★★★ |
 | --- | --- | --- | --- |
-| Principiante (timing ±160 ms, se para a 70 cm del lugar ideal) | gana 70 % | gana 5 % | gana 0 % |
-| Promedio (±100 ms, 45 cm) | gana 98 % | gana 43 % | gana 15 % |
-| Experto (±50 ms, 25 cm) | gana 100 % | gana 100 % | gana 88 % |
+| Principiante (timing ±160 ms, se para a 70 cm del lugar ideal) | gana 65 % | gana 15 % | gana 3 % |
+| Promedio (±100 ms, 45 cm) | gana 98 % | gana 65 % | gana 23 % |
+| Experto (±50 ms, 25 cm) | gana 100 % | gana 100 % | gana 100 % |
 
-Un punto dura de promedio entre 5 y 7 golpes contra Lola, entre 8 y 14 contra Tincho y entre 8 y 16 contra Mora. Una partida rápida dura entre 2 y 5 minutos y medio de juego. Con movimiento asistido el jugador promedio le gana a Tincho 37 de 40. Cerca de la mitad de los golpes son salidas de pared y entre el 2 % y el 4 % contraparedes.
+Un punto dura de promedio entre 5 y 7 golpes contra Beto, entre 7 y 11 contra Romina y entre 9 y 13 contra Chela. Una partida rápida dura entre 2 y 5 minutos y medio de juego. Con movimiento asistido el jugador promedio le gana a Romina 39 de 40.
+
+La forma de cada estilo es la del diseño del elenco. El filo (precisión, errores, velocidad, lectura) se calibró con esta simulación para que las estrellas digan lo que dicen, y no coincide con la tabla del diseño: en este motor un rival que juega seguro casi no erra, así que Beto es fácil porque le pega mal seguido y es lento, y los errores de Romina están en sus rasgos y en el riesgo de pegarle fuerte a todo, no en sus números base.
 
 Estos números sirven para comparar cambios. No dicen cómo le va a una persona de verdad: nadie midió todavía qué tan bien se mueve alguien con el joystick.
 
@@ -303,29 +360,30 @@ Resultados en Chrome 157 headless, sobre un Ryzen 7 8700G:
 
 | CPU | Cuadros por segundo | Tiempo entre cuadros (mediana / p99 / peor) | Cuadros de más de 17,5 ms | Trabajo de JavaScript por cuadro |
 | --- | --- | --- | --- | --- |
-| 1× | 240 | 4,2 / 4,4 / 4,5 ms | 0 % | 0,08 ms |
-| 4× | 240 | 4,2 / 4,4 / 4,5 ms | 0 % | 0,38 ms |
-| 6× | 239 | 4,2 / 4,4 / 41,7 ms | 0 % | 0,50 ms |
-| 12× | 230 | 4,2 / 8,4 / 37,6 ms | 0 % | 1,12 ms |
-| 20× | 107 | 8,4 / 20,9 / 45,7 ms | 3,0 % | 2,72 ms |
+| 1× | 240 | 4,2 / 4,4 / 4,4 ms | 0 % | 0,09 ms |
+| 4× | 240 | 4,2 / 4,4 / 8,2 ms | 0 % | 0,43 ms |
+| 6× | 239 | 4,2 / 4,4 / 50,1 ms | 0 % | 0,73 ms |
+| 12× | 230 | 4,2 / 8,4 / 16,9 ms | 0 % | 1,26 ms |
+| 20× | 76 | 12,5 / 29,2 / 54,3 ms | 17,3 % | 2,80 ms |
 
-Chrome headless pinta a 240 cuadros por segundo, así que "240" significa que no perdió ninguno. Con la CPU frenada 4× el JavaScript del juego usa 0,38 ms de los 16,7 ms que hay por cuadro a 60 cuadros por segundo. Los niveles altos varían de una corrida a otra.
+Chrome headless pinta a 240 cuadros por segundo, así que "240" significa que no perdió ninguno. Con la CPU frenada 4× el JavaScript del juego usa 0,43 ms de los 16,7 ms que hay por cuadro a 60 cuadros por segundo. Los niveles altos varían mucho de una corrida a otra: con 20× otras corridas dieron 107 cuadros por segundo.
 
-Con una persona jugando hay un poco más de trabajo, porque el contacto se recalcula en cada paso y se dibujan la marca de objetivo y los controles. Medido con dos dedos emulados moviéndose todo el tiempo: 0,12 ms por cuadro sin freno, 0,48 ms con 4× y 0,70 ms con 6×, sin ningún cuadro de más de 17,5 ms. La prueba de punta a punta también pasa completa con la CPU frenada 4× (`npm run smoke -- --throttle 4`).
+Con una persona jugando hay un poco más de trabajo, porque el contacto se recalcula en cada paso y se dibujan la marca de objetivo y los controles. Medido con dos dedos emulados moviéndose todo el tiempo: 0,15 ms por cuadro sin freno, 0,60 ms con 4× y 0,86 ms con 6×, sin ningún cuadro de más de 17,5 ms. La prueba de punta a punta también pasa completa con la CPU frenada 4× (`npm run smoke -- --throttle 4`).
 
 **Qué no dice esta medición.** Frenar la CPU no frena la GPU ni el rasterizado, y una computadora de escritorio frenada 4× sigue siendo más rápida que el celular objetivo. Es una cota optimista. Falta medir en un teléfono real: con `?fps` (o la opción "Mostrar fps") el juego muestra cuadros por segundo, el peor cuadro del último segundo y el trabajo por cuadro.
 
-**Peso.** La descarga inicial es de 34 KB comprimidos: 31,0 KB de JavaScript, 2,0 KB de CSS y 0,8 KB de HTML. No hay imágenes, fuentes ni dependencias en tiempo de ejecución.
+**Peso.** La descarga inicial es de 41 KB comprimidos: 37,8 KB de JavaScript, 2,2 KB de CSS y 0,8 KB de HTML. Los tres personajes con sus frases pesan unos 7 KB de eso. No hay imágenes, fuentes ni dependencias en tiempo de ejecución.
 
 ## Verificación
 
-- `npm test`: 183 tests. Cubren la física de la pelota (pique, vidrio, reja, red, salida de la cancha), que la predicción coincide exactamente con la simulación, las reglas (pique antes de pared, doble pique, saque cruzado, faltas, let), la puntuación (punto de oro, tie-break, rotación del saque en singles y dobles), qué golpe sale en cada situación, el timing y el golpe armado, el movimiento a mano y el asistido, los gestos de los dos esquemas, el tutorial, guardar y seguir un partido, la repetición exacta de un partido grabado, la cámara, partidos completos entre IA (también de dobles) y las reglas de arquitectura.
-- `npm run smoke`: 46 verificaciones en un Chrome con emulación de celular, con toques reales. Hace la primera visita, juega un partido entero con dos dedos a la vez (uno en el joystick, el otro manteniendo, apuntando y soltando), pausa y saltea la espera entre puntos, pasa por el inicio y las opciones, juega con una mano, cierra el juego a mitad de un partido y lo retoma, emula un notch, prueba mouse y teclado en tamaño de escritorio, abre el build desde `file://` y revisa que no se pida nada de afuera. Guarda capturas de cada etapa en `.smoke/`.
+- `npm test`: 221 tests. Cubren la física de la pelota (pique, vidrio, reja, red, salida de la cancha), que la predicción coincide exactamente con la simulación, las reglas (pique antes de pared, doble pique, saque cruzado, faltas, let), la puntuación (punto de oro, tie-break, rotación del saque en singles y dobles), qué golpe sale en cada situación, el timing y el golpe armado, el movimiento a mano y el asistido, los gestos de los dos esquemas, el tutorial, guardar y seguir un partido, la repetición exacta de un partido grabado, la cámara y su inversa, partidos completos entre IA (también de dobles), las reglas de arquitectura, el elenco (que el gesto delator aparece antes del contacto y no miente, cada rasgo en la cancha, frases y manías que no tocan el partido, la memoria de rivalidad) y el escenario en capas (que nunca se espera a un horneado).
+- `npm run smoke`: 56 verificaciones en un Chrome con emulación de celular, con toques reales. Hace la primera visita (con el saludo del rival), juega un partido entero con dos dedos a la vez (uno en el joystick, el otro manteniendo, apuntando y soltando) mientras mira que el rival delate sus golpes, tenga sus manías y diga sus frases, pausa y saltea la espera entre puntos, revisa la frase de revancha y la historia guardada, pasa por el inicio y las opciones, juega con una mano, cierra el juego a mitad de un partido y lo retoma, emula un notch, prueba mouse y teclado en tamaño de escritorio, abre el build desde `file://` y revisa que no se pida nada de afuera. Guarda capturas de cada etapa en `.smoke/`.
 
 Los dedos de la prueba los maneja un programa que lee el estado del partido. Sirve para saber que los controles funcionan de punta a punta; no para saber cómo se sienten.
 
 ## Accesibilidad
 
+- Los gestos delatores y las manías son de cuerpo entero: no dependen del color ni de la cara. Las frases son texto, se pueden apagar y no llevan información necesaria; por eso el globito queda fuera de los lectores de pantalla, que ya anuncian el marcador y el resultado de cada punto.
 - Nada depende solo del color: los equipos se distinguen por tono y contorno, el jugador propio tiene un anillo bajo los pies, el timing se lee por la forma del anillo y por una palabra, la marca de objetivo cambia de forma según el golpe, y la opción elegida lleva una marca además del relleno.
 - Reducir movimiento (toma la preferencia del sistema): sin estela, sin pausa de impacto y sin mensajes que se desplazan.
 - Ayudas que se pueden apagar: marca de dónde pica la pelota, anillo de timing y guía de dónde pararse.
@@ -348,7 +406,9 @@ Los dedos de la prueba los maneja un programa que lee el estado del partido. Sir
 - No hay botón para exportar o importar los datos guardados, ni pantalla de privacidad. No se envía nada a ningún lado.
 - El saque no tiene timing: entra casi siempre. Las faltas existen (hay segundo saque y doble falta), pero son raras.
 - La pelota no tiene efecto. Con eso, un remate bien colocado gana por tiempo y no porque "salga por tres".
-- Los rivales tienen estilo de juego pero no personalidad visible: no anticipan su golpe con un gesto ni reaccionan al punto.
+- Del elenco hay tres de diez personajes, y faltan sus reacciones al punto, el busto en el marcador, la tarjeta de presentación, la escalera del club y el rival sugerido. La dificultad de los tres se calibró contra un jugador simulado, no contra gente.
+- El globito del rival y el cartel del punto pueden pisarse cuando el rival está cerca de la red.
+- El escenario se puede hornear con WebGL2 (la interfaz está), pero nadie escribió todavía ese horneador.
 - Dobles funciona en la simulación, pero falta el encuadre y la interfaz para jugarlo.
 - La red no tiene postes con hueco ni puertas, y la pelota no choca con los jugadores.
 - `npm audit` marca una vulnerabilidad de severidad alta en `picomatch`, que llega por Vite y Vitest. Son herramientas de desarrollo: no entra en lo que se publica.

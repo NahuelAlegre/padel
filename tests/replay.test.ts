@@ -32,7 +32,7 @@ function recorded(person: PlayerEntry) {
     record: true,
     teams: [
       { name: 'Vos', players: [person] },
-      { name: 'Mora', players: [aiEntry(config, 'mora', 77)] },
+      { name: 'Rival', players: [aiEntry(config, 'hard', 77)] },
     ],
   });
 }
@@ -45,7 +45,7 @@ function replayed(recording: Recording, person: PlayerEntry) {
     seed: recording.seed,
     teams: [
       { name: 'Vos', players: [{ ...person, controller: new ReplayController(recording, 0) }] },
-      { name: 'Mora', players: [aiEntry(config, 'mora', 77)] },
+      { name: 'Rival', players: [aiEntry(config, 'hard', 77)] },
     ],
   });
 }
@@ -105,7 +105,7 @@ describe('repetición determinista', () => {
       seed: 1,
       teams: [
         { name: 'A', players: [humanEntry(1, SKILLS.average)] },
-        { name: 'B', players: [aiEntry(config, 'lola', 2)] },
+        { name: 'B', players: [aiEntry(config, 'easy', 2)] },
       ],
     });
     for (let i = 0; i < 300; i++) match.step();

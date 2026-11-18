@@ -1,4 +1,3 @@
-import type { RivalId } from '../config';
 import type { FaultReason, PointReason } from '../sim/rules';
 import type { Quality, ShotKind } from '../sim/types';
 
@@ -100,11 +99,14 @@ export const TEXT = {
   demo: 'Ver una demo',
   rival: 'Rival',
 
-  rivals: {
-    lola: { name: 'Lola', style: 'Tranquila: se queda en el fondo y devuelve todo al medio.' },
-    tincho: { name: 'Tincho', style: 'Globero: te tira globos y sube a la red.' },
-    mora: { name: 'Mora', style: 'Atacante: saca y sube, volea y remata lo que quede corto.' },
-  } satisfies Record<RivalId, { name: string; style: string }>,
+  /** How the history with a rival reads on the start screen. */
+  record: {
+    never: 'Todavía no jugaron.',
+    even: (each: number): string => `Van ${each} a ${each}.`,
+    ahead: (wins: number, losses: number): string => `Vas ${wins} a ${losses}.`,
+    behind: (wins: number, losses: number): string => `Te lleva ${losses} a ${wins}.`,
+    classic: 'Clásico del club.',
+  },
 
   settings: {
     controls: 'Controles',
@@ -124,6 +126,12 @@ export const TEXT = {
     bounceMarker: 'Marca de dónde pica',
     timingAid: 'Anillo de timing',
     positionGuide: 'Guía de dónde pararse',
+    rivalGroup: 'Rival',
+    lines: 'Frases del rival',
+    linesMany: 'Muchas',
+    linesFew: 'Pocas',
+    linesNone: 'Ninguna',
+    linesHint: 'Globitos cortos entre punto y punto. Nunca dicen nada necesario para jugar.',
     reduceMotion: 'Reducir movimiento',
     vibration: 'Vibración al pegar',
     video: 'Imagen',

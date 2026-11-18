@@ -83,6 +83,39 @@ describe('cámara', () => {
     expect(left.y).toBeCloseTo(right.y, 6);
   });
 
+  it('ojo y rayo deshacen la proyección: lo que necesita un shader para pintar la misma cancha', () => {
+    for (const preset of ['low', 'mid', 'high'] as const) {
+      const camera = fit(390, 844, preset);
+      const eye = { x: 0, y: 0, z: 0 };
+      const ray = { x: 0, y: 0, z: 0 };
+      camera.eye(eye);
+      // The camera is behind the near wall and above the court.
+      expect(eye.y).toBeLessThan(-court.halfLength);
+      expect(eye.z).toBeGreaterThan(court.backFence);
+      for (const [x, y, z] of [
+        [0, 0, 0],
+        [-4, 7, 0],
+        [3.5, -9, 0],
+        [5, 10, 4],
+        [-1.2, 2.5, 1.6],
+      ] as const) {
+        camera.project(x, y, z, p);
+        camera.ray(p.x, p.y, ray);
+        // Walking along the ray from the eye gets to the point that was projected.
+        const t = (y - eye.y) / ray.y;
+        expect(t).toBeGreaterThan(0);
+        expect(eye.x + ray.x * t).toBeCloseTo(x, 6);
+        expect(eye.z + ray.z * t).toBeCloseTo(z, 6);
+      }
+      // And a pixel of the floor is found by cutting its ray with z = 0.
+      camera.ray(120, 500, ray);
+      const t = -eye.z / ray.z;
+      const floor = camera.project(eye.x + ray.x * t, eye.y + ray.y * t, 0, { x: 0, y: 0, scale: 0 });
+      expect(floor.x).toBeCloseTo(120, 6);
+      expect(floor.y).toBeCloseTo(500, 6);
+    }
+  });
+
   it('en vertical la cancha ocupa más alto que ancho', () => {
     const camera = fit(390, 844);
     const { bounds } = camera;

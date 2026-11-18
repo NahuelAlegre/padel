@@ -31,8 +31,10 @@ export interface ShotIntent {
   depth: number;
   /** Over the opponent instead of through. */
   lob: boolean;
-  /** Fraction of the pace of the shot, 0..1. */
+  /** Pace of the shot against its usual one: 1 is normal, a hard hitter goes a little over. */
   power: number;
+  /** How careless this swing is: multiplies the scatter. Left out, it is 1. */
+  scatter?: number;
 }
 
 export function createShotIntent(aim = 0, depth = 0.6, lob = false, power = 1): ShotIntent {
@@ -50,12 +52,18 @@ export interface PlayerIntent {
   moveY: number;
   /** Set for exactly one step to request a swing. */
   swing: ShotIntent | null;
+  /**
+   * The shot the player has made up its mind to play, held from the moment it
+   * decides until it swings. It changes nothing in the rally: it is what the
+   * windup shows, so an opponent who watches can read what is coming.
+   */
+  cue: ShotIntent | null;
   /** Where to wait while the ball is on the other side. Null leaves it to the match. */
   home: 'back' | 'net' | null;
 }
 
 export function createIntent(): PlayerIntent {
-  return { hasTarget: false, targetX: 0, targetY: 0, moveX: 0, moveY: 0, swing: null, home: null };
+  return { hasTarget: false, targetX: 0, targetY: 0, moveX: 0, moveY: 0, swing: null, cue: null, home: null };
 }
 
 export function resetIntent(intent: PlayerIntent): void {
@@ -63,5 +71,6 @@ export function resetIntent(intent: PlayerIntent): void {
   intent.moveX = 0;
   intent.moveY = 0;
   intent.swing = null;
+  intent.cue = null;
   intent.home = null;
 }

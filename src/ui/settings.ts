@@ -1,8 +1,11 @@
+import { CHARACTER_IDS } from '../characters/cast';
 import type { RivalId } from '../config';
 import type { ControlScheme } from '../input/pointer';
 import type { CameraName } from '../render/view';
 
 export type QualityName = 'auto' | 'high' | 'medium' | 'low';
+/** How often the rival has something to say after a point. */
+export type LineFrequency = 'many' | 'few' | 'none';
 
 export interface Settings {
   /** 'two': stick plus hold-aim-release. 'one': drag to move, flick to hit. */
@@ -17,6 +20,8 @@ export interface Settings {
   timingAid: boolean;
   /** Footprints where it would be best to stand. */
   positionGuide: boolean;
+  /** The rival's speech bubbles. Nothing needed to play is ever said in them. */
+  lines: LineFrequency;
   reduceMotion: boolean;
   vibration: boolean;
   camera: CameraName;
@@ -26,7 +31,8 @@ export interface Settings {
 }
 
 export const SPEEDS = [0.6, 0.8, 1] as const;
-export const RIVALS: readonly RivalId[] = ['lola', 'tincho', 'mora'];
+/** Easiest first. */
+export const RIVALS: readonly RivalId[] = CHARACTER_IDS;
 export const QUALITY_SCALE: Record<Exclude<QualityName, 'auto'>, number> = {
   high: 1,
   medium: 0.75,
@@ -38,11 +44,12 @@ export function defaultSettings(reduceMotion: boolean): Settings {
     scheme: 'two',
     stickSide: 'left',
     assistedMovement: false,
-    rival: 'lola',
+    rival: 'beto',
     speed: 1,
     bounceMarker: true,
     timingAid: true,
     positionGuide: true,
+    lines: 'many',
     reduceMotion,
     vibration: true,
     camera: 'mid',
@@ -71,6 +78,7 @@ export function readSettings(saved: unknown, reduceMotion: boolean): Settings {
     bounceMarker: flag('bounceMarker'),
     timingAid: flag('timingAid'),
     positionGuide: flag('positionGuide'),
+    lines: pick(data.lines, ['many', 'few', 'none'] as const, base.lines),
     reduceMotion: flag('reduceMotion'),
     vibration: flag('vibration'),
     camera: pick(data.camera, ['low', 'mid', 'high'] as const, base.camera),

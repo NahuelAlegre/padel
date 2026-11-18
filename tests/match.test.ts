@@ -562,8 +562,8 @@ describe('guardar y seguir', () => {
         config,
         seed,
         teams: [
-          { name: 'A', players: [aiEntry(config, 'tincho', 1)] },
-          { name: 'B', players: [aiEntry(config, 'tincho', 2)] },
+          { name: 'A', players: [aiEntry(config, 'medium', 1)] },
+          { name: 'B', players: [aiEntry(config, 'medium', 2)] },
         ],
       });
     const first = play(9);
@@ -575,8 +575,8 @@ describe('guardar y seguir', () => {
       config,
       seed: 123,
       teams: [
-        { name: 'A', players: [aiEntry(config, 'tincho', 3)] },
-        { name: 'B', players: [aiEntry(config, 'tincho', 4)] },
+        { name: 'A', players: [aiEntry(config, 'medium', 3)] },
+        { name: 'B', players: [aiEntry(config, 'medium', 4)] },
       ],
       resume: saved,
     });
@@ -603,7 +603,7 @@ describe('el primer peloteo es el tutorial', () => {
       tutorial: true,
       teams: [
         { name: 'Vos', players: [entry(me, { isHuman: true, errorScale: 1 })] },
-        { name: 'Lola', players: [aiEntry(config, 'lola', 5)] },
+        { name: 'Rival', players: [aiEntry(config, 'easy', 5)] },
       ],
     });
     return { match, me };
@@ -642,8 +642,8 @@ describe('partido completo', () => {
     configure?.(config);
     const team = (base: number) =>
       doubles
-        ? [aiEntry(config, 'tincho', base), aiEntry(config, 'tincho', base + 1)]
-        : [aiEntry(config, 'tincho', base)];
+        ? [aiEntry(config, 'medium', base), aiEntry(config, 'medium', base + 1)]
+        : [aiEntry(config, 'medium', base)];
     return new Match({
       config,
       seed,

@@ -11,6 +11,8 @@ function need<T extends Element>(root: ParentNode, selector: string): T {
 
 /** How long a message stays up. Shorter than the pause between points, which can also be skipped. */
 const MESSAGE_MS = 950;
+/** How long a speech bubble stays up, unless the serve closes it first. */
+const BUBBLE_MS = 1200;
 
 /**
  * Scoreboard, messages and hints, as plain DOM over the canvas.
@@ -25,9 +27,12 @@ export class Hud {
   private readonly rows: HTMLElement[];
   private readonly tag: HTMLElement;
   private readonly banner: HTMLElement;
+  private readonly bubble: HTMLElement;
   private readonly hint: HTMLElement;
   private readonly fps: HTMLElement;
   private bannerTimer = 0;
+  private bubbleTimer = 0;
+  private bubbleWidth = 0;
   private usesKeys = false;
 
   constructor(stage: HTMLElement, onPause: () => void) {
@@ -35,6 +40,7 @@ export class Hud {
     this.rows = [need<HTMLElement>(this.root, '.row[data-team="0"]'), need<HTMLElement>(this.root, '.row[data-team="1"]')];
     this.tag = need<HTMLElement>(this.root, '.tag');
     this.banner = need<HTMLElement>(this.root, '#banner');
+    this.bubble = need<HTMLElement>(this.root, '#bubble');
     this.hint = need<HTMLElement>(this.root, '#hint');
     this.fps = need<HTMLElement>(this.root, '#fps');
     need<HTMLButtonElement>(this.root, '#pause').addEventListener('click', onPause);
@@ -138,8 +144,46 @@ export class Hud {
 
   clear(): void {
     this.dismiss();
+    this.hush();
     this.banner.textContent = '';
     this.hint.textContent = '';
+  }
+
+  /** With reduced motion nothing pops: things fade in where they are. */
+  set calm(calm: boolean) {
+    this.root.classList.toggle('calm', calm);
+  }
+
+  /** True while somebody's speech bubble is up. */
+  get speaking(): boolean {
+    return this.bubbleTimer !== 0;
+  }
+
+  /**
+   * Puts a line in the speech bubble for a moment. One bubble at a time: a
+   * new line takes the place of the old one. `placeBubble` says where it goes.
+   */
+  speak(text: string): void {
+    this.bubble.textContent = text;
+    this.bubble.classList.add('show');
+    this.bubbleWidth = this.bubble.offsetWidth;
+    window.clearTimeout(this.bubbleTimer);
+    this.bubbleTimer = window.setTimeout(() => this.hush(), BUBBLE_MS);
+  }
+
+  /** Keeps the bubble over the head of whoever is speaking: (x, y) in pixels of the stage. */
+  placeBubble(x: number, y: number, stageWidth: number): void {
+    const half = this.bubbleWidth / 2 + 6;
+    const inside = Math.min(Math.max(x, half), Math.max(half, stageWidth - half));
+    this.bubble.style.setProperty('--x', `${inside.toFixed(1)}px`);
+    this.bubble.style.setProperty('--y', `${y.toFixed(1)}px`);
+  }
+
+  /** Closes the speech bubble at once. */
+  hush(): void {
+    window.clearTimeout(this.bubbleTimer);
+    this.bubbleTimer = 0;
+    this.bubble.classList.remove('show');
   }
 
   showFps(text: string | null): void {

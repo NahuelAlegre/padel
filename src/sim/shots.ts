@@ -22,6 +22,9 @@ export interface ShotParams {
 
 /** No shot hangs in the air longer than this, however much clearance it would need. */
 const MAX_FLIGHT_TIME = 2.6;
+/** The most pace a player can put on a shot, against the usual pace of that shot. */
+const MAX_POWER = 1.2;
+const MAX_SMASH_POWER = 1.05;
 
 /**
  * Launch velocity that takes the ball from (x0, y0, z0) to the floor at
@@ -225,7 +228,9 @@ export function resolveShot(ctx: ShotContext, intent: ShotIntent, config: GameCo
   const deep = clamp((depth - shots.dropAt) / (1 - shots.dropAt), 0, 1);
   const targetDepth = lerp(spec.depthNear, spec.depthFar, deep);
   const targetX = aim * spec.aimRange;
-  const power = clamp(intent.power, 0.3, 1);
+  // A hard hitter gets a little more out of every shot, but not out of a
+  // smash: that one is already as fast as the game can take.
+  const power = clamp(intent.power, 0.3, kind === 'smash' ? MAX_SMASH_POWER : MAX_POWER);
 
   // Risk: how little room is left to the side wall and, for flat shots, to the back wall.
   const sideRoom = court.halfWidth - Math.abs(targetX);

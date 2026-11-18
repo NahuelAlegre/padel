@@ -106,4 +106,24 @@ export class Camera {
     out.scale = scale;
     return out;
   }
+
+  /** Where the camera is, in world space. Together with `ray` it is all a shader needs to draw the court. */
+  eye(out: { x: number; y: number; z: number }): void {
+    out.x = 0;
+    out.y = this.camY;
+    out.z = this.camZ;
+  }
+
+  /**
+   * The inverse of `project`: direction, in world space, of the line of sight
+   * through the pixel (px, py). Every point `eye + ray * t` with t > 0 is
+   * drawn on that pixel. Not normalised: t is the depth along the view axis.
+   */
+  ray(px: number, py: number, out: { x: number; y: number; z: number }): void {
+    const across = (px - this.centerX) / this.focal;
+    const vertical = (this.centerY - py) / this.focal;
+    out.x = across;
+    out.y = this.cos + vertical * this.sin;
+    out.z = vertical * this.cos - this.sin;
+  }
 }

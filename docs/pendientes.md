@@ -47,7 +47,17 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
 
 - **Descubrir los golpes sin leer** (feedback del 2026-11-18, jugando la versión 3D). El usuario no entendió cómo hacer los distintos golpes ("solo se puede golpear con un botón") y pidió una guía.
   - **Pistas en contexto, una sola vez**: la primera vez que un globo es buena idea (por ejemplo, el rival en la red), el pulgar fantasma muestra "arrastrar bien arriba". Lo mismo con la chiquita (rival en el fondo) y con dejarla pasar a la pared.
-  - **Guía visual opcional** en Pausa → "Cómo se juega": animaciones cortas del pulgar y del golpe que sale, casi sin texto. Nunca obligatoria.
+  - **Opción "Tutorial"** en el menú de inicio y en Pausa, pedida por el usuario: "sencillo y visual, poco texto". Lecciones cortas que se juegan (no se leen), cada una con una situación armada y el pulgar fantasma:
+    1. Moverse y pegar.
+    2. Apuntar a los costados.
+    3. Globo.
+    4. Chiquita.
+    5. Dejarla pasar a la pared.
+    6. Bandeja desde media cancha.
+    7. Remate.
+    8. Leer el gesto del rival.
+  - Se pueden repetir y saltear. Una marquita muestra las lecciones ya hechas. Nunca obligatoria.
+  - Feedback relacionado: contra Chela el usuario sintió que "con movimientos simples es imposible ganarle" y pensó que había "movimientos para ganarle". El tutorial y las mecánicas de profundidad tienen que hacer visible cómo se le gana a cada rival.
   - **La marca de objetivo tiene que mostrar el tipo de golpe por su forma** (doble anillo para el globo, chico para la chiquita) también en ayudas "mínimas", y ser bien visible mientras se apunta.
 - **Ronda "pantalla limpia"** (feedback del primer juego en el celular, 2026-11-18). El usuario dice "simple pero entretenido", pero que "demasiados círculos" lo confundieron. Es diseño de información; el estilo llega con el 3D:
   - Sacar el anillo que marca cuál es el jugador propio. Para accesibilidad queda como opción (contorno o color).

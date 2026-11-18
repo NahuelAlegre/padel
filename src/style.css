@@ -1,0 +1,514 @@
+:root {
+  color-scheme: dark;
+  --bg: #0c0d10;
+  --stage: #15171b;
+  --panel: #1b1e23;
+  --raised: #272b32;
+  --ink: #f3f4f6;
+  --muted: #aab0ba;
+  --line: rgba(255, 255, 255, 0.16);
+  --accent: #e8f23a;
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+/*
+ * The game is a portrait column: the whole screen on a phone, centred on a
+ * desktop. It is an app, not a document: nothing in it is meant to be
+ * selected, and a double tap must not zoom.
+ */
+#stage {
+  position: relative;
+  height: 100vh;
+  width: min(100vw, calc(100vh * 9 / 16));
+  overflow: hidden;
+  background: var(--stage);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+@supports (height: 100dvh) {
+  #stage {
+    height: 100dvh;
+    width: min(100vw, calc(100dvh * 9 / 16));
+  }
+}
+
+#court {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ------------------------------------------------------------------ HUD */
+
+#hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+#hud[hidden] {
+  display: none;
+}
+
+/*
+ * The scoreboard, the pause button and the hint keep clear of the notch, the
+ * rounded corners and the home bar: env(safe-area-inset-*) is what the device
+ * reserves, and it is zero where there is nothing to avoid.
+ */
+.score {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  left: calc(10px + env(safe-area-inset-left, 0px));
+  display: grid;
+  row-gap: 3px;
+  min-width: 158px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(12, 13, 16, 0.78);
+  font-variant-numeric: tabular-nums;
+}
+
+.score .row {
+  display: grid;
+  grid-template-columns: 12px 1fr 20px 30px;
+  align-items: center;
+  column-gap: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.score .serve {
+  visibility: hidden;
+  font-size: 10px;
+  color: var(--accent);
+}
+
+.score .row.serving .serve {
+  visibility: visible;
+}
+
+.score .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.score .games {
+  text-align: center;
+  color: var(--muted);
+}
+
+.score .points {
+  text-align: right;
+}
+
+.score .tag {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.score .tag[hidden] {
+  display: none;
+}
+
+#pause {
+  pointer-events: auto;
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  right: calc(10px + env(safe-area-inset-right, 0px));
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(12, 13, 16, 0.78);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+/* Two bars drawn with borders: no icon font, no image. */
+#pause span {
+  width: 14px;
+  height: 16px;
+  border-left: 5px solid currentColor;
+  border-right: 5px solid currentColor;
+}
+
+#banner {
+  position: absolute;
+  left: 50%;
+  top: calc(31% + env(safe-area-inset-top, 0px) * 0.5);
+  width: 92%;
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: 23px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.55),
+    0 0 14px rgba(0, 0, 0, 0.75);
+  opacity: 0;
+  transition: opacity 0.16s ease-out;
+}
+
+#banner.show {
+  opacity: 1;
+}
+
+#banner small {
+  display: block;
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #dfe2e7;
+}
+
+/*
+ * What the rival says: a small bubble that follows its head. It is flavour,
+ * never something needed to play, so it is kept from screen readers (the score
+ * and the result of every point are announced on their own).
+ */
+#bubble {
+  --x: 0px;
+  --y: 0px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: 64%;
+  padding: 6px 10px 7px;
+  border-radius: 12px;
+  background: var(--ink);
+  color: #101114;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  transform: translate(calc(var(--x) - 50%), calc(var(--y) - 100% - 8px)) scale(0.7);
+  transform-origin: 50% 100%;
+  opacity: 0;
+  transition:
+    opacity 0.1s ease-out,
+    transform 0.14s ease-out;
+}
+
+/* The tail, pointing down at whoever is speaking. */
+#bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-top-color: var(--ink);
+  border-bottom-width: 0;
+}
+
+#bubble.show {
+  opacity: 1;
+  transform: translate(calc(var(--x) - 50%), calc(var(--y) - 100% - 8px)) scale(1);
+}
+
+/* Reduced motion: it fades in where it is, without the pop. */
+#hud.calm #bubble {
+  transform: translate(calc(var(--x) - 50%), calc(var(--y) - 100% - 8px));
+  transition: opacity 0.1s ease-out;
+}
+
+#hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  padding: 0 calc(16px + env(safe-area-inset-right, 0px)) 0 calc(16px + env(safe-area-inset-left, 0px));
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+#fps {
+  position: absolute;
+  top: calc(66px + env(safe-area-inset-top, 0px));
+  right: calc(10px + env(safe-area-inset-right, 0px));
+  margin: 0;
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #d5d9df;
+  font: 600 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-align: right;
+}
+
+#fps[hidden] {
+  display: none;
+}
+
+/* -------------------------------------------------------------- overlay */
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  place-items: center;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px))
+    calc(12px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
+  background: rgba(8, 9, 11, 0.78);
+}
+
+#overlay.open {
+  display: grid;
+}
+
+/* The start screen sits at the bottom: the main button is where the thumb already is. */
+#overlay.low {
+  place-items: end center;
+  background: linear-gradient(to bottom, rgba(8, 9, 11, 0.25), rgba(8, 9, 11, 0.86) 55%);
+}
+
+.panel {
+  width: min(100%, 372px);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 20px 18px 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+}
+
+.panel h1 {
+  margin: 0;
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.panel h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.panel h3 {
+  margin: 20px 0 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.panel p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+/* What the rival says next to the rematch button. */
+.panel .quote {
+  margin-top: 12px;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.panel .quote b {
+  font-weight: 800;
+}
+
+.panel .result {
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.btn {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  margin-top: 10px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--raised);
+  color: var(--ink);
+  font: 700 17px/1 var(--font);
+  cursor: pointer;
+}
+
+.btn.primary {
+  border-color: transparent;
+  background: var(--ink);
+  color: #101114;
+}
+
+.btn.quiet {
+  background: transparent;
+  font-weight: 600;
+  font-size: 15px;
+  min-height: 46px;
+}
+
+/* A second line inside a button: what the button means, in a few words. */
+.btn small {
+  display: block;
+  margin-top: 5px;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.72;
+}
+
+.btn:has(small) {
+  min-height: 64px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.panel .row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 8px;
+}
+
+/* Pinned to the bottom of a panel that scrolls. */
+.panel .sticky {
+  position: sticky;
+  bottom: -18px;
+  margin: 16px -18px -18px;
+  padding: 14px 18px 18px;
+  background: linear-gradient(to bottom, rgba(27, 30, 35, 0), var(--panel) 30%);
+}
+
+.panel .sticky .btn {
+  margin-top: 0;
+}
+
+.field {
+  margin-top: 12px;
+}
+
+.field > .label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.field > .note {
+  margin: 6px 2px 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+/* A group of options where exactly one is on. The mark, not just the fill, shows which. */
+.seg {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 6px;
+}
+
+.seg button {
+  min-height: 44px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  font: 600 15px/1.1 var(--font);
+  cursor: pointer;
+}
+
+.seg button[aria-pressed='true'] {
+  border-color: transparent;
+  background: var(--ink);
+  color: #101114;
+  font-weight: 800;
+}
+
+.seg button[aria-pressed='true']::before {
+  content: '✓ ';
+}
+
+.btn:focus-visible,
+.seg button:focus-visible,
+#pause:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------- landscape phone hint */
+
+#rotate {
+  position: absolute;
+  inset: 0;
+  display: none;
+  place-items: center;
+  padding: 16px;
+  background: var(--stage);
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+@media (orientation: landscape) and (max-height: 480px) {
+  #rotate {
+    display: grid;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #banner {
+    transition: none;
+  }
+
+  #bubble,
+  #bubble.show {
+    transform: translate(calc(var(--x) - 50%), calc(var(--y) - 100% - 8px));
+    transition: none;
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "padel",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Juego de pádel para navegador, mobile first y en vertical.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "dev:host": "vite --host",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "preview:host": "vite preview --host",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "sim": "vitest run --config vitest.sim.config.ts",
+    "perf": "node scripts/perf.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
+  }
+}

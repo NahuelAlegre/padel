@@ -121,10 +121,14 @@ class Devtools {
  * screen, touch input. Returns helpers to drive it and a `close` to clean up.
  */
 export async function openPhone({ width = 360, height = 800, dpr = 3, headed = false } = {}) {
+  // A throwaway profile in an absolute, writable temporary folder, never the
+  // person's own, and no error dialogs: if the browser has a problem it must
+  // not put a window on somebody's screen.
   const profile = mkdtempSync(join(tmpdir(), 'padel-browser-'));
   const args = [
     '--remote-debugging-port=0',
     `--user-data-dir=${profile}`,
+    '--noerrdialogs',
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-extensions',

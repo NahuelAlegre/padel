@@ -1,0 +1,88 @@
+/* Prueba 3D · estilos compartidos por las dos versiones.
+   Composición: la escena ocupa toda la pantalla en una columna vertical centrada; los ajustes van
+   en una barra flotante abajo, plegable, en la zona del pulgar. Un solo aspecto (atardecer). */
+:root {
+  --noche: #1b162c;
+  --tinta: #27304a;
+  --crema: #fff6e6;
+  --crema-2: #f1e3cb;
+  --coral: #ff6a4d;
+  --mostaza: #ffc83d;
+  --velo: rgba(27, 22, 44, 0.74);
+  --letra: 'Baloo 2', 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  --cifras: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--noche);
+  color: var(--crema);
+  font-family: var(--letra);
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#escena { position: fixed; inset: 0; overflow: hidden; background: var(--noche); touch-action: manipulation; }
+#lienzo { position: absolute; top: 0; left: 0; display: block; }
+#velo { position: absolute; inset: 0; background: var(--noche); opacity: 0; pointer-events: none; }
+#carga {
+  position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+  font: 700 15px/1.3 var(--letra); color: var(--crema); letter-spacing: 0.02em;
+  padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
+}
+#carga.error { color: var(--mostaza); }
+
+/* barra de ajustes */
+.p3-bar {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  width: min(366px, calc(100% - 2 * max(12px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px))));
+  background: var(--crema); color: var(--tinta); border-radius: 18px;
+  box-shadow: 0 10px 28px rgba(15, 10, 30, 0.42), 0 0 0 1.5px rgba(39, 48, 74, 0.10);
+  padding: 8px 10px 10px; box-sizing: border-box;
+}
+.p3-bar.closed { padding-bottom: 8px; background: rgba(255, 246, 230, 0.94); }
+.p3-bar.closed .p3-panel { display: none; }
+.p3-head { display: flex; align-items: center; gap: 8px; min-height: 34px; }
+.p3-title { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; font: 700 14px/1.1 var(--letra); }
+.p3-title b { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 9px; background: var(--coral); color: var(--crema); font-weight: 800; font-size: 15px; }
+.p3-title span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.p3-fps { flex: none; font: 600 11.5px/1 var(--cifras); font-variant-numeric: tabular-nums; background: var(--tinta); color: var(--crema); padding: 7px 8px; border-radius: 9px; min-width: 96px; text-align: center; }
+.p3-more, .p3-btn, .p3-seg button {
+  font: 700 13.5px/1 var(--letra); color: var(--tinta); border: 0; cursor: pointer; border-radius: 10px; min-height: 34px; padding: 0 11px;
+  background: var(--crema-2);
+}
+.p3-more { flex: none; }
+.p3-panel { display: grid; gap: 7px; margin-top: 8px; }
+.p3-row { display: flex; align-items: center; gap: 8px; }
+.p3-label { flex: 1; min-width: 0; font: 700 13px/1.15 var(--letra); }
+.p3-seg { flex: none; display: flex; gap: 3px; background: var(--crema-2); padding: 3px; border-radius: 12px; }
+.p3-seg button { background: transparent; min-height: 30px; padding: 0 10px; border-radius: 9px; }
+.p3-seg button.on, .p3-btn.on { background: var(--tinta); color: var(--crema); }
+.p3-actions { flex-wrap: wrap; gap: 6px; }
+.p3-actions .p3-btn { flex: 1 1 auto; text-align: center; text-decoration: none; display: grid; place-items: center; }
+.p3-link { background: var(--mostaza); }
+.p3-note { margin: 2px 2px 0; font: 600 11.5px/1.35 var(--letra); color: rgba(39, 48, 74, 0.78); }
+.p3-bar button:focus-visible, .p3-bar a:focus-visible { outline: 2.5px solid var(--coral); outline-offset: 2px; }
+
+/* carteles de golpe */
+.p3-tags { position: absolute; inset: 0; pointer-events: none; }
+.p3-tag {
+  position: absolute; transform: translate(-50%, -100%); white-space: nowrap;
+  background: var(--crema); color: var(--tinta); font: 800 13px/1 var(--letra); letter-spacing: 0.01em;
+  padding: 6px 10px 5px; border-radius: 999px; box-shadow: 0 3px 0 rgba(39, 48, 74, 0.22);
+  animation: p3-tag 0.88s both;
+}
+.p3-tag.fuerte { background: var(--mostaza); font-size: 15px; }
+@keyframes p3-tag {
+  0% { opacity: 0; transform: translate(-50%, -72%) scale(0.86); }
+  12% { opacity: 1; transform: translate(-50%, -104%) scale(1.04); }
+  22% { transform: translate(-50%, -100%) scale(1); }
+  82% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -112%) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .p3-tag { animation-name: p3-tag-quieto; }
+  @keyframes p3-tag-quieto { 0%, 100% { opacity: 0; } 12%, 82% { opacity: 1; } }
+}

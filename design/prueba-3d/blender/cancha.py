@@ -738,15 +738,24 @@ cam_data.clip_start, cam_data.clip_end = 0.5, 400
 sc.camera = cam
 
 sc.render.engine = 'CYCLES'
+# GPU para Cycles: se elige acá adentro y solo para esta corrida. Con --factory-startup las
+# preferencias del usuario no se leen, y este script nunca las guarda.
+CYCLES_GPU = os.environ.get('CYCLES_GPU', 'RX 7800 XT')      # parte del nombre de la placa dedicada
 try:
     prefs = bpy.context.preferences.addons['cycles'].preferences
     prefs.compute_device_type = 'HIP'
     prefs.get_devices()
+    hip = [dv for dv in prefs.devices if dv.type == 'HIP']
+    chosen = [dv for dv in hip if ' '.join(CYCLES_GPU.split()) in ' '.join(dv.name.split())] or hip
     for dv in prefs.devices:
-        dv.use = dv.type == 'HIP' and '7800' in dv.name
-    sc.cycles.device = 'GPU'
+        dv.use = dv in chosen
+    if chosen:
+        sc.cycles.device = 'GPU'
+        print('GPU Cycles (HIP):', ', '.join(' '.join(dv.name.split()) for dv in chosen))
+    else:
+        print('GPU Cycles: no hay dispositivo HIP; se usa la CPU')
 except Exception as ex:
-    print('GPU no disponible:', ex)
+    print('GPU Cycles no disponible, se usa la CPU:', ex)
 sc.cycles.samples = SAMPLES
 sc.cycles.use_denoising = True
 sc.cycles.max_bounces = 6

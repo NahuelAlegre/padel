@@ -384,41 +384,124 @@ Antes de pulir más el modelo conviene resolver la escala y la altura de la cám
 
 ## Cómo se regenera
 
-Todo sale de scripts. Blender 5.2 corre en modo consola, sin abrir la interfaz. `blender` es el ejecutable.
+Todos los assets salen de scripts que están en `blender/`. No hay ningún `.blend` ni ningún paso a mano: el modelo, el esqueleto, las animaciones, la cancha y los renders se vuelven a generar desde cero.
+
+### Un solo comando
 
 ```bash
-cd design/prueba-3d/blender
+node design/prueba-3d/blender/regenerar.mjs
+```
 
-# cancha: capas en EXR (50 s con GPU) y después el revelado a WebP
-blender -b --factory-startup --python cancha.py -- /tmp/cancha capas 256
-blender -b --factory-startup --python revelar.py -- /tmp/cancha capas ../assets/cancha
+Regenera todo en un minuto y medio. Para una sola parte:
 
-# personaje para la versión B: malla, esqueleto y clips en un binario
-blender -b --factory-startup --python exportar.py -- ../assets/personaje.bin
-
-# sprites para la versión A (35 s)
-blender -b --factory-startup --python render_sprites.py -- /tmp/sprites ../assets/sprites
-
-# hojas de revisión
-blender -b --factory-startup --python vista.py -- modelo.png rival 2 todo 20,200
-blender -b --factory-startup --python vista_anim.py -- clip.png remate espalda 7 jugador
+```bash
+node design/prueba-3d/blender/regenerar.mjs cancha
 ```
 
 ```bash
-cd design/prueba-3d
-node herramientas/verificar-impactos.mjs      # la pala llega a la pelota en cada golpe
-node herramientas/verificar-camara.mjs        # las reglas de la cámara que acompaña, cuadro por cuadro
-node herramientas/medir.mjs                   # escribe medidas.json
-node herramientas/capturar.mjs /tmp/cap       # capturas sueltas de las dos versiones
-python herramientas/componer.py /tmp/cap capturas   # las arma lado a lado (necesita Pillow)
-node herramientas/armar-artifact.mjs /tmp/artifact  # fragmentos para publicar como Artifact
+node design/prueba-3d/blender/regenerar.mjs personaje
 ```
+
+```bash
+node design/prueba-3d/blender/regenerar.mjs sprites
+```
+
+```bash
+node design/prueba-3d/blender/regenerar.mjs revision
+```
+
+| Parte | Qué hace | Motor | Tarda |
+| --- | --- | --- | --- |
+| `cancha` | Renderiza las capas en EXR y las revela a WebP en `assets/cancha/` | Cycles | 50 s |
+| `personaje` | Exporta malla, esqueleto y clips a `assets/personaje.bin` | No renderiza | 2 s |
+| `sprites` | Renderiza las dos vistas y arma las hojas en `assets/sprites/` | EEVEE | 26 s |
+| `revision` | Hojas para mirar el modelo y los clips. No toca los assets | EEVEE | 37 s |
+
+Opciones: `--blender <ruta>`, `--gpu <id>`, `--cycles <nombre>`, `--muestras <n>` y `--conservar` (no borra los temporales). Sin opciones usa el Blender 5.2 instalado en `C:\Program Files\Blender Foundation\Blender 5.2\` y la RX 7800 XT.
+
+### Cómo corre Blender
+
+- **En modo consola** (`-b`), sin abrir la interfaz. No usa ni modifica ninguna sesión de Blender que esté abierta.
+- **Siempre con `--factory-startup`**: no lee las preferencias ni los addons del usuario, y no guarda nada en ellos.
+- **Con la GPU dedicada.** Esta PC tiene una Radeon 780M integrada, donde está el monitor, y una RX 7800 XT.
+  - **EEVEE** dibuja con la GPU de visualización, así que se elige por parámetro: `--gpu-backend vulkan --gpu-device 1002/747e/0`. Sin eso, Blender usaba la 780M con OpenGL. `blender --gpu-backend vulkan --gpu-device help` lista los dispositivos con su identificador.
+  - **Cycles** se configura adentro de `cancha.py`: HIP con la placa cuyo nombre contiene «RX 7800 XT» (se cambia con `--cycles` o con la variable `CYCLES_GPU`). Vale solo para esa corrida.
+- Cada script informa con qué GPU corrió (`GPU Cycles (HIP): ...`, `GPU EEVEE: VULKAN · ...`).
+- Los archivos intermedios van a una carpeta temporal del sistema, con ruta absoluta, que se borra al terminar.
+
+### Los comandos exactos
+
+Esto es lo que ejecuta `regenerar.mjs`, por si hace falta correr un paso suelto. `blender` es `"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"` y `TMP` es una carpeta temporal cualquiera.
+
+```bash
+blender -b --factory-startup --python design/prueba-3d/blender/cancha.py -- TMP/cancha capas 256
+```
+
+```bash
+blender -b --factory-startup --python design/prueba-3d/blender/revelar.py -- TMP/cancha capas design/prueba-3d/assets/cancha
+```
+
+```bash
+blender -b --factory-startup --python design/prueba-3d/blender/exportar.py -- design/prueba-3d/assets/personaje.bin
+```
+
+```bash
+blender -b --factory-startup --gpu-backend vulkan --gpu-device 1002/747e/0 --python design/prueba-3d/blender/render_sprites.py -- TMP/sprites design/prueba-3d/assets/sprites
+```
+
+Hojas de revisión sueltas (modelo y clips):
+
+```bash
+blender -b --factory-startup --gpu-backend vulkan --gpu-device 1002/747e/0 --python design/prueba-3d/blender/vista.py -- TMP/modelo.png rival 2 todo 20,200
+```
+
+```bash
+blender -b --factory-startup --gpu-backend vulkan --gpu-device 1002/747e/0 --python design/prueba-3d/blender/vista_anim.py -- TMP/remate.png remate espalda 7 jugador
+```
+
+### Qué tan reproducible es
+
+- **`personaje.bin` sale idéntico**, byte por byte.
+- **Los renders salen iguales a la vista, no byte por byte.** Entre dos corridas de la cancha la diferencia media es de 0,05 a 0,4 sobre 255 por canal: es ruido del render. Entre los sprites hechos con la 780M y OpenGL y los hechos con la RX 7800 XT y Vulkan, la diferencia media es de 0,7 sobre 255, y la hoja queda con el mismo armado.
+- Los assets del repositorio son los que produce el comando de arriba.
+
+### Verificaciones, mediciones y capturas
+
+```bash
+node design/prueba-3d/herramientas/verificar-impactos.mjs
+```
+
+```bash
+node design/prueba-3d/herramientas/verificar-camara.mjs
+```
+
+```bash
+node design/prueba-3d/herramientas/medir.mjs
+```
+
+```bash
+node design/prueba-3d/herramientas/capturar.mjs TMP/cap
+```
+
+```bash
+python design/prueba-3d/herramientas/componer.py TMP/cap design/prueba-3d/capturas
+```
+
+```bash
+node design/prueba-3d/herramientas/armar-artifact.mjs TMP/artifact
+```
+
+- `verificar-impactos.mjs` comprueba que la pala llegue a la pelota en cada golpe.
+- `verificar-camara.mjs` comprueba las reglas de la cámara que acompaña, cuadro por cuadro.
+- `medir.mjs` escribe `medidas.json`.
+- `capturar.mjs` saca capturas sueltas de las dos versiones y `componer.py` las arma lado a lado (necesita Pillow).
+- `armar-artifact.mjs` prepara los fragmentos para publicar como Artifact.
 
 Los scripts que abren un navegador usan Chrome o Edge sin ventana, con un perfil temporal de ruta absoluta y `--noerrdialogs`, como pide `CLAUDE.md`.
 
 | Carpeta | Qué hay |
 | --- | --- |
-| `blender/` | Modelo (`comun.py`, `personaje.py`), esqueleto y poses (`rig.py`, `animaciones.py`), materiales toon (`toon.py`), cancha (`cancha.py`, `revelar.py`) y salidas (`exportar.py`, `render_sprites.py`) |
+| `blender/` | `regenerar.mjs` (el comando único), modelo (`comun.py`, `personaje.py`), esqueleto y poses (`rig.py`, `animaciones.py`), materiales toon (`toon.py`), cancha (`cancha.py`, `revelar.py`), salidas (`exportar.py`, `render_sprites.py`) y hojas de revisión (`vista.py`, `vista_anim.py`) |
 | `lib/` | `base.js` (cámara, capas, peloteo), `ui.js`, `estilo.css`; versión A: `sprites.js`, `sprites-main.js`; versión B: `gl.js`, `vida.js`, `tiempo-real.js` |
 | `assets/` | Capas de la cancha, hojas de sprites y `personaje.bin` |
 | `herramientas/` | Servidor local, capturas, mediciones, verificación y armado de Artifacts |
@@ -436,5 +519,5 @@ Los scripts que abren un navegador usan Chrome o Edge sin ventana, con un perfil
 | Tipografía Baloo 2 | Google Fonts, cargada desde su servidor. No está en el repositorio | SIL Open Font License |
 
 - **Arte conceptual**: se generaron cuatro imágenes de referencia en Google Flow (dos hojas del personaje y dos de la cancha al atardecer). Sirvieron para fijar proporciones, vestuario y clima de luz. No están en el repositorio ni se usaron como textura.
-- **Blender**: el conector con el Blender del usuario no respondía porque Blender estaba cerrado. Se usó el mismo Blender instalado en modo consola, con `--factory-startup`, sin tocar sus preferencias ni ninguna escena suya.
+- **Blender**: se usó el Blender 5.2 instalado, siempre en modo consola y con `--factory-startup`. No se tocaron sus preferencias, sus addons ni ninguna escena del usuario, y no se usó el Blender que el usuario tiene abierto.
 - No se usó ningún generador de modelos 3D ni ningún modelo de Poly Haven o Poly Pizza.

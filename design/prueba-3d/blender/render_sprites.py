@@ -172,6 +172,11 @@ for name, V in VIEWS.items():
         continue
     frames, cell, anchor = render_view(name, V)
     meta['views'][name] = pack(name, V, frames, cell, anchor)
+try:
+    import gpu
+    print('GPU EEVEE:', gpu.platform.backend_type_get(), '·', ' '.join(gpu.platform.renderer_get().split()))
+except Exception as ex:
+    print('GPU EEVEE: sin datos', ex)
 meta['clips'] = clip_meta()
 meta['outline'] = OUTLINE
 with open(meta_path, 'w', encoding='utf-8') as fh:

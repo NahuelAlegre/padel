@@ -10,7 +10,7 @@
  */
 import { Rng } from '../../core/rng';
 import { bounce, glass, GLASS_STYLES, racketHit, RACKET_STYLES, TURF_STYLES } from './impacts';
-import { brown, drift, filter, mixInto, normalize, pink, ring, seamless, type Mode, type Signal, vary, white } from './dsp';
+import { brown, drift, filter, finish, mixInto, normalize, pink, ring, seamless, type Mode, type Signal, type Steps, vary, white } from './dsp';
 
 export interface AmbienceStyle {
   /** The low body of the wind. */
@@ -29,7 +29,7 @@ export interface AmbienceStyle {
 
 export const AMBIENCE_STYLES = {
   /** A neighbourhood club: birds, a glass at the buffet, the next court going. */
-  club: { wind: 0.5, leaves: 0.55, city: 0.5, birds: 5, rally: 1.3, clinks: 1.5, birdMix: [3, 1.2, 2, 1] },
+  club: { wind: 0.5, leaves: 0.55, city: 0.5, birds: 2.5, rally: 1.3, clinks: 1.5, birdMix: [3, 1.2, 2, 1] },
   /** A quiet evening: more wind and birds, nobody on the next court. */
   quiet: { wind: 0.65, leaves: 0.75, city: 0.3, birds: 8, rally: 0, clinks: 0.5, birdMix: [3, 1, 2.5, 2] },
   /** A busy evening: two courts going, the buffet busy, fewer birds. */
@@ -45,6 +45,14 @@ export type AmbienceStyleId = keyof typeof AMBIENCE_STYLES;
  * seamless when looped. Rendered at a low rate: nothing in it needs more.
  */
 export function bed(sr: number, seed: number, seconds: number, style: AmbienceStyle): [Signal, Signal] {
+  return finish(bedSteps(sr, seed, seconds, style));
+}
+
+/**
+ * `bed`, pausing between its stages: each is a pass over the whole buffer,
+ * a few milliseconds at most, so the game can render it between frames.
+ */
+export function* bedSteps(sr: number, seed: number, seconds: number, style: AmbienceStyle): Steps<[Signal, Signal]> {
   const rng = new Rng(seed);
   const fade = 2;
   const n = Math.ceil((seconds + fade) * sr);
@@ -57,31 +65,46 @@ export function bed(sr: number, seed: number, seconds: number, style: AmbienceSt
     [right, 1],
   ] as const) {
     const gust = drift(rng, sr, n, 3.5 + side, 0.25, 1);
+    yield;
     const body = pink(rng, n);
+    yield;
     filter(sr, body, 'lowpass', 520, 0.6);
+    yield;
     filter(sr, body, 'highpass', 70, 0.6);
+    yield;
     const leaves = white(rng, n);
+    yield;
     filter(sr, leaves, 'bandpass', 3600, 0.5);
+    yield;
     filter(sr, leaves, 'lowpass', 7000, 0.6);
+    yield;
     // Leaves flutter: their loudness flickers quickly with the gust.
     const flutter = drift(rng, sr, n, 0.035, 0.15, 1);
+    yield;
     for (let i = 0; i < n; i++) {
       const g = gust[i]!;
       out[i]! += body[i]! * g * style.wind * 0.5 + leaves[i]! * g * g * flutter[i]! * style.leaves * 0.05;
     }
+    yield;
   }
 
   // The city beyond the trees: a low rumble that never stops, the same on both sides.
   if (style.city > 0) {
     const hum = brown(rng, n);
+    yield;
     filter(sr, hum, 'lowpass', 140, 0.6);
+    yield;
     filter(sr, hum, 'highpass', 35, 0.6);
+    yield;
     for (let i = 0; i < n; i++) {
       left[i]! += hum[i]! * style.city * 0.35;
       right[i]! += hum[i]! * style.city * 0.35;
     }
+    yield;
   }
-  return [seamless(left, sr, fade), seamless(right, sr, fade)];
+  const loopLeft = seamless(left, sr, fade);
+  yield;
+  return [loopLeft, seamless(right, sr, fade)];
 }
 
 // ================================================================ birds
@@ -224,6 +247,11 @@ export function clink(sr: number, seed: number): Signal {
  * now and then off the glass. Far away, so dull.
  */
 export function nextCourt(sr: number, seed: number): Signal {
+  return finish(nextCourtSteps(sr, seed));
+}
+
+/** `nextCourt`, pausing after each shot. */
+export function* nextCourtSteps(sr: number, seed: number): Steps<Signal> {
   const rng = new Rng(seed);
   const shots = 3 + Math.floor(rng.next() * 8);
   const out = new Float32Array(Math.ceil(sr * (shots * 1.4 + 1)));
@@ -240,10 +268,12 @@ export function nextCourt(sr: number, seed: number): Signal {
       next += rng.range(0.3, 0.45);
     }
     t = next;
+    yield;
   }
   const end = Math.min(out.length, Math.ceil((t + 0.4) * sr));
   const x = out.subarray(0, end).slice();
   filter(sr, x, 'lowpass', 1700, 0.6);
+  yield;
   filter(sr, x, 'highpass', 150, 0.6);
   return x;
 }

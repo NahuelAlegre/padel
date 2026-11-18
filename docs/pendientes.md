@@ -45,6 +45,10 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
 
 ## Motor
 
+- **Descubrir los golpes sin leer** (feedback del 2026-11-18, jugando la versión 3D). El usuario no entendió cómo hacer los distintos golpes ("solo se puede golpear con un botón") y pidió una guía.
+  - **Pistas en contexto, una sola vez**: la primera vez que un globo es buena idea (por ejemplo, el rival en la red), el pulgar fantasma muestra "arrastrar bien arriba". Lo mismo con la chiquita (rival en el fondo) y con dejarla pasar a la pared.
+  - **Guía visual opcional** en Pausa → "Cómo se juega": animaciones cortas del pulgar y del golpe que sale, casi sin texto. Nunca obligatoria.
+  - **La marca de objetivo tiene que mostrar el tipo de golpe por su forma** (doble anillo para el globo, chico para la chiquita) también en ayudas "mínimas", y ser bien visible mientras se apunta.
 - **Ronda "pantalla limpia"** (feedback del primer juego en el celular, 2026-11-18). El usuario dice "simple pero entretenido", pero que "demasiados círculos" lo confundieron. Es diseño de información; el estilo llega con el 3D:
   - Sacar el anillo que marca cuál es el jugador propio. Para accesibilidad queda como opción (contorno o color).
   - Pisadas de "dónde pararse" apagadas por defecto.

@@ -158,6 +158,8 @@ async function main() {
     if (v.ball && v.ballInCourt && !inside(v.ball)) t.ballOut++;
     if (v.glass[1] > HEIGHT - 20) t.glassLow++;
   };
+  /** How the sound is doing: woken up, how much has played, the club. */
+  const sound = () => phone.evaluate('window.padel.platform.sound.status()');
   const reaches = async (expected, timeoutMs = 2500) => {
     for (const deadline = Date.now() + timeoutMs; Date.now() < deadline; await sleep(20)) {
       if ((await look()).state === expected) return true;
@@ -443,12 +445,16 @@ async function main() {
           await phone.touchReset();
           await tapButton('Pausa');
           check('el botón de pausa pausa', await reaches('paused'));
+          await sleep(120);
+          check('en pausa no suena nada', (await sound()).running === false);
           const frozen = (await look()).time;
           await shot('04-pausa');
           await sleep(300);
           check('en pausa el partido no avanza', (await look()).time === frozen);
           await tapButton('Seguir');
           check('"Seguir" vuelve al partido', await reaches('playing'));
+          await sleep(120);
+          check('y el sonido vuelve con él', (await sound()).running === true);
         } else if (skipped !== true && pausedOnce && state.pause?.then === 'serve' && state.pause.since < 0.3) {
           // A tap during the wait between points moves on. Not in its first
           // quarter of a second, so the thumb that was playing cannot eat the result.
@@ -515,6 +521,20 @@ async function main() {
     console.log('\n        timing: ', tally(mine, 'quality'));
     console.log('        golpes: ', tally(mine, 'kind'));
     console.log('        puntos: ', all.filter((e) => e.type === 'point').length, '  rival:', tally(all.filter((e) => e.type === 'hit' && e.team === 1), 'kind'));
+
+    // ------------------------------------------------------------ sound
+    section('Sonido');
+    const heard = await sound();
+    const firstFrame = (await phone.evaluate('window.padel.renderer.timings')).firstFrame;
+    check(
+      'los sonidos se preparan después del primer cuadro: nunca demoran el arranque',
+      heard.renderStartedAt > firstFrame && firstFrame > 0,
+      `primer cuadro a los ${Math.round(firstFrame)} ms, sonidos desde los ${Math.round(heard.renderStartedAt)} ms`,
+    );
+    check('todo quedó preparado', heard.pending === 0 && heard.rendered > 30, `${heard.rendered} tomas`);
+    check('el primer toque despertó el audio y el partido sonó', heard.running && heard.played > 30, `${heard.played} sonidos`);
+    check('el ambiente del club suena de fondo', heard.club === true);
+    check('nunca más de 12 sonidos a la vez', heard.peak > 0 && heard.peak <= 12, `como mucho ${heard.peak}`);
 
     // ------------------------------------------------------------ screens
     section('Final, inicio y opciones');
@@ -678,6 +698,16 @@ async function main() {
     await shot('07b-opciones-camara');
     await tapButton('Fija', 'camera');
     check('y se puede elegir "Fija"', (await phone.evaluate('window.padel.settings.camera')) === 'fixed');
+    check('el sonido viene bajo: golpes al 50 % y el ambiente al 25 %', !!(await buttonAt('50%', 'effects', true))?.pressed && !!(await buttonAt('25%', 'ambience', true))?.pressed);
+    await shot('07c-opciones-sonido');
+    await tapButton('No', 'ambience');
+    await sleep(200);
+    check('el ambiente se puede apagar aparte', (await phone.evaluate('window.padel.settings.ambience')) === 0 && (await sound()).club === false);
+    await tapButton('25%', 'ambience');
+    await tapButton('No', 'sound');
+    check('y todo el sonido, con un solo botón', (await phone.evaluate('window.padel.settings.sound')) === false && (await sound()).running === false);
+    check('sin sonido no quedan controles de volumen a la vista', (await buttonAt('50%', 'effects')) === null);
+    await tapButton('Sí', 'sound');
     await tapButton('Volver');
 
     // ------------------------------------------------------------ one hand

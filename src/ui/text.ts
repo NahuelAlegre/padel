@@ -159,6 +159,12 @@ export const TEXT = {
     linesHint: 'Globitos cortos entre punto y punto. Nunca dicen nada necesario para jugar.',
     reduceMotion: 'Reducir movimiento',
     vibration: 'Vibración al pegar',
+    sound: 'Sonido',
+    soundOn: 'Sonido',
+    soundHint: 'Se puede jugar sin sonido: todo lo que suena también se ve.',
+    effects: 'Golpes y pelota',
+    ambience: 'Ambiente del club',
+    ambienceHint: 'Pájaros, viento en los árboles y la cancha de al lado, bien de fondo.',
     video: 'Imagen',
     camera: 'Cámara',
     cameraFollow: 'Acompaña',
@@ -189,4 +195,5 @@ export const TEXT = {
   },
 
   speedLabel: (value: number): string => `${Math.round(value * 100)}%`,
+  volumeLabel: (value: number): string => (value === 0 ? 'No' : `${Math.round(value * 100)}%`),
 } as const;

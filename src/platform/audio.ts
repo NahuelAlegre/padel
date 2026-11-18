@@ -1,13 +1,14 @@
 /**
- * The game's speaker: one AudioContext, three buses (effects, voices and the
- * club around), and a small pool of playing sounds with a hard limit.
+ * The speaker of the web build: one AudioContext, three buses (the match, the
+ * club around it, and a quiet send into the court's air), and a small pool of
+ * playing sounds with a hard limit.
  *
  * Nothing here knows about padel. It plays buffers where it is told, keeps
- * the count of what is sounding, unlocks itself on the first touch and goes
- * quiet when the page is hidden.
+ * the count of what is sounding, wakes up on the first touch and can be
+ * suspended as a whole.
  */
 
-export type Bus = 'sfx' | 'voice' | 'ambience';
+export type Bus = 'sfx' | 'ambience';
 
 export interface PlayOptions {
   bus?: Bus;
@@ -19,6 +20,12 @@ export interface PlayOptions {
   rate?: number;
   /** Seconds from now. */
   delay?: number;
+  /** Seconds into the buffer to start from. */
+  offset?: number;
+  /** Hz: a lowpass for a sound that is far away. */
+  lowpass?: number;
+  /** 0..1: how much goes to the court's air. */
+  send?: number;
   /** Lower ones are dropped first when the pool is full. */
   priority?: number;
 }
@@ -30,53 +37,60 @@ interface Playing {
 }
 
 /** The most sounds at once. Beyond this the least important is cut. */
-export const MAX_VOICES = 14;
+export const MAX_VOICES = 12;
 
 type AudioContextClass = typeof AudioContext;
 
 export class AudioEngine {
   ctx: AudioContext | null = null;
   private master: GainNode | null = null;
-  private buses: Partial<Record<Bus, GainNode>> = {};
-  private readonly levels: Record<Bus, number> = { sfx: 1, voice: 1, ambience: 1 };
+  private readonly buses: Partial<Record<Bus, GainNode>> = {};
+  private air: ConvolverNode | null = null;
+  private readonly levels: Record<Bus, number> = { sfx: 1, ambience: 1 };
   private readonly playing: Playing[] = [];
   private muted = false;
-  private paused = false;
+  private suspended = false;
 
-  /** True once a touch has let the page make sound. */
+  /** True once a touch has let the page make sound, and while it is not suspended. */
   get ready(): boolean {
     return !!this.ctx && this.ctx.state === 'running';
   }
 
   /**
-   * Creates the context. Must run inside a user gesture on iOS and in most
-   * mobile browsers. Safe to call many times.
+   * Creates the context and wakes it. Must run inside a user gesture on iOS
+   * and in most mobile browsers. Safe to call many times. `ambient` keeps
+   * iOS's silent switch and the person's own music; `playback` (the board)
+   * sounds even on silent.
    */
   unlock(session: 'ambient' | 'playback' = 'ambient'): void {
     const w = globalThis as unknown as { AudioContext?: AudioContextClass; webkitAudioContext?: AudioContextClass };
     const Ctor = w.AudioContext ?? w.webkitAudioContext;
     if (!Ctor) return;
     if (!this.ctx) {
-      // On iOS, "ambient" respects the silent switch and mixes with the person's music.
       const nav = navigator as Navigator & { audioSession?: { type: string } };
       try {
         if (nav.audioSession) nav.audioSession.type = session;
       } catch {
         // Not supported: nothing to do.
       }
-      const ctx = new Ctor({ latencyHint: 'interactive' });
+      let ctx: AudioContext;
+      try {
+        ctx = new Ctor({ latencyHint: 'interactive' });
+      } catch {
+        return;
+      }
       this.ctx = ctx;
       const master = ctx.createGain();
-      // A gentle limiter so that a busy moment never clips.
+      // Rounds off the loudest moments, so that nothing jumps out.
       const limiter = ctx.createDynamicsCompressor();
-      limiter.threshold.value = -6;
-      limiter.knee.value = 6;
-      limiter.ratio.value = 8;
-      limiter.attack.value = 0.002;
-      limiter.release.value = 0.15;
+      limiter.threshold.value = -18;
+      limiter.knee.value = 12;
+      limiter.ratio.value = 4;
+      limiter.attack.value = 0.003;
+      limiter.release.value = 0.25;
       master.connect(limiter).connect(ctx.destination);
       this.master = master;
-      for (const bus of ['sfx', 'voice', 'ambience'] as Bus[]) {
+      for (const bus of ['sfx', 'ambience'] as Bus[]) {
         const g = ctx.createGain();
         g.gain.value = this.levels[bus];
         g.connect(master);
@@ -84,12 +98,16 @@ export class AudioEngine {
       }
       this.applyMute();
     }
-    if (this.ctx.state === 'suspended' && !this.paused) void this.ctx.resume();
+    if (this.ctx.state === 'suspended' && !this.suspended) void this.ctx.resume();
     // A silent buffer: the old iOS way of waking the hardware.
-    const silent = this.ctx.createBufferSource();
-    silent.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
-    silent.connect(this.ctx.destination);
-    silent.start();
+    try {
+      const silent = this.ctx.createBufferSource();
+      silent.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+      silent.connect(this.ctx.destination);
+      silent.start();
+    } catch {
+      // Nothing to wake.
+    }
   }
 
   get sampleRate(): number {
@@ -104,6 +122,18 @@ export class AudioEngine {
     return b;
   }
 
+  /** The court's air: a convolver fed by each sound's `send`, into the effects bus. */
+  setAir(impulse: AudioBuffer | null, level = 1): void {
+    if (!this.ctx || !impulse) return;
+    const air = this.ctx.createConvolver();
+    air.normalize = false;
+    air.buffer = impulse;
+    const g = this.ctx.createGain();
+    g.gain.value = level;
+    air.connect(g).connect(this.buses.sfx!);
+    this.air = air;
+  }
+
   play(buffer: AudioBuffer | null, opts: PlayOptions = {}): AudioBufferSourceNode | null {
     const ctx = this.ctx;
     if (!ctx || !buffer || this.muted || ctx.state !== 'running') return null;
@@ -114,26 +144,35 @@ export class AudioEngine {
       // Cut the least important, oldest first; if all matter more, skip this one.
       let victim = -1;
       for (let i = 0; i < this.playing.length; i++) {
-        if (this.playing[i]!.priority <= priority && (victim < 0 || this.playing[i]!.priority < this.playing[victim]!.priority)) victim = i;
+        const p = this.playing[i]!;
+        if (p.priority <= priority && (victim < 0 || p.priority < this.playing[victim]!.priority)) victim = i;
       }
       if (victim < 0) return null;
       const [v] = this.playing.splice(victim, 1);
-      try {
-        v!.source.stop();
-      } catch {
-        // Already stopped.
-      }
+      stop(v!.source);
     }
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     const rate = opts.rate ?? 1;
     source.playbackRate.value = rate;
     let node: AudioNode = source;
+    if (opts.lowpass) {
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = opts.lowpass;
+      f.Q.value = 0.5;
+      node = node.connect(f);
+    }
     const gain = opts.gain ?? 1;
     if (gain !== 1) {
       const g = ctx.createGain();
       g.gain.value = gain;
       node = node.connect(g);
+    }
+    if (opts.send && this.air) {
+      const s = ctx.createGain();
+      s.gain.value = opts.send;
+      node.connect(s).connect(this.air);
     }
     if (opts.pan) {
       const p = ctx.createStereoPanner();
@@ -142,8 +181,9 @@ export class AudioEngine {
     }
     node.connect(this.buses[opts.bus ?? 'sfx']!);
     const when = now + Math.max(0, opts.delay ?? 0);
-    source.start(when);
-    this.playing.push({ source, ends: when + buffer.duration / rate, priority });
+    const offset = Math.max(0, Math.min(buffer.duration - 0.01, opts.offset ?? 0));
+    source.start(when, offset);
+    this.playing.push({ source, ends: when + (buffer.duration - offset) / rate, priority });
     return source;
   }
 
@@ -185,23 +225,18 @@ export class AudioEngine {
     this.applyMute();
   }
 
-  /** Pause and hidden tabs: everything stops where it is and comes back as it was. */
-  setPaused(paused: boolean): void {
-    this.paused = paused;
-    if (!this.ctx) return;
-    if (paused && this.ctx.state === 'running') void this.ctx.suspend();
-    if (!paused && this.ctx.state === 'suspended') void this.ctx.resume();
+  /** Pause and hidden pages: everything holds where it is and comes back as it was. */
+  setSuspended(suspended: boolean): void {
+    this.suspended = suspended;
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (suspended && ctx.state === 'running') void ctx.suspend();
+    if (!suspended && ctx.state === 'suspended') void ctx.resume();
   }
 
-  /** Stops every one-shot sound (a menu opened, a match ended). Loops keep going. */
+  /** Stops every one-shot sound. Loops keep going. */
   hush(): void {
-    for (const p of this.playing) {
-      try {
-        p.source.stop();
-      } catch {
-        // Already stopped.
-      }
-    }
+    for (const p of this.playing) stop(p.source);
     this.playing.length = 0;
   }
 
@@ -220,5 +255,13 @@ export class AudioEngine {
 
   private prune(now: number): void {
     for (let i = this.playing.length - 1; i >= 0; i--) if (this.playing[i]!.ends <= now) this.playing.splice(i, 1);
+  }
+}
+
+function stop(source: AudioBufferSourceNode): void {
+  try {
+    source.stop();
+  } catch {
+    // Already stopped.
   }
 }

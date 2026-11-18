@@ -557,6 +557,17 @@ body {
   content: '✓ ';
 }
 
+/* Five options in a row (the volumes): tighter, so the mark and the value stay on one line. */
+.seg.dense button {
+  padding: 0 2px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.seg.dense button[aria-pressed='true']::before {
+  content: '✓';
+}
+
 .btn:focus-visible,
 .seg button:focus-visible,
 #pause:focus-visible {

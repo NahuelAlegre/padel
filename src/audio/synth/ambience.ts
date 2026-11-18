@@ -1,86 +1,39 @@
 /**
- * The club at dusk, around the court: wind in the trees, the birds of a
- * Buenos Aires evening, the buffet chatting behind the glass and, now and
- * then, a rally on the next court.
+ * The club at dusk, around the court: wind in the plane trees, the birds of
+ * a Buenos Aires evening, a glass at the buffet and, now and then, a rally on
+ * the next court. No human voices: synthesized, they sounded artificial.
  *
- * It is made of two layers. The bed (wind and murmur) is a long buffer that
- * loops without a seam. The events (a bird, a laugh, a glass, the next
- * court) are short buffers dropped at random moments, so the whole never
- * repeats and nobody hears where the loop turns.
+ * It is made of two layers. The bed (wind, leaves and the far hum of the
+ * city) is a long buffer that loops without a seam. The events (a bird, the
+ * next court, a glass) are short buffers dropped at random moments, so the
+ * whole never repeats and nobody hears where the loop turns.
  */
 import { Rng } from '../../core/rng';
-import { VOICES } from '../people';
 import { bounce, glass, GLASS_STYLES, racketHit, RACKET_STYLES, TURF_STYLES } from './impacts';
-import {
-  Biquad,
-  drift,
-  filter,
-  mixInto,
-  pink,
-  ring,
-  room,
-  seamless,
-  type Mode,
-  type Signal,
-  vary,
-  white,
-} from './dsp';
-import { say, type VoiceProfile } from './voice';
+import { brown, drift, filter, mixInto, normalize, pink, ring, seamless, type Mode, type Signal, vary, white } from './dsp';
 
 export interface AmbienceStyle {
   /** The low body of the wind. */
   wind: number;
   /** Leaves: the wind in the plane trees. */
   leaves: number;
-  /** The buffet: how many voices and how loud. */
-  murmur: number;
-  voices: number;
+  /** The city far away, a low hum under everything. */
+  city: number;
   /** Events per minute of each kind. */
   birds: number;
   rally: number;
   clinks: number;
-  laughs: number;
   /** Which birds: weights of thrush, kiskadee, sparrows, dove. */
   birdMix: [number, number, number, number];
 }
 
 export const AMBIENCE_STYLES = {
-  /** A neighbourhood club: some talk at the buffet, birds, the next court going. */
-  club: {
-    wind: 0.5,
-    leaves: 0.55,
-    murmur: 0.55,
-    voices: 7,
-    birds: 5,
-    rally: 1.3,
-    clinks: 2,
-    laughs: 0.8,
-    birdMix: [3, 1.2, 2, 1],
-  },
-  /** A quiet evening: wind, more birds, the buffet far away and nobody on the next court. */
-  quiet: {
-    wind: 0.65,
-    leaves: 0.75,
-    murmur: 0.25,
-    voices: 4,
-    birds: 8,
-    rally: 0,
-    clinks: 0.6,
-    laughs: 0.3,
-    birdMix: [3, 1, 2.5, 2],
-  },
-  /** A busy evening: a full buffet, two courts going, fewer birds. */
-  busy: {
-    wind: 0.4,
-    leaves: 0.4,
-    murmur: 0.85,
-    voices: 11,
-    birds: 3,
-    rally: 2.6,
-    clinks: 4,
-    laughs: 2,
-    birdMix: [2, 1.5, 2, 0.5],
-  },
+  /** A neighbourhood club: birds, a glass at the buffet, the next court going. */
+  club: { wind: 0.5, leaves: 0.55, city: 0.5, birds: 5, rally: 1.3, clinks: 1.5, birdMix: [3, 1.2, 2, 1] },
+  /** A quiet evening: more wind and birds, nobody on the next court. */
+  quiet: { wind: 0.65, leaves: 0.75, city: 0.3, birds: 8, rally: 0, clinks: 0.5, birdMix: [3, 1, 2.5, 2] },
+  /** A busy evening: two courts going, the buffet busy, fewer birds. */
+  busy: { wind: 0.4, leaves: 0.4, city: 0.7, birds: 3, rally: 2.6, clinks: 3, birdMix: [2, 1.5, 2, 0.5] },
 } satisfies Record<string, AmbienceStyle>;
 
 export type AmbienceStyleId = keyof typeof AMBIENCE_STYLES;
@@ -88,7 +41,7 @@ export type AmbienceStyleId = keyof typeof AMBIENCE_STYLES;
 // ================================================================ bed
 
 /**
- * The bed: wind, leaves and the buffet's murmur, `seconds` long, stereo, and
+ * The bed: wind, leaves and the city far away, `seconds` long, stereo, and
  * seamless when looped. Rendered at a low rate: nothing in it needs more.
  */
 export function bed(sr: number, seed: number, seconds: number, style: AmbienceStyle): [Signal, Signal] {
@@ -118,70 +71,17 @@ export function bed(sr: number, seed: number, seconds: number, style: AmbienceSt
     }
   }
 
-  // The buffet: people talking behind glass, across the court.
-  if (style.murmur > 0) {
-    const crowd = murmur(sr, rng, seconds + fade, style.voices);
-    const [l, r] = room(sr, crowd, { rt60: 0.9, size: 1.6, damp: 2200, predelay: 0.02 }, 0);
+  // The city beyond the trees: a low rumble that never stops, the same on both sides.
+  if (style.city > 0) {
+    const hum = brown(rng, n);
+    filter(sr, hum, 'lowpass', 140, 0.6);
+    filter(sr, hum, 'highpass', 35, 0.6);
     for (let i = 0; i < n; i++) {
-      left[i]! += (crowd[i]! * 0.5 + l[i]! * 0.8) * style.murmur;
-      right[i]! += (crowd[i]! * 0.4 + r[i]! * 0.8) * style.murmur;
+      left[i]! += hum[i]! * style.city * 0.35;
+      right[i]! += hum[i]! * style.city * 0.35;
     }
   }
   return [seamless(left, sr, fade), seamless(right, sr, fade)];
-}
-
-/** Everyday words of a club: at this distance only their music is heard. */
-const CHAT = [
-  'che viste el partido',
-  'sí sí claro',
-  'mañana a las ocho',
-  'bueno dale',
-  'no pasa nada',
-  'qué calor hacía',
-  'y después qué',
-  'mirá vos',
-  'ahí viene',
-  'un cortado por favor',
-  'jugamos el jueves',
-  'tranqui',
-  'cómo andás',
-  'la bandeja no le sale',
-  'qué golazo',
-  'tengo que ir al banco',
-  'el sábado no puedo',
-  'ah bueno',
-  'está lindo hoy',
-  'la otra vez también',
-];
-
-function murmur(sr: number, rng: Rng, seconds: number, voices: number): Signal {
-  const n = Math.ceil(seconds * sr);
-  const out = new Float32Array(n);
-  const people: VoiceProfile[] = [VOICES.beto, VOICES.romina, VOICES.chela];
-  for (let v = 0; v < voices; v++) {
-    const base = people[v % people.length]!;
-    const person: VoiceProfile = {
-      ...base,
-      f0: vary(rng, base.f0, 0.18),
-      size: vary(rng, base.size, 0.05),
-      tremor: { rate: 0, depth: 0 },
-      rate: vary(rng, 1.05, 0.12),
-    };
-    // Farther voices are quieter and duller.
-    const distance = rng.range(0.4, 1);
-    const lp = new Biquad(sr, 'lowpass', 700 + 900 * distance, 0.6);
-    let t = rng.range(0, 2);
-    while (t < seconds - 0.5) {
-      const line = CHAT[Math.floor(rng.next() * CHAT.length)]!;
-      const tune = rng.next() < 0.7 ? 'calm' : rng.next() < 0.5 ? 'exclaim' : 'rise';
-      const x = say(sr, Math.floor(rng.next() * 1e9), line, person, { tune, effort: rng.range(0.15, 0.45) });
-      lp.run(x);
-      mixInto(out, x, Math.round(t * sr), 0.16 * distance);
-      t += x.length / sr + rng.range(0.25, 2.2);
-    }
-  }
-  filter(sr, out, 'highpass', 160, 0.6);
-  return out;
 }
 
 // ================================================================ birds
@@ -220,9 +120,12 @@ function whistle(sr: number, rng: Rng, seconds: number, contour: number[], warbl
   return out;
 }
 
-/** One bird calling, dry and mono: the player places it in the trees. */
+/** One bird calling, dry and mono, peaking at 0.9: the player places it in the trees. */
 export function bird(sr: number, seed: number, kind: BirdKind): Signal {
-  const rng = new Rng(seed);
+  return normalize(birdCall(sr, new Rng(seed), kind), 0.9);
+}
+
+function birdCall(sr: number, rng: Rng, kind: BirdKind): Signal {
   switch (kind) {
     case 'thrush': {
       // Zorzal colorado: two to four phrases of clear, varied whistles.
@@ -314,17 +217,6 @@ export function clink(sr: number, seed: number): Signal {
     ring(out, sr, rng, other, 0.0003, Math.round(sr * rng.range(0.004, 0.012)), 0.4);
   }
   return out;
-}
-
-/** Somebody laughing at the buffet. */
-export function laugh(sr: number, seed: number): Signal {
-  const rng = new Rng(seed);
-  const people: VoiceProfile[] = [VOICES.beto, VOICES.romina, VOICES.chela];
-  const who = people[Math.floor(rng.next() * people.length)]!;
-  const person = { ...who, f0: vary(rng, who.f0, 0.15) };
-  const text = ['ja ja ja', 'ja ja ja ja', 'je je je'][Math.floor(rng.next() * 3)]!;
-  const x = say(sr, seed, text, person, { tune: 'laugh', effort: rng.range(0.4, 0.8), rate: rng.range(1, 1.3) });
-  return filter(sr, x, 'lowpass', 1600, 0.6);
 }
 
 /**

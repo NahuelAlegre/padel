@@ -6,7 +6,10 @@
  *
  *   npm run sounds                 every sound into out/sounds/
  *   npm run sounds -- --only hit   only the sounds whose name contains "hit"
- *   npm run sounds -- --sr 48000   at another sample rate
+ *   npm run sounds -- --sr 48000   the board's versions and the club at another rate
+ *
+ * Names: game-* are the takes the game plays, board-* the versions that were
+ * on the listening board, club-* the ambience.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -47,6 +50,7 @@ function wav(channels, rate) {
 const server = await createServer({ root, logLevel: 'error', server: { middlewareMode: true }, appType: 'custom' });
 try {
   const { catalogue } = await server.ssrLoadModule('/src/audio/catalogue.ts');
+  // The game's own takes are always at the game's rate; the rest at --sr.
   mkdirSync(outDir, { recursive: true });
   let count = 0;
   for (const item of catalogue(sr)) {
@@ -54,9 +58,9 @@ try {
     const started = performance.now();
     const rendered = item.render();
     const channels = Array.isArray(rendered) ? rendered : [rendered];
-    writeFileSync(join(outDir, `${item.name}.wav`), wav(channels, sr));
+    writeFileSync(join(outDir, `${item.name}.wav`), wav(channels, item.sr));
     const ms = (performance.now() - started).toFixed(1);
-    const seconds = (channels[0].length / sr).toFixed(2);
+    const seconds = (channels[0].length / item.sr).toFixed(2);
     console.log(`${item.name.padEnd(40)} ${seconds.padStart(6)} s  ${ms.padStart(7)} ms`);
     count++;
   }

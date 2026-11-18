@@ -27,6 +27,7 @@ import { StageRenderer } from '../render/stage/renderer';
 import { VIEW } from '../render/view';
 import { Viewport } from '../render/viewport';
 import { Match, type PlayerEntry, type SimEvent } from '../sim/match';
+import { SoundDirector } from '../audio/director';
 import { isGoldenPoint, pointLabel } from '../sim/score';
 import { Hud } from '../ui/hud';
 import { Screens, type ScreenInfo } from '../ui/screens';
@@ -122,6 +123,8 @@ export class Game {
   private readonly renderer: Renderer;
   /** What the rival says and the tics it has. It listens to the match and never touches it. */
   private readonly personality: Personality;
+  /** What should sound, from what happens in the match. Reads it, never changes it. */
+  private readonly director: SoundDirector;
   /** Place in `match.players` of the rival with a personality, or -1 when there is none. */
   private rivalIndex = -1;
   /** The point being played is a golden point. */
@@ -183,6 +186,7 @@ export class Game {
     // Its own dice: what is said and when never shares a generator with the simulation.
     this.personality = new Personality(new Rng((Date.now() ^ 0x9e3779b9) >>> 0));
     this.config = createConfig();
+    this.director = new SoundDirector(platform.sound);
     this.viewport = new Viewport(canvas, VIEW.dprCap);
     this.renderer = new StageRenderer(
       canvas,
@@ -255,6 +259,7 @@ export class Game {
     this.hud.lesson(null);
     this.rival = saved?.rival ?? this.settings.rival;
     this.match = this.createMatch(mode, saved);
+    this.quietStart();
     // A match that is picked up again was already opened: nobody says hello twice.
     const opening = this.meetRival(greet && !saved);
     this.renderer.reset();
@@ -298,6 +303,7 @@ export class Game {
     const seed = (Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0;
     const drill = new Drill(lesson, config, new Rng(seed + 1));
     const assisted = this.settings.assistedMovement;
+    this.quietStart();
     this.match = new Match({
       config,
       seed,
@@ -459,6 +465,7 @@ export class Game {
   pause(): void {
     if (this.state !== 'playing') return;
     this.state = 'paused';
+    this.platform.sound.setPaused(true);
     this.setInputEnabled(false);
     this.screens.show('pause');
     this.stopLoop();
@@ -468,6 +475,7 @@ export class Game {
   resume(): void {
     if (this.state !== 'paused') return;
     this.state = 'playing';
+    this.platform.sound.setPaused(false);
     this.screens.hide();
     this.setInputEnabled(true);
     this.startLoop();
@@ -480,6 +488,8 @@ export class Game {
 
   toMenu(): void {
     this.state = 'menu';
+    this.platform.sound.hush();
+    this.platform.sound.setPaused(false);
     this.drill = null;
     this.lessonJustDone = null;
     this.hud.lesson(null);
@@ -489,6 +499,13 @@ export class Game {
     this.hud.setVisible(false);
     this.screens.show('menu');
     this.draw();
+  }
+
+  /** A new match or lesson starts in silence: nothing of the last one is still ringing. */
+  private quietStart(): void {
+    this.director.reset();
+    this.platform.sound.hush();
+    this.platform.sound.setPaused(false);
   }
 
   /** A touch during the pause between points moves on to the next one. */
@@ -617,7 +634,8 @@ export class Game {
     this.hud.scheme = settings.scheme;
     this.hud.hints = settings.aids === 'full';
     this.renderer.setCamera(settings.reduceMotion ? 'fixed' : settings.camera);
-    this.platform.sound.setEnabled(true);
+    this.platform.sound.setEnabled(settings.sound);
+    this.platform.sound.setVolumes(settings.effects, settings.ambience);
     this.personality.frequency = settings.lines;
     this.hud.calm = settings.reduceMotion;
     if (settings.lines === 'none') this.hud.hush();
@@ -664,18 +682,16 @@ export class Game {
       if (drill) drill.onEvent(event, this.match);
       else this.hud.onEvent(event, this.match, humanTeam);
       this.react(event);
+      this.director.onEvent(event, this.match);
       this.onSimEvent?.(event);
     }
     events.length = 0;
-    if (drill?.justPassed) {
-      this.platform.sound.play('pointWon');
-      this.showLesson();
-    }
+    if (drill?.justPassed) this.showLesson();
   }
 
   /** Everything around the match that follows from what just happened: feel, saving, counting. */
   private react(event: SimEvent): void {
-    const { sound, storage, analytics } = this.platform;
+    const { storage, analytics } = this.platform;
     // A lesson is played by the person, but nothing in it is a match: no rival, no score, nothing to save.
     const playing = this.mode !== 'demo' && this.mode !== 'tutorial';
     const record = playing ? this.profile.rivals[this.rival] : undefined;
@@ -709,15 +725,6 @@ export class Game {
         // Not getting there is a miss too.
         if (playing && event.reason === 'far' && this.match.players[event.player]?.isHuman) this.learn(false);
         break;
-      case 'bounce':
-        sound.play('bounce', Math.min(1, event.speed / 12));
-        break;
-      case 'wall':
-        sound.play(event.surface === 'glass' ? 'glass' : 'fence', Math.min(1, event.speed / 16));
-        break;
-      case 'net':
-        sound.play('net');
-        break;
       case 'point':
         if (!playing) break;
         if (event.winner === 0) this.profile.pointsWon++;
@@ -727,7 +734,6 @@ export class Game {
           if (this.golden && event.winner === 0) record.goldenWon++;
           else if (this.golden) record.goldenLost++;
         }
-        sound.play(event.winner === 0 ? 'pointWon' : 'pointLost');
         if (event.winner === 0 && this.profile.pointsWon === 1) analytics.track('first_point_won');
         saveProfile(storage, this.profile);
         break;
@@ -749,8 +755,7 @@ export class Game {
 
   /** Weight for the good hits, and the counting that goes with a hit by the person. */
   private onHit(event: Extract<SimEvent, { type: 'hit' }>): void {
-    const { haptics, sound, analytics, launch } = this.platform;
-    sound.play('hit', Math.min(1, event.speed / 24));
+    const { haptics, analytics, launch } = this.platform;
     if (event.kind !== 'serve' && !this.settings.reduceMotion) {
       if (event.kind === 'smash') this.hitStop = VIEW.hitStopSmash;
       else if (event.quality === 'perfect') this.hitStop = VIEW.hitStopPerfect;
@@ -1017,6 +1022,8 @@ export class Game {
       this.drainEvents();
     }
     if (steps === MAX_STEPS_PER_FRAME) this.accumulator = 0;
+    // Footsteps and the swing of a smash come from how the players move.
+    this.director.update(this.match, this.settings.speed);
     if (this.drill?.done) {
       this.finishLesson();
       return;

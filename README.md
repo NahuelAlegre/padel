@@ -44,11 +44,13 @@ npm run preview:host
 | `npm run dev:host` | Lo mismo, visible desde otros dispositivos de la red. |
 | `npm run build` | Chequea tipos y genera `dist/`. |
 | `npm run preview` | Sirve `dist/` tal como va a quedar publicado. |
-| `npm test` | Tests de física, reglas, puntuación, golpes, profundidad, gestos, personajes, cámara, animación, pantalla limpia, tutorial, guardado y arquitectura (Vitest). |
+| `npm test` | Tests de física, reglas, puntuación, golpes, profundidad, gestos, personajes, cámara, animación, pantalla limpia, tutorial, sonido, guardado y arquitectura (Vitest). |
 | `npm run sim` | Juega cientos de partidos sin pantalla e imprime estadísticas de balance y de profundidad (cómo se juegan los puntos y cuánto paga la táctica). |
 | `npm run smoke` | Abre el build en un Chrome con emulación de celular y lo juega con toques reales. |
 | `npm run perf` | Mide el peso de la primera visita, el tiempo hasta el primer cuadro y el trabajo por cuadro, con emulación de celular, CPU frenada y conexiones lentas. |
 | `npm run art` | Empaqueta la cancha y el personaje para la web (ver "Los archivos del arte"). Necesita Python y Pillow 11.3 o más nuevo. |
+| `npm run sounds` | Genera todos los sonidos como WAV en `out/sounds/`, para escucharlos fuera del navegador (ver "Cómo suena"). |
+| `npm run sound-board` | Arma el tablero para escuchar y elegir los sonidos, `design/sonido/tablero.html`. |
 
 `smoke` y `perf` usan un Chrome o Edge ya instalado (o el que indique `CHROME_PATH`) y necesitan que antes se haya corrido `npm run build`. Abren el navegador sin ventana, con un perfil descartable en una carpeta temporal.
 
@@ -208,7 +210,7 @@ La pausa dura un segundo como mucho y se saltea con un toque. Quien ganó el pun
 
 ### Opciones
 
-Esquema de control y lado del joystick, velocidad del juego (60 %, 80 %, 100 %), frases del rival (muchas, pocas, ninguna), ayudas en pantalla (completas, mínimas, ninguna), movimiento asistido, reducir movimiento, vibración, cámara (acompaña o fija), resolución, pantalla completa y contador de cuadros. Abajo se ven los datos guardados en el dispositivo.
+Esquema de control y lado del joystick, velocidad del juego (60 %, 80 %, 100 %), frases del rival (muchas, pocas, ninguna), ayudas en pantalla (completas, mínimas, ninguna), movimiento asistido, reducir movimiento, vibración, sonido (sí o no, y el volumen de los golpes y el del ambiente por separado), cámara (acompaña o fija), resolución, pantalla completa y contador de cuadros. Abajo se ven los datos guardados en el dispositivo.
 
 **Ayudas en pantalla.** El juego es para alguien que quiere algo simple y no quiere leer, así que por defecto hay muy poco:
 
@@ -234,6 +236,39 @@ Las ayudas mínimas **se van apagando a medida que acertás**: cada golpe que sa
 
 **Pantalla limpia.** No hay anillo bajo tu jugador, ni pisadas, ni círculos que se cierran. Lo que se muestra es poco, fino y está pintado en el mundo (ver "Ayudas en pantalla").
 
+## Cómo suena
+
+**Todo el sonido se genera en el momento: no hay ningún archivo de audio.** Cada sonido es una receta corta (TypeScript, en [src/audio/synth/](src/audio/synth/)) que se convierte en audio en el propio dispositivo, de a poco en los huecos entre cuadros, empezando medio segundo después del primer cuadro. Nada de esto demora el arranque y no se baja nada: todo el sonido le suma unos 27 KB al JavaScript (11 KB con gzip).
+
+**Qué suena.** Se eligió de oído, en el celular, en un tablero con dos o tres versiones de cada cosa ([design/sonido/tablero.html](design/sonido/tablero.html)). Quedó la primera versión de todo:
+
+| Qué | Cómo está hecho |
+| --- | --- |
+| **Golpe de pala** (pala de carbono) | Síntesis modal: el contacto de la pelota hace sonar los modos de la pala y la pelota, más un chasquido de aire en los golpes fuertes. Un contacto más corto excita más los agudos: el remate suena más brillante y seco, y la chiquita y el globo, un «puc» suave. Se generan cuatro fuerzas con tres tomas cada una. El remate y la víbora tienen además el silbido de la pala, que se escucha antes del contacto. |
+| **Pique** (césped firme) | Un «poc» apagado de la pelota con un golpe sordo del piso y un poco de arena. El bote previo del saque es un pique como cualquier otro. |
+| **Vidrio** (seco) | Un «bom» corto y grave: un racimo denso de modos bajos, como un panel de vidrio grande, sin nada que suene a campana. |
+| **Reja** (tensa) | Un chasquido metálico y el traqueteo de la malla contra sus soportes: golpecitos cada vez más espaciados. |
+| **Red** | Un golpe sordo con roce de la malla; la que toca la cinta, un toque más seco con el cable que vibra. |
+| **Pasos** (arena) | Pisadas que crujen y frenadas que raspan, como en una cancha con arena. Salen de cómo se mueven los jugadores: un paso por zancada al correr, el split step cuando el rival le pega y el raspón cuando alguien frena de golpe. |
+| **Ambiente** (club de barrio) | Viento en los árboles, el rumor lejano de la ciudad, zorzales, benteveos, gorriones y torcazas, algún vaso en el buffet y un peloteo en la cancha de al lado. La base da la vuelta sin que se note el corte, y los pájaros y la otra cancha caen al azar, así que nunca se repite igual. |
+
+**No hay voces**: ni los rivales ni el ambiente hablan. Se probaron y sonaban artificiales; la personalidad de los rivales sale de los gestos y del estilo de juego.
+
+**Dónde suena.** Lo de tu lado suena cerca; lo del rival, más bajo, más apagado y con más aire de la cancha. Cada sonido se ubica a izquierda o derecha según dónde pasa, con un paneo angosto, y una reverb corta hace el aire de la cancha (el rebote del vidrio de atrás incluido). La mezcla es baja y pareja a propósito: entre el golpe más suave y el más fuerte hay unos 5 dB, y un limitador redondea los picos. Por defecto los golpes están al 50 % y el ambiente al 25 %.
+
+**Cómo se comporta.**
+
+- El audio se despierta con el primer toque, como exigen los navegadores.
+- En iPhone respeta el modo silencio y no corta la música que la persona esté escuchando.
+- En pausa, con la pestaña en segundo plano o con el sonido apagado, se suspende todo.
+- Nunca suenan más de 12 sonidos a la vez: si hace falta, se corta primero un paso antes que un golpe.
+
+**Para escuchar y cambiar.**
+
+- `npm run sounds` guarda todo como WAV en `out/sounds/`: `game-*` son las tomas que usa el juego, `board-*` las versiones del tablero y `club-*` el ambiente.
+- `npm run sound-board` rearma el tablero.
+- Lo elegido está en `CHOSEN` y el balance de la mezcla, en `CUES` ([src/audio/bank.ts](src/audio/bank.ts)). Cada receta tiene sus variantes en tablas como `RACKET_STYLES` ([src/audio/synth/impacts.ts](src/audio/synth/impacts.ts)).
+
 ## Arquitectura
 
 ```
@@ -241,6 +276,10 @@ src/
   config.ts          Todos los números ajustables del juego, en un solo lugar
   core/              Utilidades sin estado de juego: matemática, azar con semilla, estadísticas de cuadros
   characters/        El elenco: estilo de juego, rasgos, gesto delator, manías y frases de cada personaje
+  audio/             El sonido, sin nada del navegador
+    synth/             Las recetas: filtros, modos, ruido, reverb; golpes, superficies, pasos y el club
+    bank.ts            Lo elegido en el tablero, en qué fuerzas y cuántas tomas se genera, y la mezcla
+    director.ts        Qué suena, dónde y con qué fuerza, a partir de los eventos y del movimiento
   sim/               La simulación. No sabe nada de pantalla, DOM, reloj ni dispositivos
     ball.ts            Física de la pelota: gravedad, pique, vidrio, reja, red
     court.ts           Geometría de la cancha y perfiles de las paredes
@@ -258,8 +297,8 @@ src/
     ai.ts              El rival: decide el golpe antes de pegar y lo muestra
     autopilot.ts       Movimiento automático, compartido por la IA y por el movimiento asistido
   input/             Táctil, mouse y teclado, traducidos a "quiero la pelota acá" y "me muevo hacia allá"
-  platform/          Lo único que conoce el navegador: los archivos del juego, guardado, vibración, sonido,
-                     pantalla, ciclo de vida
+  platform/          Lo único que conoce el navegador: los archivos del juego, guardado, vibración, sonido
+                     (Web Audio: el motor, el ambiente del club), pantalla, ciclo de vida
   render/            Todo lo que se ve
     scene.ts           El contrato entre el juego y cualquier renderer
     view.ts            Qué cámaras hay y los pocos números del dibujo que no son de la cámara
@@ -284,7 +323,9 @@ src/
                      y lo que dice y hace el rival entre puntos
 public/art/          La cancha y el personaje tal como los baja el juego
 tests/               Tests y simulaciones de balance
-scripts/             Empaquetado del arte, medición de rendimiento y prueba de punta a punta en un navegador real
+scripts/             Empaquetado del arte, sonidos a WAV, el tablero de sonido, medición de rendimiento y
+                     prueba de punta a punta en un navegador real
+design/sonido/       El tablero donde se eligieron los sonidos
 ```
 
 Las dependencias van en un solo sentido: `sim` no importa nada de `render`, `input`, `ui` ni `platform`. Se puede correr un partido entero en Node, y eso es lo que hacen los tests. Un test de arquitectura ([tests/platform.test.ts](tests/platform.test.ts)) falla si alguien rompe esa regla.
@@ -482,7 +523,7 @@ Todavía no hay manifest, service worker ni proyecto de Capacitor. Lo que sí es
 | `assets` | Imágenes y archivos del propio juego, por rutas relativas. Elige AVIF o WebP y descomprime los archivos que viajan con gzip. | Los archivos del paquete |
 | `storage` | `localStorage`, con memoria como respaldo si está bloqueado. Pide `navigator.storage.persist()`. | Preferences |
 | `haptics` | `navigator.vibrate` | Haptics, con impactos de verdad |
-| `sound` | Silencio: el juego ya avisa qué sonido toca y con qué fuerza | Audio nativo o Web Audio |
+| `sound` | Web Audio: genera los sonidos en el dispositivo, los ubica en la cancha y los suspende en pausa o en segundo plano | El mismo Web Audio dentro del WebView, o audio nativo |
 | `display` | Zonas seguras, reducir movimiento, pantalla completa y bloqueo vertical | StatusBar y ScreenOrientation |
 | `lifecycle` | `visibilitychange` y `pagehide` | App: pausa, vuelta y botón "atrás" de Android |
 | `analytics` | Guarda los últimos eventos en memoria; no sale nada del dispositivo | Lo que se decida, con consentimiento |
@@ -626,13 +667,14 @@ Chrome headless pinta a 240 cuadros por segundo en esta máquina, así que 4,2 m
 
 ## Verificación
 
-- `npm test`: 335 tests. Cubren la física de la pelota (pique, vidrio, reja, red, salida de la cancha), que la predicción coincide exactamente con la simulación, las reglas, la puntuación, qué golpe sale en cada situación, el timing y el golpe armado, el movimiento a mano y el asistido, los gestos de los dos esquemas, el tutorial, guardar y seguir un partido (y leer lo que guardó la versión anterior), la repetición exacta de un partido grabado, partidos completos entre IA (también de dobles), las reglas de arquitectura y el elenco. De las últimas rondas:
+- `npm test`: 350 tests. Cubren la física de la pelota (pique, vidrio, reja, red, salida de la cancha), que la predicción coincide exactamente con la simulación, las reglas, la puntuación, qué golpe sale en cada situación, el timing y el golpe armado, el movimiento a mano y el asistido, los gestos de los dos esquemas, el tutorial, guardar y seguir un partido (y leer lo que guardó la versión anterior), la repetición exacta de un partido grabado, partidos completos entre IA (también de dobles), las reglas de arquitectura y el elenco. De las últimas rondas:
   - **La profundidad** ([tests/depth.test.ts](tests/depth.test.ts)): que una pelota más baja, más estirada, más rápida o más pegada al vidrio es más difícil; que una pelota difícil sale más lenta, más alta, menos abierta y más corta; la profundidad del globo según la ejecución; el perfecto de cada golpe; que yendo para atrás no hay remate; el efecto de cada golpe y que la predicción lo conoce; aguantar la red o irse al fondo, a mano y con la IA; la presión acumulada y la entereza; cómo define y cuándo sube la IA; que **no lee el pulgar** (dos partidos que solo difieren en el apuntado de la persona); que nadie erra al azar ni corre más que una persona; y que, con las mismas manos, jugar con táctica le saca más puntos a Chela.
   - **El tutorial** ([tests/drill.test.ts](tests/drill.test.ts)): que cada una de las ocho lecciones se completa haciendo lo que enseña y no cuenta otro golpe; la cancha de práctica (sin saque ni marcador); y que las lecciones hechas, los golpes encontrados y las pistas mostradas se guardan y se leen bien.
   - **El personaje** ([tests/toon.test.ts](tests/toon.test.ts)): que el archivo se lee bien, que la pala está donde dice cada clip en su instante de contacto y que los ciclos cierran.
   - **La animación** ([tests/animator.test.ts](tests/animator.test.ts)): el pie apoyado no patina en ninguna de las cuatro marchas; la pelvis gira en diagonal; el saltito antes del golpe del rival; la pelota en la mano libre antes del saque; la pala en el punto de contacto con el cuerpo de cada personaje; arrancar y frenar sin saltos; la pala en el punto de contacto en el instante del contacto, se haya armado el golpe con mucho tiempo o con 90 ms; que armado con tiempo espera con la pala atrás; el paso hacia la pelota y la vuelta; pegar corriendo; la cabeza que sigue a la pelota; los gestos delatores y las manías de cada personaje; el festejo; y, en un partido simulado entero, que la pala queda cerca de la pelota en el contacto.
+  - **El sonido** ([tests/audio.test.ts](tests/audio.test.ts)): que todos los sonidos se generan sin errores ni saturación y que no queda ninguna voz; que un golpe más fuerte suena más brillante; que la mezcla es pareja; que el ambiente da la vuelta sin corte; que cada golpe, pique, pared y red del partido suena, lo tuyo cerca y lo del rival lejos; que **escuchar no cambia el partido** (el mismo partido con y sin sonido); que nunca suenan más de 12 sonidos a la vez; y las opciones de sonido.
   - **La cámara y la pantalla limpia** ([tests/stage.test.ts](tests/stage.test.ts)): las reglas de la cámara que acompaña pieza por pieza y jugando partidos enteros contra los tres rivales; que "Fija", "Reducir movimiento" y el respaldo 2D no mueven nada; y qué hay en pantalla con cada nivel de ayudas, cuadro por cuadro.
-- `npm run smoke`: 101 verificaciones en un Chrome con emulación de celular, con toques reales. Hace la primera visita (en 3D, sin textos de ayuda, con el saludo del rival), juega un partido entero con dos dedos a la vez mientras mira que la pantalla siga limpia, que la cámara tenga siempre a la vista lo que importa y que el rival delate sus golpes, tenga sus manías y diga sus frases; pausa y saltea la espera entre puntos; pasa por el inicio; **abre el tutorial, juega la lección del globo con el pulgar de verdad** (mira el pulgar fantasma, el doble anillo de la marca, las tres pelotas, la tilde de "Hecha" y que no sume puntos) y comprueba la pista del globo en medio de un partido; pasa por las opciones (ayudas y cámara incluidas); **le quita el contexto gráfico a la página en medio del juego** y mira que siga en 2D y que vuelva al 3D; juega con una mano, la cámara fija y las ayudas completas; cierra el juego a mitad de un partido y lo retoma; prueba un dispositivo sin WebGL2; emula un notch; prueba mouse y teclado en tamaño de escritorio; abre el build desde `file://`; y revisa que no se pida nada de afuera y que la cancha baje en AVIF y el personaje comprimido. Guarda capturas de cada etapa en `.smoke/`.
+- `npm run smoke`: 112 verificaciones en un Chrome con emulación de celular, con toques reales. Hace la primera visita (en 3D, sin textos de ayuda, con el saludo del rival), juega un partido entero con dos dedos a la vez mientras mira que la pantalla siga limpia, que la cámara tenga siempre a la vista lo que importa y que el rival delate sus golpes, tenga sus manías y diga sus frases; pausa y saltea la espera entre puntos; pasa por el inicio; **abre el tutorial, juega la lección del globo con el pulgar de verdad** (mira el pulgar fantasma, el doble anillo de la marca, las tres pelotas, la tilde de "Hecha" y que no sume puntos) y comprueba la pista del globo en medio de un partido; mira que el sonido se prepare después del primer cuadro, que el partido suene, que el ambiente esté de fondo, que en pausa no suene nada y que nunca suenen más de 12 sonidos a la vez; pasa por las opciones (ayudas, cámara y sonido incluidos); **le quita el contexto gráfico a la página en medio del juego** y mira que siga en 2D y que vuelva al 3D; juega con una mano, la cámara fija y las ayudas completas; cierra el juego a mitad de un partido y lo retoma; prueba un dispositivo sin WebGL2; emula un notch; prueba mouse y teclado en tamaño de escritorio; abre el build desde `file://`; y revisa que no se pida nada de afuera y que la cancha baje en AVIF y el personaje comprimido. Guarda capturas de cada etapa en `.smoke/`.
 
 Los dedos de la prueba los maneja un programa que lee el estado del partido. Sirve para saber que los controles funcionan de punta a punta; no para saber cómo se sienten. Para mirar la animación cuadro por cuadro, `Game.advance(dt)` avanza el partido un cuadro con el bucle detenido.
 
@@ -648,7 +690,7 @@ Los dedos de la prueba los maneja un programa que lee el estado del partido. Sir
 - Dos esquemas de control, uno de ellos para una sola mano, y joystick de cualquiera de los dos lados.
 - Velocidad del juego ajustable al 60 % y al 80 %; las ventanas de timing se agrandan en la misma proporción.
 - Pausa en cualquier momento, con el botón, con P o Escape, y automática al cambiar de pestaña o de aplicación.
-- Se juega sin sonido: todavía no hay ninguno, y toda la información es visual.
+- Se juega sin sonido: todo lo que suena también se ve (el golpe, el pique, la pared, la red y el marcador). El sonido se apaga con un botón, y los golpes y el ambiente tienen volúmenes separados. En iPhone respeta el modo silencio.
 - Menús con botones reales, foco visible y regiones que anuncian el marcador y el resultado de cada punto.
 
 ## Publicación
@@ -664,6 +706,7 @@ Los dedos de la prueba los maneja un programa que lee el estado del partido. Sir
   - **El tutorial**: si los gestos del pulgar fantasma se entienden sin leer, si tres pelotas por lección son muchas o pocas, y si la lección de la bandeja se puede hacer con el pulgar.
   - **Las pistas**: si se notan, y si dos veces alcanza.
   - Lo que venía de antes: los cuadros por segundo del renderer 3D, la cámara que acompaña, la señal de timing y qué tan rápido se apagan las ayudas.
+  - **El sonido**: el volumen por defecto (¿es sutil o no se oye?), que los golpes no sobresalten, el balance entre el golpe, el pique y las paredes, cuánto se nota el ambiente, que el modo silencio del iPhone lo calle, y que generar los sonidos en un Android de gama media no se note en los primeros segundos.
 - **Lo que no se cumplió de las metas de profundidad** (los números están en "Parámetros para iterar"):
   - Los puntos contra Chela duran más que antes (19 s de media; la meta era 14).
   - La táctica suma 15 puntos o más solo contra Chela (y con manos de experto, 13); contra Beto y Romina, entre 7 y 13.

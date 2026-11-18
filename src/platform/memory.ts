@@ -20,10 +20,14 @@ export function createMemoryStore(initial: Record<string, string> = {}): KeyValu
   };
 }
 
-/** There is no sound yet: the game already says when one should play, and this ignores it. */
+/** No sound: for tests, and for a shell that cannot play any. The game plays the same without it. */
 export const silentSound: Sound = {
   play: () => {},
   setEnabled: () => {},
+  setVolumes: () => {},
+  setPaused: () => {},
+  hush: () => {},
+  status: () => ({ running: false, played: 0, peak: 0, rendered: 0, pending: 0, renderStartedAt: -1, club: false }),
 };
 
 export const noHaptics: Haptics = {

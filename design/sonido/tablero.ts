@@ -1,18 +1,17 @@
 /**
  * The listening board: every sound of the game in two or three versions, to
  * hear on the phone and choose. It uses the game's own recipes and engine, so
- * what is chosen here is exactly what the game will play.
+ * what is chosen here is exactly what the game will play. The first round of
+ * choices (2026-11-18) took the first version of everything and dropped the
+ * voices, which are no longer on the board.
  *
  * Built into one HTML file by `npm run sound-board`. The choices are kept in
  * the artifact's database when it runs as a claude.ai artifact, and in the
  * browser otherwise.
  */
-import { CAST } from '../../src/characters/cast';
-import type { CharacterId } from '../../src/characters/types';
 import { Rng } from '../../src/core/rng';
-import { ClubAmbience } from '../../src/audio/club';
-import { AudioEngine } from '../../src/audio/engine';
-import { UTTERANCES, VOICES, type Reaction, type VoiceStyle } from '../../src/audio/people';
+import { AudioEngine } from '../../src/platform/audio';
+import { ClubAmbience } from '../../src/platform/club';
 import { place, type Distance } from '../../src/audio/space';
 import {
   bounce,
@@ -37,7 +36,6 @@ import {
   type TurfStyleId,
 } from '../../src/audio/synth/impacts';
 import type { AmbienceStyleId } from '../../src/audio/synth/ambience';
-import { say } from '../../src/audio/synth/voice';
 import type { Signal } from '../../src/audio/synth/dsp';
 
 // ================================================================ sound
@@ -72,7 +70,6 @@ interface Cue {
   distance?: Distance;
   gain?: number;
   pan?: number;
-  bus?: 'sfx' | 'voice';
 }
 
 /** Plays cues on the audio clock, so a sequence keeps its rhythm. */
@@ -82,7 +79,7 @@ function perform(cues: Cue[]): number {
   for (const cue of cues) {
     const take = nextTake(cue.key);
     const b = buffer(`${cue.key}#${take}`, () => cue.render(engine.sampleRate, new Rng(1 + take * 101 + hash(cue.key))), cue.distance ?? 'near');
-    engine.play(b, { delay: cue.at, gain: cue.gain ?? 1, pan: cue.pan ?? 0, bus: cue.bus ?? 'sfx', rate: 1 + (take - 1.5) * 0.008 });
+    engine.play(b, { delay: cue.at, gain: cue.gain ?? 1, pan: cue.pan ?? 0, rate: 1 + (take - 1.5) * 0.008 });
     if (b) end = Math.max(end, cue.at + b.duration);
   }
   return end;
@@ -95,7 +92,7 @@ function hash(s: string): number {
 }
 
 // Levels of each family, so that the board plays them in the balance of a match.
-const LEVEL = { hit: 1, bounce: 0.75, glass: 0.95, fence: 0.85, net: 0.8, feet: 0.55, voice: 0.6 };
+const LEVEL = { hit: 1, bounce: 0.75, glass: 0.95, fence: 0.85, net: 0.8, feet: 0.55 };
 
 const hitCue = (style: RacketStyleId, power: number, at = 0, distance: Distance = 'near', pan = 0): Cue => ({
   at,
@@ -145,24 +142,6 @@ const feetCue = (style: FeetStyleId, kind: StepKind, at = 0, distance: Distance 
   pan,
   gain: LEVEL.feet,
 });
-
-const lineIndex = new Map<string, number>();
-function voiceCue(who: CharacterId, style: VoiceStyle, reaction: Reaction, at = 0, distance: Distance = 'near', pan = 0): Cue {
-  const lines = UTTERANCES[who][style][reaction];
-  const k = `${who}-${style}-${reaction}`;
-  const i = ((lineIndex.get(k) ?? -1) + 1) % lines.length;
-  lineIndex.set(k, i);
-  const line = lines[i]!;
-  return {
-    at,
-    key: `voice-${k}-${i}`,
-    render: (sr, rng) => say(sr, Math.floor(rng.next() * 1e6), line.text, VOICES[who], line.opts),
-    distance,
-    pan,
-    gain: LEVEL.voice,
-    bus: 'voice',
-  };
-}
 
 // ================================================================ what can be chosen
 
@@ -218,35 +197,6 @@ function serve(kind: string): number {
   }
 }
 
-const RIVALS: { id: CharacterId; lead: string; examples: string }[] = [
-  {
-    id: 'beto',
-    lead: '55 años, el profe del club. Voz cálida y grave, sin apuro.',
-    examples: '«¡Eso!», «¡Fa!», «¡Bien ahí!», «¡Otra!»',
-  },
-  {
-    id: 'romina',
-    lead: '35 años, jugaba al handball. Pega fuerte y se ríe fuerte.',
-    examples: '«¡Tomá!», «¡Vamos!», «¡No!», «¡Uf!»',
-  },
-  {
-    id: 'chela',
-    lead: '68 años, colectivera jubilada. Dulce, pícara, globos a la luna.',
-    examples: '«¡Upa!», «¡Ay!», «¡Uy, uy!», «¡Arriba!»',
-  },
-];
-
-function voiceActions(who: CharacterId, style: VoiceStyle): Action[] {
-  const labels: [Reaction, string][] = [
-    ['hello', 'Saludo'],
-    ['win', 'Gana el punto'],
-    ['lose', 'Pierde el punto'],
-    ['effort', 'Esfuerzo'],
-    ['laugh', 'Risa'],
-  ];
-  return labels.map(([reaction, label]) => ({ label, play: () => perform([voiceCue(who, style, reaction)]) }));
-}
-
 let ambience: ClubAmbience | null = null;
 let ambienceStyle: AmbienceStyleId | null = null;
 
@@ -266,6 +216,11 @@ function toggleAmbience(style: AmbienceStyleId): number {
     if (ambience !== club) return;
     club.start(0.9);
     setStatus(store.kind === 'shared' ? 'Tus elecciones se guardan solas' : 'Se guardan en este navegador');
+    // The birds and the next court, a piece at a time.
+    const more = () => {
+      if (ambience === club && club.prepare()) setTimeout(more, 0);
+    };
+    more();
   }, 60);
   return 0;
 }
@@ -435,12 +390,12 @@ const GROUPS: Group[] = [
     id: 'ambiente',
     section: 'El club',
     title: 'Ambiente al atardecer',
-    lead: 'Viento en los árboles, pájaros de acá y el buffet de fondo. Va bajo y en loop; los pájaros y las risas caen al azar, así que nunca se repite igual.',
+    lead: 'Viento en los árboles, pájaros de acá y la cancha de al lado. Va bajo y en loop; los pájaros caen al azar, así que nunca se repite igual.',
     variants: (
       [
-        ['club', 'Club de barrio', 'Charla en el buffet, zorzales y gorriones, y un peloteo en la cancha de al lado.'],
-        ['quiet', 'Tarde tranquila', 'Más viento y pájaros (zorzal, torcaza, benteveo); el buffet, lejos.'],
-        ['busy', 'Club lleno', 'Buffet lleno, dos canchas jugando, risas y vasos.'],
+        ['club', 'Club de barrio', 'Zorzales y gorriones, un vaso en el buffet y un peloteo en la cancha de al lado.'],
+        ['quiet', 'Tarde tranquila', 'Más viento y pájaros (zorzal, torcaza, benteveo); nadie en la cancha de al lado.'],
+        ['busy', 'Club lleno', 'Dos canchas jugando, más vasos en el buffet y menos pájaros.'],
       ] as [AmbienceStyleId, string, string][]
     ).map(([id, name, desc]) => ({
       id,
@@ -449,41 +404,14 @@ const GROUPS: Group[] = [
       actions: [{ label: 'Escuchar', play: () => toggleAmbience(id) }],
     })),
   },
-  ...RIVALS.map(
-    (r, i): Group => ({
-      id: `voz-${r.id}`,
-      section: i === 0 ? 'Las voces' : undefined,
-      title: `${CAST[r.id].name}, ${CAST[r.id].nickname}`,
-      lead: r.lead,
-      variants: [
-        { id: 'words', name: 'Palabras', desc: `Exclamaciones cortas: ${r.examples}.`, actions: voiceActions(r.id, 'words') },
-        {
-          id: 'murmur',
-          name: 'Murmullo',
-          desc: 'Dice la frase del globito, rápida y borrosa, como un personaje de dibujito.',
-          actions: voiceActions(r.id, 'murmur'),
-        },
-        {
-          id: 'sounds',
-          name: 'Sin palabras',
-          desc: 'Risas, suspiros, un «mm-hm» y el esfuerzo del golpe. Nada que entender.',
-          actions: voiceActions(r.id, 'sounds'),
-        },
-      ],
-    }),
-  ),
 ];
 
 // ================================================================ a rally to hear it all together
-
-let rival: CharacterId = 'beto';
 
 function rally(): number {
   const hit = hitStyle();
   const turf = turfStyle();
   const steps = feetStyle();
-  const who = rival;
-  const voice = chosen<VoiceStyle>(`voz-${who}`, 'words');
   const L = -0.25;
   const R = 0.3;
   return perform([
@@ -502,7 +430,6 @@ function rally(): number {
     bounceCue(turf, 0.55, 4.0, 'far', -0.2),
     feetCue(steps, 'slide', 4.05, 'far', -0.2),
     // The rival lobs, under pressure.
-    voiceCue(who, voice, 'effort', 4.25, 'far', -0.2),
     hitCue(hit, 0.18, 4.4, 'far', -0.2),
     // Short: smash it.
     feetCue(steps, 'step', 5.0, 'near', 0.2),
@@ -510,7 +437,6 @@ function rally(): number {
     hitCue(hit, 1, 5.62, 'near', 0.2),
     bounceCue(turf, 1, 6.0, 'far', 0.35),
     fenceCue(fenceStyle(), 6.3, 'far', 0.5, 0.9),
-    voiceCue(who, voice, 'lose', 6.9, 'far', 0.1),
   ]);
 }
 
@@ -665,13 +591,7 @@ function build(): void {
         b.id = `play-${group.id}-${variant.id}-${k}`;
         b.innerHTML = `<span class="tri" aria-hidden="true"></span><span>${action.label}</span>`;
         if (group.id === 'ambiente') b.dataset.ambience = variant.id;
-        b.addEventListener('click', () => {
-          if (group.id.startsWith('voz-')) {
-            rival = group.id.slice(4) as CharacterId;
-            renderRival();
-          }
-          withSound(action.play, b);
-        });
+        b.addEventListener('click', () => withSound(action.play, b));
         actions.append(b);
       });
       card.append(top, actions);
@@ -704,12 +624,7 @@ function build(): void {
     }),
   );
   $('#copy').addEventListener('click', copySummary);
-  $('#rival').addEventListener('click', () => {
-    const order: CharacterId[] = ['beto', 'romina', 'chela'];
-    rival = order[(order.indexOf(rival) + 1) % order.length]!;
-    renderRival();
-  });
-  renderRival();
+
   renderPicks();
   scope();
 }
@@ -772,11 +687,6 @@ function copySummary(): void {
   });
 }
 
-function renderRival(): void {
-  const b = document.getElementById('rival');
-  if (b) b.textContent = `con ${CAST[rival].name}`;
-}
-
 function renderAmbienceState(): void {
   const b = document.getElementById('ambience');
   if (b) {
@@ -828,6 +738,6 @@ function scope(): void {
   draw();
 }
 
-document.addEventListener('visibilitychange', () => engine.setPaused(document.hidden));
+document.addEventListener('visibilitychange', () => engine.setSuspended(document.hidden));
 build();
 void connect();

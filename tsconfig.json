@@ -16,5 +16,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "tests", "vite.config.ts", "vitest.sim.config.ts"]
+  "include": ["src", "tests", "design/sonido", "vite.config.ts", "vitest.sim.config.ts"]
 }

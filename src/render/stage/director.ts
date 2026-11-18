@@ -193,7 +193,7 @@ export class Director {
       const player = scene.players[i]!;
       let figure = figures[i];
       if (!figure) {
-        figure = { player, x: 0, y: 0, k: 1, facing: 1, depth: 30, palette: this.paletteFor(player), bones: null };
+        figure = { player, x: 0, y: 0, k: 1, facing: 1, depth: 30, palette: this.paletteFor(player), parts: null, bones: null };
         figures[i] = figure;
       }
       figure.player = player;

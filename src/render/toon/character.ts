@@ -1,7 +1,8 @@
 /**
  * The character: one small mesh with a skeleton, shared by everybody on
  * court, and its animation clips. It comes in a single file made by the
- * Blender scripts in design/ (magic `PAD1`, a JSON header, then the numbers).
+ * Blender scripts in design/prueba-3d (magic `PAD1`, a JSON header, then the
+ * numbers). The contract is in the README of that folder.
  *
  * A pose is, for every bone, a rotation relative to its parent (a quaternion)
  * plus the position of the pelvis. The skeleton has no rest rotations: with
@@ -9,7 +10,14 @@
  *
  * The character's own axes, in metres at life size: it stands on the origin
  * facing -y, with x to its left and z up.
+ *
+ * Everybody shares the mesh, the skeleton and the clips. What makes Beto
+ * Beto is a handful of numbers in the same file: a palette, a few optional
+ * pieces (a cap, a moustache), a scale for some bones (a belly), a posture,
+ * and how fast and how wide he gestures. That is a `Style`.
  */
+type Vec3 = [number, number, number];
+
 export interface ClipInfo {
   name: string;
   /** Seconds. */
@@ -18,17 +26,44 @@ export interface ClipInfo {
   frames: number;
   /** Offset so that one frame falls exactly on the contact. */
   t0?: number;
-  /** For a stroke: the moment the racket meets the ball. */
+  grupo?: 'base' | 'locomocion' | 'golpe' | 'reaccion' | 'mania';
+
+  // ---- ways of moving
+  /** Metres one whole cycle covers, at life size. */
+  zancada?: number;
+  /** Which way the cycle goes, in the character's axes: [0, -1] is forward. */
+  dir?: [number, number];
+  /** The part of the cycle (0..1) it is best to come in at from standing. */
+  entrada?: number;
+  /** When each foot is on the floor: [which, from, to], in seconds of the clip. */
+  apoyos?: Array<[string, number, number]>;
+  /** A start or a stop: how far it gets, and how far it has got at every frame. */
+  raiz?: { dir: [number, number]; total: number; dist: number[] };
+  /** Which cycle a start ends in, or a stop comes out of, and at which part of it. */
+  enlace?: { clip: string; fase: number };
+  /** A stop: from this moment on it no longer advances. */
+  libre?: number;
+  /** The little hop before the rival hits: when the feet land, and from when it can be cut short. */
+  aterrizaje?: number;
+  corte?: number;
+
+  // ---- strokes
+  /** The moment the racket meets the ball. */
   contact?: number;
-  /** For a stroke: where the middle of the racket is at that moment. */
-  hit?: [number, number, number];
-  /** For a stroke: where the hand is at that moment. Newer files carry it. */
-  hand?: [number, number, number];
-  /** For a way of moving: metres covered by one cycle. Newer files carry it. */
-  stride?: number;
-  /** For the serve: where the free hand holds the ball, and when it lets go. */
-  ballHold?: [[number, number, number], [number, number, number]];
+  /** Where the middle of the racket is at that moment, and the wrist. */
+  hit?: Vec3;
+  mano?: Vec3;
+  /** The windup: [from, to]. It ends in a pause, and it is the part that can be stretched or held. */
+  armado?: [number, number];
+  lado?: 'derecha' | 'reves';
+  /** A stroke for a ball that is only just reached. */
+  estirada?: boolean;
+  /** The serve: where the free hand has the ball at the start and when it lets go, and when that is. */
+  ballHold?: [Vec3, Vec3];
   release?: number;
+
+  /** Stretches with an expression on the face: [from, to, which]. */
+  caras?: Array<[number, number, string]>;
 }
 
 export interface Clip extends ClipInfo {
@@ -36,13 +71,30 @@ export interface Clip extends ClipInfo {
   samples: Float32Array;
 }
 
+/** What the file says about one of the cast. */
+interface CastEntry {
+  paleta: string;
+  piezas: string[];
+  escala: number;
+  tempo: number;
+  amplitud: number;
+  mania: string | null;
+  huesos: Record<string, { s: Vec3; d: Vec3 }>;
+  /** Degrees per bone: lean forward, turn to the left, roll. */
+  postura: Record<string, Vec3>;
+}
+
 export interface CharacterMeta {
   version: number;
   mesh: {
     nv: number;
+    /** Indices of the base body plus the braid: all there is in a file of the first version. */
     ni: number;
-    center: [number, number, number];
-    half: [number, number, number];
+    /** Every index in the file, and how many of them are the base body. */
+    nt?: number;
+    base?: number;
+    center: Vec3;
+    half: Vec3;
     pos: number;
     nrm: number;
     mat: number;
@@ -50,20 +102,25 @@ export interface CharacterMeta {
     joints: number;
     weights: number;
     idx: number;
+    /** Optional pieces, after the base body: where each starts among the indices and how many it has. */
+    piezas?: Array<{ nombre: string; inicio: number; cantidad: number }>;
+    /** Faces: which vertices move, and by how much for every expression. */
+    morfos?: { inicio: number; cantidad: number; nombres: string[]; datos: number };
   };
   materials: string[];
   /** Materials drawn flat, without the light steps: eyes, brows, mouth. */
   flat: boolean[];
   /** A colour for every material, for every look that came in the file. */
-  palettes: Record<string, Array<[number, number, number]>>;
-  ink: [number, number, number];
-  shadowTint: [number, number, number];
-  lightGain: [number, number, number];
-  rimColor: [number, number, number];
-  bones: { names: string[]; parents: number[]; rest: Array<[number, number, number]> };
+  palettes: Record<string, Vec3[]>;
+  ink: Vec3;
+  shadowTint: Vec3;
+  lightGain: Vec3;
+  rimColor: Vec3;
+  bones: { names: string[]; parents: number[]; rest: Vec3[] };
   /** Middle of the racket head, in the axes of the racket bone. */
-  racketCenter: [number, number, number];
+  racketCenter: Vec3;
   fps: number;
+  personajes?: Record<string, CastEntry>;
   clips: Array<ClipInfo & { data: number }>;
 }
 
@@ -80,7 +137,31 @@ export interface Character {
   /** Number of bones, and of numbers in a pose. */
   bones: number;
   poseSize: number;
+  /** The pose everything is measured from when a gesture is made wider or smaller: standing ready. */
+  ready: Float32Array | null;
+  /** The bones of the trunk and the arms: what a wider gesture moves more. */
+  upper: number[];
   bone(name: string): number;
+}
+
+/** What is one character's own, ready to use. */
+export interface Style {
+  /** The name of its palette in the file. */
+  palette: string;
+  /** Its size next to everybody else's. */
+  size: number;
+  /** How fast it goes through its gestures, and how wide it makes them. */
+  tempo: number;
+  amplitude: number;
+  /** The clip of its tic between points, if it has one of its own. */
+  mania: string | null;
+  /** For every bone: how much its part of the mesh is scaled and shifted. Null when nothing is. */
+  scale: Float32Array | null;
+  shift: Float32Array | null;
+  /** Bones with an extra turn: [bone, quaternion]. */
+  posture: Array<[number, Float32Array]>;
+  /** What to draw of the mesh: [first index, how many]. */
+  parts: Array<[number, number]>;
 }
 
 export function parseCharacter(buffer: ArrayBuffer): Character {
@@ -115,6 +196,10 @@ export function parseCharacter(buffer: ArrayBuffer): Character {
   }
 
   const names = meta.bones.names;
+  const ready = clips.listo ? clips.listo.samples.slice(0, channels) : null;
+  const upper = ['spine', 'chest', 'neck', 'head', 'clav.L', 'clav.R', 'upper_arm.L', 'upper_arm.R', 'forearm.L', 'forearm.R']
+    .map((name) => names.indexOf(name))
+    .filter((bone) => bone >= 0);
   return {
     meta,
     pos: new Int16Array(buffer, base + mesh.pos, mesh.nv * 3),
@@ -123,12 +208,98 @@ export function parseCharacter(buffer: ArrayBuffer): Character {
     out: new Uint8Array(buffer, base + mesh.out, mesh.nv),
     joints: new Uint8Array(buffer, base + mesh.joints, mesh.nv * 3),
     weights: new Uint8Array(buffer, base + mesh.weights, mesh.nv * 2),
-    idx: new Uint16Array(buffer, base + mesh.idx, mesh.ni),
+    idx: new Uint16Array(buffer, base + mesh.idx, mesh.nt ?? mesh.ni),
     clips,
     bones,
     poseSize: channels,
+    ready,
+    upper,
     bone: (name) => names.indexOf(name),
   };
+}
+
+/**
+ * What is one character's own. `name` is its entry in the file (`beto`,
+ * `jugador`); a file with no cast, or a name it does not have, gives somebody
+ * plain with the palette of that name if there is one.
+ */
+export function styleOf(character: Character, name: string): Style {
+  const meta = character.meta;
+  const entry = meta.personajes?.[name];
+  const mesh = meta.mesh;
+  const style: Style = {
+    // A file with no cast: the palette of that name, or the rival's for anybody who is not the person's own player.
+    palette: entry?.paleta ?? (meta.palettes[name] ? name : name !== 'jugador' && meta.palettes.rival ? 'rival' : (Object.keys(meta.palettes)[0] ?? name)),
+    size: entry?.escala ?? 1,
+    tempo: entry?.tempo ?? 1,
+    amplitude: entry?.amplitud ?? 1,
+    mania: entry?.mania ?? null,
+    scale: null,
+    shift: null,
+    posture: [],
+    parts: [[0, mesh.ni]],
+  };
+  if (mesh.piezas && mesh.base !== undefined) {
+    const wanted = entry ? entry.piezas : ['trenza'];
+    style.parts = [[0, mesh.base]];
+    for (const piece of mesh.piezas) {
+      if (!wanted.includes(piece.nombre) || piece.cantidad <= 0) continue;
+      // Pieces that follow one another are drawn in one go.
+      const last = style.parts[style.parts.length - 1]!;
+      if (last[0] + last[1] === piece.inicio) last[1] += piece.cantidad;
+      else style.parts.push([piece.inicio, piece.cantidad]);
+    }
+  }
+  if (!entry) return style;
+  const bones = character.bones;
+  if (Object.keys(entry.huesos).length > 0) {
+    style.scale = new Float32Array(bones * 3).fill(1);
+    style.shift = new Float32Array(bones * 3);
+    for (const [bone, change] of Object.entries(entry.huesos)) {
+      const i = character.bone(bone);
+      if (i < 0) continue;
+      style.scale.set(change.s, i * 3);
+      style.shift.set(change.d, i * 3);
+    }
+  }
+  for (const [bone, turn] of Object.entries(entry.postura)) {
+    const i = character.bone(bone);
+    if (i >= 0) style.posture.push([i, eulerQuaternion(turn[0], turn[1], turn[2])]);
+  }
+  return style;
+}
+
+/** A lean forward, a turn to the left and a roll, in degrees, as one rotation: Rz(turn) Rx(lean) Ry(roll). */
+function eulerQuaternion(lean: number, turn: number, roll: number): Float32Array {
+  const k = Math.PI / 360;
+  const out = new Float32Array(4);
+  const half = new Float32Array(4);
+  multiplyQuaternions([0, 0, Math.sin(turn * k), Math.cos(turn * k)], 0, [Math.sin(lean * k), 0, 0, Math.cos(lean * k)], 0, half, 0);
+  multiplyQuaternions(half, 0, [0, Math.sin(roll * k), 0, Math.cos(roll * k)], 0, out, 0);
+  return out;
+}
+
+/** out = a times b: the turn of b first, then the one of a. `out` may be `a` or `b`. */
+export function multiplyQuaternions(
+  a: ArrayLike<number>,
+  ao: number,
+  b: ArrayLike<number>,
+  bo: number,
+  out: Float32Array | number[],
+  oo: number,
+): void {
+  const ax = a[ao]!;
+  const ay = a[ao + 1]!;
+  const az = a[ao + 2]!;
+  const aw = a[ao + 3]!;
+  const bx = b[bo]!;
+  const by = b[bo + 1]!;
+  const bz = b[bo + 2]!;
+  const bw = b[bo + 3]!;
+  out[oo] = aw * bx + ax * bw + ay * bz - az * by;
+  out[oo + 1] = aw * by - ax * bz + ay * bw + az * bx;
+  out[oo + 2] = aw * bz + ax * by - ay * bx + az * bw;
+  out[oo + 3] = aw * bw - ax * bx - ay * by - az * bz;
 }
 
 /** The pose of a clip at a moment, interpolated between its frames. */
@@ -173,6 +344,82 @@ export function blendPose(bones: number, a: Float32Array, b: Float32Array, w: nu
   return out;
 }
 
+/**
+ * Makes a pose wider or smaller: how far the trunk and the arms are from
+ * standing ready is multiplied by `amplitude`. It is what makes the same
+ * gesture look different on each of the cast.
+ */
+export function widen(character: Character, pose: Float32Array, amplitude: number): Float32Array {
+  const ready = character.ready;
+  if (amplitude === 1 || !ready) return pose;
+  for (const i of character.upper) {
+    const k = i * 4;
+    const dot = pose[k]! * ready[k]! + pose[k + 1]! * ready[k + 1]! + pose[k + 2]! * ready[k + 2]! + pose[k + 3]! * ready[k + 3]!;
+    const sign = dot < 0 ? -1 : 1;
+    for (let c = 0; c < 4; c++) pose[k + c] = ready[k + c]! + (pose[k + c]! * sign - ready[k + c]!) * amplitude;
+  }
+  return pose;
+}
+
+const turned = new Float32Array(4);
+
+/** The way a character stands: its extra turns go on top of whatever the pose has. */
+export function stand(pose: Float32Array, style: Style): Float32Array {
+  for (const [bone, turn] of style.posture) {
+    multiplyQuaternions(pose, bone * 4, turn, 0, turned, 0);
+    pose.set(turned, bone * 4);
+  }
+  return pose;
+}
+
+const qa = new Float32Array(4);
+const qb = new Float32Array(4);
+const qc = new Float32Array(4);
+const qz = new Float32Array(4);
+const hipsSpine = new Float32Array(4);
+
+/**
+ * Running at an angle with a cycle that goes straight: the pelvis, and the
+ * legs with it, turn toward where the body is going, and the spine and the
+ * chest turn back between them, so the chest still faces the net. `angle` is
+ * in radians, to the character's left.
+ */
+export function twistHips(character: Character, pose: Float32Array, angle: number): Float32Array {
+  const hips = character.bone('hips') * 4;
+  const spine = character.bone('spine') * 4;
+  const chest = character.bone('chest') * 4;
+  if (angle === 0 || hips < 0 || spine < 0 || chest < 0) return pose;
+  const conjugate = (q: ArrayLike<number>, o: number, out: Float32Array): void => {
+    out[0] = -q[o]!;
+    out[1] = -q[o + 1]!;
+    out[2] = -q[o + 2]!;
+    out[3] = q[o + 3]!;
+  };
+  // Half of the way back for the spine: h* z(-a/2) h s.
+  qz[0] = 0;
+  qz[1] = 0;
+  qz[2] = Math.sin(-angle / 4);
+  qz[3] = Math.cos(-angle / 4);
+  conjugate(pose, hips, qa);
+  multiplyQuaternions(qa, 0, qz, 0, qb, 0);
+  multiplyQuaternions(qb, 0, pose, hips, qc, 0);
+  // The other half for the chest, measured with the pelvis and the spine as they were.
+  multiplyQuaternions(pose, hips, pose, spine, hipsSpine, 0);
+  multiplyQuaternions(qc, 0, pose, spine, qb, 0);
+  pose.set(qb, spine);
+  conjugate(hipsSpine, 0, qa);
+  multiplyQuaternions(qa, 0, qz, 0, qb, 0);
+  multiplyQuaternions(qb, 0, hipsSpine, 0, qc, 0);
+  multiplyQuaternions(qc, 0, pose, chest, qb, 0);
+  pose.set(qb, chest);
+  // And the pelvis itself: z(a) h.
+  qz[2] = Math.sin(angle / 2);
+  qz[3] = Math.cos(angle / 2);
+  multiplyQuaternions(qz, 0, pose, hips, qb, 0);
+  pose.set(qb, hips);
+  return pose;
+}
+
 /** Where every bone ended up: its rotation in the character's axes (3 x 3, by rows) and the position of its joint. */
 export interface Skeleton {
   rot: Float32Array;
@@ -185,12 +432,15 @@ export function createSkeleton(character: Character): Skeleton {
 
 /**
  * Works out the skeleton of a pose: the rotation and the joint of every bone
- * in the character's own axes. Parents come before their children in the file.
+ * in the character's own axes. Parents come before their children in the
+ * file. A bone that is scaled for this character also pushes its children
+ * further away.
  */
-export function solveSkeleton(character: Character, pose: Float32Array, skeleton: Skeleton): Skeleton {
+export function solveSkeleton(character: Character, pose: Float32Array, skeleton: Skeleton, style?: Style | null): Skeleton {
   const { parents, rest } = character.meta.bones;
   const bones = character.bones;
   const { rot, pos } = skeleton;
+  const scale = style?.scale ?? null;
   for (let i = 0; i < bones; i++) {
     const k = i * 4;
     let x = pose[k]!;
@@ -239,9 +489,14 @@ export function solveSkeleton(character: Character, pose: Float32Array, skeleton
       }
       const mine = rest[i]!;
       const theirs = rest[parent]!;
-      const dx = mine[0] - theirs[0];
-      const dy = mine[1] - theirs[1];
-      const dz = mine[2] - theirs[2];
+      let dx = mine[0] - theirs[0];
+      let dy = mine[1] - theirs[1];
+      let dz = mine[2] - theirs[2];
+      if (scale) {
+        dx *= scale[parent * 3]!;
+        dy *= scale[parent * 3 + 1]!;
+        dz *= scale[parent * 3 + 2]!;
+      }
       pos[i * 3] = pos[parent * 3]! + rot[p]! * dx + rot[p + 1]! * dy + rot[p + 2]! * dz;
       pos[i * 3 + 1] = pos[parent * 3 + 1]! + rot[p + 3]! * dx + rot[p + 4]! * dy + rot[p + 5]! * dz;
       pos[i * 3 + 2] = pos[parent * 3 + 2]! + rot[p + 6]! * dx + rot[p + 7]! * dy + rot[p + 8]! * dz;
@@ -250,29 +505,49 @@ export function solveSkeleton(character: Character, pose: Float32Array, skeleton
   return skeleton;
 }
 
-/** The matrix of every bone for the graphics card, by columns: move to the joint, rotate, undo the rest position. */
-export function skinMatrices(character: Character, skeleton: Skeleton, out: Float32Array): Float32Array {
+/**
+ * The matrix of every bone for the graphics card, by columns: undo the rest
+ * position, scale this character's part of the mesh, rotate, and move to the
+ * joint.
+ */
+export function skinMatrices(character: Character, skeleton: Skeleton, out: Float32Array, style?: Style | null): Float32Array {
   const rest = character.meta.bones.rest;
   const { rot, pos } = skeleton;
+  const scale = style?.scale ?? null;
+  const shift = style?.shift ?? null;
   for (let i = 0; i < character.bones; i++) {
     const o = i * 9;
     const m = i * 16;
     const at = rest[i]!;
-    out[m] = rot[o]!;
-    out[m + 1] = rot[o + 3]!;
-    out[m + 2] = rot[o + 6]!;
+    let sx = 1;
+    let sy = 1;
+    let sz = 1;
+    let ox = at[0];
+    let oy = at[1];
+    let oz = at[2];
+    if (scale && shift) {
+      sx = scale[i * 3]!;
+      sy = scale[i * 3 + 1]!;
+      sz = scale[i * 3 + 2]!;
+      ox = ox * sx - shift[i * 3]!;
+      oy = oy * sy - shift[i * 3 + 1]!;
+      oz = oz * sz - shift[i * 3 + 2]!;
+    }
+    out[m] = rot[o]! * sx;
+    out[m + 1] = rot[o + 3]! * sx;
+    out[m + 2] = rot[o + 6]! * sx;
     out[m + 3] = 0;
-    out[m + 4] = rot[o + 1]!;
-    out[m + 5] = rot[o + 4]!;
-    out[m + 6] = rot[o + 7]!;
+    out[m + 4] = rot[o + 1]! * sy;
+    out[m + 5] = rot[o + 4]! * sy;
+    out[m + 6] = rot[o + 7]! * sy;
     out[m + 7] = 0;
-    out[m + 8] = rot[o + 2]!;
-    out[m + 9] = rot[o + 5]!;
-    out[m + 10] = rot[o + 8]!;
+    out[m + 8] = rot[o + 2]! * sz;
+    out[m + 9] = rot[o + 5]! * sz;
+    out[m + 10] = rot[o + 8]! * sz;
     out[m + 11] = 0;
-    out[m + 12] = pos[i * 3]! - (rot[o]! * at[0] + rot[o + 1]! * at[1] + rot[o + 2]! * at[2]);
-    out[m + 13] = pos[i * 3 + 1]! - (rot[o + 3]! * at[0] + rot[o + 4]! * at[1] + rot[o + 5]! * at[2]);
-    out[m + 14] = pos[i * 3 + 2]! - (rot[o + 6]! * at[0] + rot[o + 7]! * at[1] + rot[o + 8]! * at[2]);
+    out[m + 12] = pos[i * 3]! - (rot[o]! * ox + rot[o + 1]! * oy + rot[o + 2]! * oz);
+    out[m + 13] = pos[i * 3 + 1]! - (rot[o + 3]! * ox + rot[o + 4]! * oy + rot[o + 5]! * oz);
+    out[m + 14] = pos[i * 3 + 2]! - (rot[o + 6]! * ox + rot[o + 7]! * oy + rot[o + 8]! * oz);
     out[m + 15] = 1;
   }
   return out;

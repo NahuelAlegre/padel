@@ -8,6 +8,7 @@ import {
   samplePose,
   skinMatrices,
   solveSkeleton,
+  styleOf,
   type Character,
 } from '../src/render/toon/character';
 
@@ -29,14 +30,23 @@ function racketAt(clip: string, time: number): [number, number, number] {
 
 describe('el personaje', () => {
   it('se lee del archivo: malla, esqueleto y clips', () => {
-    expect(character.meta.version).toBe(1);
+    expect(character.meta.version).toBe(2);
     expect(character.bones).toBe(25);
     expect(character.poseSize).toBe(25 * 4 + 3);
     expect(character.meta.mesh.nv).toBeGreaterThan(1000);
-    expect(character.idx.length).toBe(character.meta.mesh.ni);
+    // Every index of the file, the optional pieces included.
+    expect(character.idx.length).toBe(character.meta.mesh.nt);
+    expect(character.idx.length).toBeGreaterThan(character.meta.mesh.ni);
     expect(Math.max(...character.idx)).toBeLessThan(character.meta.mesh.nv);
+    // The shader has room for this many bones and materials.
+    expect(character.bones).toBeLessThanOrEqual(26);
+    expect(character.meta.materials.length).toBeLessThanOrEqual(26);
     // What the game animates with.
-    for (const name of ['listo', 'correr', 'lateral_izq', 'lateral_der', 'saque', 'derecha', 'reves', 'globo', 'remate']) {
+    for (const name of [
+      'listo', 'espera', 'correr', 'correr_atras', 'lateral_izq', 'lateral_der', 'split_step',
+      'saque', 'derecha', 'reves', 'volea', 'volea_reves', 'bandeja', 'remate', 'globo', 'estirada', 'estirada_reves',
+      'festejo', 'lamento', 'mania_gorra', 'mania_zapatilla', 'mania_saludo',
+    ]) {
       expect(character.clips[name], name).toBeDefined();
     }
     // The bones the game reaches for by name.
@@ -79,11 +89,92 @@ describe('el personaje', () => {
     for (const name of ['derecha', 'reves', 'globo', 'remate', 'saque']) expect(character.clips[name]!.hit![1], name).toBeLessThan(0);
   });
 
+  it('cada clip dice lo suyo: zancada y dirección los ciclos, contacto y armado los golpes', () => {
+    for (const name of ['correr', 'correr_atras', 'lateral_izq', 'lateral_der']) {
+      const clip = character.clips[name]!;
+      expect(clip.loop, name).toBe(true);
+      expect(clip.zancada, name).toBeGreaterThan(1);
+      expect(clip.zancada, name).toBeLessThan(2.2);
+      expect(Math.hypot(clip.dir![0], clip.dir![1]), name).toBeCloseTo(1, 6);
+      expect(clip.entrada, name).toBeGreaterThanOrEqual(0);
+      expect(clip.entrada, name).toBeLessThan(1);
+    }
+    for (const clip of Object.values(character.clips)) {
+      if (clip.grupo !== 'golpe') continue;
+      expect(clip.contact, clip.name).toBeGreaterThan(0);
+      expect(clip.contact, clip.name).toBeLessThan(clip.dur);
+      // The windup ends before the contact: what is left is the swing itself.
+      expect(clip.armado![1], clip.name).toBeLessThan(clip.contact!);
+      expect(clip.armado![0], clip.name).toBeLessThanOrEqual(clip.armado![1]);
+      expect(['derecha', 'reves'], clip.name).toContain(clip.lado);
+      // Reverses are played on the other side of the body.
+      expect(Math.sign(clip.hit![0]), clip.name).toBe(clip.lado === 'reves' ? 1 : -1);
+    }
+    const serve = character.clips.saque!;
+    expect(serve.release).toBeLessThan(serve.contact!);
+    expect(serve.ballHold).toHaveLength(2);
+    expect(character.clips.split_step!.aterrizaje).toBeLessThan(character.clips.split_step!.corte!);
+  });
+
+  it('un modelo, cuatro personajes: lo propio de cada uno viene en el archivo', () => {
+    const own = styleOf(character, 'jugador');
+    const beto = styleOf(character, 'beto');
+    const romina = styleOf(character, 'romina');
+    const chela = styleOf(character, 'chela');
+    const drawn = (style: typeof own): number => style.parts.reduce((sum, part) => sum + part[1], 0);
+    const base = character.meta.mesh.base!;
+    // Everybody is the base body plus their own pieces, and nothing reaches past the end of the mesh.
+    for (const style of [own, beto, romina, chela]) {
+      expect(style.parts[0]![0]).toBe(0);
+      expect(drawn(style)).toBeGreaterThanOrEqual(base);
+      for (const [first, count] of style.parts) expect(first + count).toBeLessThanOrEqual(character.idx.length);
+      expect(character.meta.palettes[style.palette]).toHaveLength(character.meta.materials.length);
+    }
+    // The braid for some, the cap and the moustache for Beto.
+    expect(drawn(own)).toBe(character.meta.mesh.ni);
+    expect(drawn(beto)).not.toBe(drawn(own));
+    expect(new Set([own.palette, beto.palette, romina.palette, chela.palette]).size).toBe(4);
+    // Chela is smaller; Beto has a belly and leans back; each has a tic.
+    expect(chela.size).toBeCloseTo(0.9, 6);
+    expect(beto.scale![character.bone('spine') * 3 + 1]).toBeGreaterThan(1.2);
+    expect(beto.posture.length).toBeGreaterThan(0);
+    expect(own.scale).toBeNull();
+    expect(new Set([beto.mania, romina.mania, chela.mania]).size).toBe(3);
+    // Somebody the file does not know is somebody plain.
+    const stranger = styleOf(character, 'nadie');
+    expect(stranger.size).toBe(1);
+    expect(stranger.scale).toBeNull();
+    expect(character.meta.palettes[stranger.palette]).toBeDefined();
+  });
+
+  it('con huesos escalados, la malla y el esqueleto siguen juntos', () => {
+    const beto = styleOf(character, 'beto');
+    const pose = samplePose(character, character.clips.listo!, 0, new Float32Array(character.poseSize));
+    const plain = solveSkeleton(character, pose, createSkeleton(character));
+    const big = solveSkeleton(character, pose, createSkeleton(character), beto);
+    // Thinner legs are not shorter legs, and a bigger belly does not move the feet.
+    const z = (skeleton: typeof plain, bone: string): number => skeleton.pos[character.bone(bone) * 3 + 2]!;
+    expect(z(big, 'foot.L')).toBeCloseTo(z(plain, 'foot.L'), 2);
+    expect(z(big, 'head')).toBeCloseTo(z(plain, 'head'), 2);
+    const matrices = skinMatrices(character, big, new Float32Array(26 * 16), beto);
+    // A point at the joint of a bone stays at the joint, scaled or not.
+    const spine = character.bone('spine');
+    const rest = character.meta.bones.rest[spine]!;
+    const shift = [beto.shift![spine * 3]!, beto.shift![spine * 3 + 1]!, beto.shift![spine * 3 + 2]!];
+    const m = spine * 16;
+    for (let r = 0; r < 3; r++) {
+      const at = matrices[m + r]! * rest[0] + matrices[m + 4 + r]! * rest[1] + matrices[m + 8 + r]! * rest[2] + matrices[m + 12 + r]!;
+      // Only the shift of that part of the mesh, turned with the bone, separates them.
+      expect(Math.abs(at - big.pos[spine * 3 + r]!)).toBeLessThan(Math.hypot(shift[0]!, shift[1]!, shift[2]!) + 1e-4);
+    }
+  });
+
   it('parado, mide lo que una persona y pisa el suelo', () => {
     const pose = samplePose(character, character.clips.listo!, 0, new Float32Array(character.poseSize));
     const skeleton = solveSkeleton(character, pose, createSkeleton(character));
     const height = (bone: string): number => skeleton.pos[character.bone(bone) * 3 + 2]!;
-    expect(height('head')).toBeGreaterThan(1.3);
+    // Standing ready is standing low: knees bent, weight forward.
+    expect(height('head')).toBeGreaterThan(1.2);
     expect(height('head')).toBeLessThan(1.9);
     expect(height('hips')).toBeGreaterThan(0.7);
     expect(height('foot.L')).toBeLessThan(0.2);

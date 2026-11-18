@@ -41,7 +41,7 @@ export const CAST: Record<CharacterId, Character> = {
     // He points with his free hand at where he is going to play, as in class.
     tell: { lead: 0.55, cues: { drive: 'pointAim', lob: 'pointAim', drop: 'pointAim' } },
     mannerisms: [
-      { clip: 'cap', duration: 0.4, weight: 2 },
+      { clip: 'cap', duration: 0.5, weight: 2 },
       { clip: 'whistle', duration: 0.6, weight: 1 },
     ],
     talk: 0.45,
@@ -75,7 +75,7 @@ export const CAST: Record<CharacterId, Character> = {
     tell: { lead: 0.45, cues: { drive: 'plantWide' } },
     mannerisms: [
       { clip: 'sleeves', duration: 0.6, weight: 2 },
-      { clip: 'shoeTap', duration: 0.5, weight: 2 },
+      { clip: 'shoeTap', duration: 0.56, weight: 2 },
       { clip: 'neck', duration: 0.7, weight: 1, when: 'afterLoss' },
     ],
     talk: 0.45,
@@ -105,8 +105,8 @@ export const CAST: Record<CharacterId, Character> = {
     // She crouches and opens the racket face, "like serving soup": a lob. A step in: a chiquita.
     tell: { lead: 0.5, cues: { lob: 'crouchOpenFace', drop: 'stepIn' } },
     mannerisms: [
-      { clip: 'glasses', duration: 0.5, weight: 2 },
-      { clip: 'wave', duration: 0.7, weight: 2 },
+      { clip: 'glasses', duration: 0.45, weight: 2 },
+      { clip: 'wave', duration: 0.65, weight: 2 },
       { clip: 'kissRacket', duration: 0.5, weight: 1, when: 'afterWin' },
     ],
     talk: 0.4,

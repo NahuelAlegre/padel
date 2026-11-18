@@ -4,14 +4,15 @@ import type { Assets } from '../../platform/types';
 import type { SimEvent } from '../../sim/match';
 import { FlatPainter } from '../flat/painter';
 import type { Renderer, Scene, ScenePlayer } from '../scene';
-import { FigureAnimator } from '../toon/animator';
-import { parseCharacter, type Character } from '../toon/character';
+import { smoothstep } from '../../core/math';
+import { FigureAnimator, type Moment } from '../toon/animator';
+import { parseCharacter, styleOf, type Character, type Style } from '../toon/character';
 import { ToonGL } from '../toon/gl';
 import type { CameraName } from '../view';
 import { loadCourt, type CourtLayers } from './court-art';
 import { Director, type DirectorTexts } from './director';
 import type { FigureFrame } from './frame';
-import { LOOKS, PLAYER_LOOK, paletteOf, shirtOf, type Look } from './looks';
+import { castName, paletteOf, shirtOf } from './looks';
 import { StageView, type Projected } from './view';
 
 const CHARACTER_FILE = 'art/character.bin';
@@ -21,6 +22,8 @@ const CHARACTER_FILE = 'art/character.bin';
  * in front of the person; after this, the game is shown with whatever is there.
  */
 const GRACE_MS = 1200;
+/** Seconds the ball of a serve takes to get from the hand that let it go to where it is falling. */
+const HAND_BLEND = 0.18;
 
 export interface StageOptions {
   /** False to never use the 3D look: a developer switch, and the way to measure the plain one. */
@@ -60,6 +63,13 @@ export class StageRenderer implements Renderer {
   /** Files still on their way. */
   private pending = 2;
   private readonly animators: FigureAnimator[] = [];
+  /** Who each of those animators was made for: somebody else in that place gets a new one. */
+  private readonly animated: string[] = [];
+  private readonly styles = new Map<string, Style>();
+  private readonly moment: Moment = { rivalHitIn: Infinity, holding: false, resting: false };
+  /** The ball of a serve while a hand has it, and how far from its real place it is still shown after. */
+  private readonly hand = { x: 0, y: 0, z: 0, left: 0 };
+  private readonly held: [number, number, number] = [0, 0, 0];
   private readonly palettes = new Map<string, Float32Array>();
   private readonly tints = new Map<string, string>();
   private readonly noPalette = new Float32Array(26 * 4);
@@ -119,6 +129,7 @@ export class StageRenderer implements Renderer {
       .then((buffer) => {
         this.character = parseCharacter(buffer);
         this.palettes.clear();
+        this.styles.clear();
         this.tints.clear();
       })
       // Without the character the figures stay the simple ones.
@@ -153,32 +164,36 @@ export class StageRenderer implements Renderer {
     this.world.hidden = true;
   }
 
-  private lookOf(player: ScenePlayer): Look {
-    return player.character ? LOOKS[player.character] : PLAYER_LOOK;
+  /** What is one of the cast's own, from the character file. */
+  private styleFor(character: Character, name: string): Style {
+    let style = this.styles.get(name);
+    if (!style) {
+      style = styleOf(character, name);
+      this.styles.set(name, style);
+    }
+    return style;
   }
 
   private paletteFor(player: ScenePlayer): Float32Array {
     const character = this.character;
     if (!character) return this.noPalette;
-    const key = player.character ?? '';
-    let palette = this.palettes.get(key);
+    const name = castName(player.character);
+    let palette = this.palettes.get(name);
     if (!palette) {
-      const meta = character.meta;
-      palette = paletteOf(this.lookOf(player), meta.palettes, meta.materials, meta.flat);
-      this.palettes.set(key, palette);
+      palette = paletteOf(character, this.styleFor(character, name));
+      this.palettes.set(name, palette);
     }
     return palette;
   }
 
   /** The colour of the simple figure of a player: its shirt. */
   private tintFor(figure: FigureFrame): string {
-    const key = figure.player.character ?? '';
-    let tint = this.tints.get(key);
+    const name = castName(figure.player.character);
+    let tint = this.tints.get(name);
     if (!tint) {
-      const meta = this.character?.meta ?? null;
-      const [r, g, b] = shirtOf(this.lookOf(figure.player), meta?.palettes ?? null, meta?.materials ?? null);
+      const [r, g, b] = shirtOf(this.character, name);
       tint = `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
-      this.tints.set(key, tint);
+      this.tints.set(name, tint);
     }
     return tint;
   }
@@ -207,10 +222,11 @@ export class StageRenderer implements Renderer {
 
   onEvent(event: SimEvent, scene: Scene): void {
     this.director.onEvent(event, scene);
-    // Whoever won the point is glad, for the moment the pause lasts.
+    // Whoever won the point is glad and whoever lost it is not, for the moment the pause lasts.
     if (event.type === 'point') {
       for (let i = 0; i < scene.players.length; i++) {
         if (scene.players[i]!.team === event.winner) this.animators[i]?.cheer();
+        else this.animators[i]?.lament();
       }
     }
   }
@@ -234,19 +250,60 @@ export class StageRenderer implements Renderer {
 
     if (toon && character) {
       const figures = frame.figures;
+      const moment = this.moment;
+      const serving = scene.ball.held ? scene.serving : -1;
+      moment.resting = !scene.ball.live && scene.serving < 0;
       for (let i = 0; i < figures.length; i++) {
         const figure = figures[i]!;
-        const animator = (this.animators[i] ??= new FigureAnimator(character));
-        animator.update(figure.player, figure.k, figure.facing, frame.ball, dt);
+        const who = figure.player;
+        const name = castName(who.character);
+        let animator = this.animators[i];
+        if (!animator || this.animated[i] !== name) {
+          animator = new FigureAnimator(character, this.styleFor(character, name));
+          this.animators[i] = animator;
+          this.animated[i] = name;
+        }
+        const style = animator.style;
+        // Some of the cast are smaller than the rest.
+        figure.k *= style?.size ?? 1;
+        figure.parts = style?.parts ?? null;
+        // When the other side is about to hit: whoever is waiting takes its little hop.
+        moment.rivalHitIn = Infinity;
+        for (const other of scene.players) {
+          if (other.team !== who.team && other.anim !== 'idle' && other.contactIn > 0) moment.rivalHitIn = Math.min(moment.rivalHitIn, other.contactIn);
+        }
+        moment.holding = serving === i;
+        animator.update(who, figure.k, figure.facing, frame.ball, dt, moment);
         figure.x = animator.x;
         figure.y = animator.y;
         figure.bones = animator.bones;
+      }
+      // Before a serve the ball is in the server's hand; let go, it slides to where it really is.
+      const hand = this.hand;
+      const ball = frame.ball;
+      const server = figures[serving];
+      if (server && this.animators[serving]!.ballInHand(server.k, server.facing, this.held)) {
+        hand.x = this.held[0] - ball.x;
+        hand.y = this.held[1] - ball.y;
+        hand.z = this.held[2] - ball.z;
+        hand.left = HAND_BLEND;
+      } else if (hand.left > 0) {
+        hand.left = Math.max(0, hand.left - dt);
+      }
+      if (hand.left > 0) {
+        const w = smoothstep(0, 1, hand.left / HAND_BLEND);
+        ball.x += hand.x * w;
+        ball.y += hand.y * w;
+        ball.z += hand.z * w;
       }
       this.painter.clear();
       toon.draw(frame);
       if (this.timings.first3d < 0) this.timings.first3d = now;
     } else {
-      for (const figure of frame.figures) figure.bones = null;
+      for (const figure of frame.figures) {
+        figure.bones = null;
+        figure.parts = null;
+      }
       this.painter.world(frame);
     }
     this.painter.overlay(frame, scene, this.director.label, dt);

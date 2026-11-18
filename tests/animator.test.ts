@@ -6,8 +6,8 @@ import { createConfig } from '../src/config';
 import { InputState } from '../src/input/state';
 import type { ScenePlayer } from '../src/render/scene';
 import { figureScale } from '../src/render/stage/camera';
-import { contactOf, FigureAnimator, strideOf, strokeClipName, strokeTime } from '../src/render/toon/animator';
-import { parseCharacter, type Character } from '../src/render/toon/character';
+import { contactOf, FigureAnimator, holdOf, strideOf, strokeClipName, strokeTime } from '../src/render/toon/animator';
+import { parseCharacter, styleOf, type Character } from '../src/render/toon/character';
 import { Match } from '../src/sim/match';
 import type { ShotKind } from '../src/sim/types';
 import { aiEntry, humanEntry, SKILLS } from './helpers';
@@ -49,6 +49,7 @@ function player(more: Partial<ScenePlayer> = {}): ScenePlayer {
 }
 
 const distance = (a: ArrayLike<number>, b: ArrayLike<number>): number => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
+const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
 
 /** Where a point of the character's own axes is on court, for a figure facing the far end. */
 function onCourt(who: ScenePlayer, k: number, local: readonly [number, number, number]): [number, number, number] {
@@ -97,6 +98,99 @@ describe('las piernas siguen al piso', () => {
     });
   }
 
+  for (const [name, dx, dy] of [
+    ['correr', 0, 1],
+    ['correr_atras', 0, -1],
+    ['lateral_izq', -1, 0],
+    ['lateral_der', 1, 0],
+  ] as const) {
+    it(`${name}: el pie apoyado no patina`, () => {
+      const clip = character.clips[name]!;
+      const k = 1.2;
+      const speed = 3.6;
+      const animator = new FigureAnimator(character);
+      const who = player({ vx: dx * speed, vy: dy * speed });
+      const toes = { L: character.bone('toe.L'), R: character.bone('toe.R') };
+      // Where the ball of each foot is on the court. Facing the far end, the character is turned half way round.
+      const toe = (side: 'L' | 'R'): [number, number] => [
+        animator.x - animator.skeleton.pos[toes[side] * 3]! * k,
+        animator.y - animator.skeleton.pos[toes[side] * 3 + 1]! * k,
+      ];
+      let travelled = 0;
+      const planted: Partial<Record<string, [number, number]>> = {};
+      let worst = 0;
+      let checked = 0;
+      for (let frame = 0; frame < 240; frame++) {
+        who.x += dx * speed * DT;
+        who.y += dy * speed * DT;
+        who.stride += speed * DT;
+        travelled += speed * DT;
+        animator.update(who, k, 1, noBall, DT);
+        // The same sum the animator does: in at the part of the cycle the clip asks for, then on with the metres.
+        const phase = (clip.entrada ?? 0) + travelled / (strideOf(clip) * k);
+        const time = (phase - Math.floor(phase)) * clip.dur;
+        for (const [foot, from, to] of clip.apoyos ?? []) {
+          const key = `${foot} ${from}`;
+          // Not the very edges of a step: there the foot is rolling on or off.
+          if (frame < 20 || time < from + 0.02 || time > to - 0.02) {
+            delete planted[key];
+            continue;
+          }
+          const now = toe(foot as 'L' | 'R');
+          const start = (planted[key] ??= now);
+          worst = Math.max(worst, Math.hypot(now[0] - start[0], now[1] - start[1]));
+          checked++;
+        }
+      }
+      expect(checked).toBeGreaterThan(40);
+      // The body covered a dozen metres; a planted foot moved a couple of centimetres at most.
+      expect(travelled).toBeGreaterThan(12);
+      expect(worst).toBeLessThan(0.03);
+    });
+  }
+
+  it('corre hacia donde va, también en diagonal: la pelvis gira lo que falta', () => {
+    const k = 1.2;
+    const hips = character.bone('hips') * 16;
+    const facing = (vx: number, vy: number): number => {
+      const animator = new FigureAnimator(character);
+      const who = player({ vx, vy });
+      for (let i = 0; i < 40; i++) {
+        who.stride += Math.hypot(vx, vy) * DT;
+        animator.update(who, k, 1, noBall, DT);
+      }
+      // Which way the front of the pelvis points across the court (see the test of the head).
+      return animator.bones[hips + 4]!;
+    };
+    const straight = facing(0, 4);
+    expect(facing(-2.4, 3.2)).toBeLessThan(straight - 0.25);
+    expect(facing(2.4, 3.2)).toBeGreaterThan(straight + 0.25);
+  });
+
+  it('justo antes de que pegue el rival, quien espera da su saltito; quien corre, no', () => {
+    const k = 1.2;
+    const hips = character.bone('hips');
+    const rise = (who: ScenePlayer, hop: boolean): number => {
+      const animator = new FigureAnimator(character);
+      for (let i = 0; i < 20; i++) animator.update(who, k, 1, noBall, DT, { rivalHitIn: Infinity, holding: false, resting: false });
+      let low = Infinity;
+      let high = -Infinity;
+      for (let i = 0; i < 60; i++) {
+        who.stride += Math.hypot(who.vx, who.vy) * DT;
+        animator.update(who, k, 1, noBall, DT, { rivalHitIn: hop ? 0.6 - i * DT : Infinity, holding: false, resting: false });
+        const z = animator.skeleton.pos[hips * 3 + 2]!;
+        low = Math.min(low, z);
+        high = Math.max(high, z);
+      }
+      return high - low;
+    };
+    expect(rise(player(), true)).toBeGreaterThan(rise(player(), false) + 0.04);
+    // Somebody already running has no hop to take: the legs are the ones of the run.
+    const running = rise(player({ vy: 4.5 }), true);
+    const runningAnyway = rise(player({ vy: 4.5 }), false);
+    expect(running).toBeCloseTo(runningAnyway, 2);
+  });
+
   it('las zancadas son de persona: ni pasitos ni saltos', () => {
     for (const name of ['correr', 'lateral_izq', 'lateral_der']) {
       const stride = strideOf(character.clips[name]!);
@@ -136,8 +230,13 @@ describe('los golpes llegan a tiempo', () => {
   const strokes: Array<[string, Partial<ScenePlayer>]> = [
     ['derecha', { shot: 'drive', animSide: 1 }],
     ['reves', { shot: 'drive', animSide: -1 }],
+    ['volea', { shot: 'volley', animSide: 1, reachZ: 1.4 }],
+    ['volea_reves', { shot: 'volley', animSide: -1, reachZ: 1.4 }],
     ['globo', { shot: 'lob', animSide: 1 }],
+    ['bandeja', { shot: 'bandeja', animSide: 1, reachZ: 2.0 }],
     ['remate', { shot: 'smash', animSide: 1, reachZ: 2.4 }],
+    ['estirada', { shot: 'drive', animSide: 1, reachX: 1.3, reachZ: 0.6 }],
+    ['estirada_reves', { shot: 'drive', animSide: -1, reachX: -1.3, reachZ: 0.6 }],
     ['saque', { anim: 'serve', shot: 'serve', animSide: 1 }],
   ];
 
@@ -146,16 +245,49 @@ describe('los golpes llegan a tiempo', () => {
       expect(strokeClipName(player({ anim: 'swing', ...more }))).toBe(name);
       expect(character.clips[name]).toBeDefined();
     }
-    for (const shot of ['bandeja', 'vibora'] as ShotKind[]) expect(strokeClipName(player({ anim: 'swing', shot, reachZ: 2.1 }))).toBe('remate');
+    for (const shot of ['bandeja', 'vibora'] as ShotKind[]) expect(strokeClipName(player({ anim: 'swing', shot, reachZ: 2.1 }))).toBe('bandeja');
     // The same ball is over the head of somebody life-sized and at the shoulder of somebody drawn half as big again.
     const high = player({ anim: 'swing', shot: 'bandeja', reachZ: 2.0, animSide: 1 });
-    expect(strokeClipName(high, 1.2)).toBe('remate');
-    expect(strokeClipName(high, 1.5)).toBe('derecha');
+    expect(strokeClipName(high, 1.2)).toBe('bandeja');
+    expect(strokeClipName(high, 1.5)).toBe('volea');
+    // A smash that is not high enough to jump for is played with the feet on the floor.
+    expect(strokeClipName(player({ anim: 'swing', shot: 'smash', reachZ: 2.0 }), 1.2)).toBe('bandeja');
     // And a ball far over the head is played from above whatever the shot is called.
-    expect(strokeClipName(player({ anim: 'swing', shot: 'volley', reachZ: 2.6 }), 1.2)).toBe('remate');
+    expect(strokeClipName(player({ anim: 'swing', shot: 'volley', reachZ: 2.6 }), 1.2)).toBe('bandeja');
+    // Low volleys, short balls and balls off the wall are played with the stroke of a drive.
     for (const shot of ['volley', 'drop', 'wallExit', 'backWall'] as ShotKind[]) {
       expect(strokeClipName(player({ anim: 'swing', shot, animSide: 1 }))).toBe('derecha');
       expect(strokeClipName(player({ anim: 'swing', shot, animSide: -1 }))).toBe('reves');
+    }
+    // A ball at the shoulder is taken like a volley even if it bounced first.
+    expect(strokeClipName(player({ anim: 'swing', shot: 'wallExit', reachZ: 1.5, animSide: -1 }))).toBe('volea_reves');
+    // A file without the newer clips still has a stroke for everything.
+    const old = (name: string): boolean => ['derecha', 'reves', 'globo', 'remate', 'saque'].includes(name);
+    expect(strokeClipName(player({ anim: 'swing', shot: 'volley', reachZ: 1.4 }), 1, old)).toBe('derecha');
+    expect(strokeClipName(player({ anim: 'swing', shot: 'bandeja', reachZ: 2.1 }), 1, old)).toBe('remate');
+    expect(strokeClipName(player({ anim: 'swing', shot: 'drive', reachX: -1.4, reachZ: 0.5, animSide: -1 }), 1, old)).toBe('reves');
+  });
+
+  it('el armado se acelera si falta tiempo y espera si sobra: nunca salta', () => {
+    for (const name of ['derecha', 'volea', 'bandeja', 'remate', 'globo', 'saque']) {
+      const clip = character.clips[name]!;
+      const contact = contactOf(clip);
+      for (const lead of [1.6, 0.9, 0.5, 0.33, 0.2]) {
+        // Asked for late, a stroke starts further into its clip: as far as the time left allows.
+        let time = clamp01((contact - lead) / contact) * contact;
+        let last = time;
+        let worst = 0;
+        for (let eta = lead; eta > -0.2; eta -= DT) {
+          time = strokeTime(clip, eta, time, DT);
+          expect(time, name).toBeGreaterThanOrEqual(last - 1e-9);
+          worst = Math.max(worst, time - last);
+          last = time;
+        }
+        // With time to spare nothing goes faster than the clip; in a hurry, the windup is squeezed, not skipped.
+        const roomy = lead >= holdOf(clip) + (contact - holdOf(clip));
+        expect(worst, `${name} con ${lead} s`).toBeLessThan(roomy ? DT * 1.01 : DT * 6);
+        expect(strokeTime(clip, 0, time, DT)).toBeCloseTo(contact, 9);
+      }
     }
   });
 
@@ -217,11 +349,13 @@ describe('los golpes llegan a tiempo', () => {
   });
 
   it('un clip sin metadatos usa valores razonables; con metadatos, los suyos', () => {
-    const plain = { ...character.clips.derecha!, contact: undefined, stride: undefined };
+    const plain = { ...character.clips.derecha!, contact: undefined, armado: undefined, zancada: undefined };
     expect(contactOf(plain)).toBeCloseTo(plain.dur * 0.52, 9);
     expect(contactOf({ ...plain, contact: 0.31 })).toBe(0.31);
-    expect(strideOf({ ...character.clips.correr!, stride: undefined })).toBeCloseTo(1.45, 9);
-    expect(strideOf({ ...character.clips.correr!, stride: 1.8 })).toBe(1.8);
+    expect(holdOf(plain)).toBeLessThan(contactOf(plain));
+    expect(holdOf({ ...plain, contact: 0.5, armado: [0.2, 0.36] })).toBe(0.36);
+    expect(strideOf({ ...character.clips.correr!, zancada: undefined })).toBeCloseTo(1.8, 9);
+    expect(strideOf({ ...character.clips.correr!, zancada: 1.6 })).toBe(1.6);
     expect(strideOf({ ...plain, name: 'otro' })).toBeGreaterThan(0.5);
   });
 
@@ -337,7 +471,7 @@ describe('lo que cada personaje le agrega', () => {
     // Up for a lob, down for a short one.
     const lob = bone(posed(tell('pointAim', 'lob', 0)), 'hand.L');
     const drop = bone(posed(tell('pointAim', 'drop', 0)), 'hand.L');
-    expect(lob[2]).toBeGreaterThan(drop[2] + 0.5);
+    expect(lob[2]).toBeGreaterThan(drop[2] + 0.4);
   });
 
   it('Romina se planta con las piernas abiertas y la pala atrás de la cabeza', () => {
@@ -346,7 +480,7 @@ describe('lo que cada personaje le agrega', () => {
     const apart = (animator: FigureAnimator): number => bone(animator, 'foot.L')[0] - bone(animator, 'foot.R')[0];
     expect(apart(planted)).toBeGreaterThan(apart(plain) + 0.3);
     expect(bone(planted, 'hips')[2]).toBeLessThan(bone(plain, 'hips')[2] - 0.04);
-    expect(bone(planted, 'hand.R')[2]).toBeGreaterThan(1.5);
+    expect(bone(planted, 'hand.R')[2]).toBeGreaterThan(bone(plain, 'hand.R')[2] + 0.15);
     // The feet stay on the floor.
     expect(bone(planted, 'foot.L')[2]).toBeCloseTo(bone(plain, 'foot.L')[2], 2);
   });
@@ -384,8 +518,11 @@ describe('lo que cada personaje le agrega', () => {
     const plain = posed({});
     const wave = posed({ act: { clip: 'wave', t: 0.3, duration: 0.7 } });
     expect(bone(wave, 'hand.L')[2]).toBeGreaterThan(bone(plain, 'hand.L')[2] + 0.5);
-    const tap = posed({ act: { clip: 'shoeTap', t: 0.25, duration: 0.5 } });
-    expect(bone(tap, 'hand.R')[2]).toBeLessThan(bone(plain, 'hand.R')[2] - 0.3);
+    // Tapping the shoe with the racket: a foot comes up to meet it, and the other stays on the floor.
+    const tap = posed({ act: { clip: 'shoeTap', t: 0.28, duration: 0.56 } });
+    expect(bone(tap, 'hand.R')[2]).toBeLessThan(bone(plain, 'hand.R')[2] - 0.12);
+    expect(Math.max(bone(tap, 'foot.L')[2], bone(tap, 'foot.R')[2])).toBeGreaterThan(Math.max(bone(plain, 'foot.L')[2], bone(plain, 'foot.R')[2]) + 0.08);
+    expect(Math.min(bone(tap, 'foot.L')[2], bone(tap, 'foot.R')[2])).toBeLessThan(0.2);
     const cap = posed({ act: { clip: 'cap', t: 0.2, duration: 0.4 } });
     expect(distance(bone(cap, 'hand.L'), bone(cap, 'head'))).toBeLessThan(0.45);
     // In the middle of a stroke there is no tic.
@@ -410,6 +547,54 @@ describe('lo que cada personaje le agrega', () => {
     // An arm going up over the head in a blink still moves a hand's width per frame, not a metre.
     expect(worst).toBeLessThan(0.28);
     expect(distance(last, bone(posed({}), 'hand.L'))).toBeLessThan(0.05);
+  });
+});
+
+describe('el saque', () => {
+  it('antes de sacar, la pelota está en la mano libre, delante del cuerpo', () => {
+    const k = 1.2;
+    const animator = new FigureAnimator(character);
+    const who = player();
+    for (let i = 0; i < 20; i++) animator.update(who, k, 1, noBall, DT, { rivalHitIn: Infinity, holding: true, resting: false });
+    const ball: [number, number, number] = [0, 0, 0];
+    expect(animator.ballInHand(k, 1, ball)).toBe(true);
+    // Where the clip of the serve says the ball is at its very start, for somebody facing the far end.
+    const hold = character.clips.saque!.ballHold![0];
+    expect(ball[0]).toBeCloseTo(who.x - hold[0] * k, 2);
+    expect(ball[1]).toBeCloseTo(who.y - hold[1] * k, 2);
+    expect(ball[2]).toBeCloseTo(hold[2] * k, 2);
+    // In front of the body, at the chest, a hand's width from the free hand.
+    expect(ball[1]).toBeGreaterThan(who.y + 0.3);
+    expect(ball[2]).toBeGreaterThan(0.9);
+    const hand = character.bone('hand.L') * 3;
+    const at = [who.x - animator.skeleton.pos[hand]! * k, who.y - animator.skeleton.pos[hand + 1]! * k, animator.skeleton.pos[hand + 2]! * k];
+    expect(distance(ball, at)).toBeLessThan(0.25);
+  });
+
+  it('con el cuerpo de cada personaje, la pala igual llega al punto de contacto', () => {
+    for (const name of ['beto', 'romina', 'chela']) {
+      const style = styleOf(character, name);
+      const k = 1.5 * style.size;
+      for (const clipName of ['derecha', 'reves', 'bandeja']) {
+        const clip = character.clips[clipName]!;
+        const animator = new FigureAnimator(character, style);
+        // Its bones are scaled and it stands its own way: its racket is not quite where the clip says.
+        const own = animator.hitOf(clip)!;
+        expect(distance(own, clip.hit!)).toBeLessThan(0.12);
+        const who = player({ anim: 'swing', animPhase: -1, shot: clipName === 'bandeja' ? 'bandeja' : 'drive', animSide: clipName === 'reves' ? -1 : 1 });
+        const ball = onCourt(who, k, own);
+        who.reachX = ball[0] - who.x;
+        who.reachY = ball[1] - who.y;
+        who.reachZ = ball[2];
+        for (let i = 50; i >= 0; i--) {
+          who.contactIn = i * DT;
+          animator.update(who, k, 1, noBall, DT);
+        }
+        const racket: [number, number, number] = [0, 0, 0];
+        animator.racketOnCourt(k, 1, racket);
+        expect(distance(racket, ball), `${name} ${clipName}`).toBeLessThan(0.04 * k);
+      }
+    }
   });
 });
 
@@ -447,6 +632,27 @@ describe('el festejo de un punto ganado', () => {
     expect(worst).toBeLessThan(0.3);
     // ...and a second and a bit later it is standing as if nothing had happened.
     expect(apart(hands(glad), hands(still))).toBeLessThan(0.02);
+  });
+
+  it('quien pierde el punto se desinfla un momento, y también se le pasa', () => {
+    const sad = new FigureAnimator(character);
+    const still = new FigureAnimator(character);
+    const who = player();
+    const rest = { rivalHitIn: Infinity, holding: false, resting: true };
+    for (let i = 0; i < 20; i++) {
+      sad.update(who, k, 1, noBall, DT, rest);
+      still.update(who, k, 1, noBall, DT, rest);
+    }
+    sad.lament();
+    let most = 0;
+    for (let i = 0; i < 90; i++) {
+      sad.update(who, k, 1, noBall, DT, rest);
+      still.update(who, k, 1, noBall, DT, rest);
+      most = Math.max(most, apart(hands(sad), hands(still)));
+    }
+    expect(most).toBeGreaterThan(0.15);
+    expect(apart(hands(sad), hands(still))).toBeLessThan(0.02);
+    expect(character.clips.lamento!.dur).toBeLessThanOrEqual(1);
   });
 
   it('caminando a su lugar, festeja de la cintura para arriba', () => {

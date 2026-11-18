@@ -63,5 +63,9 @@ El usuario marcó 28 favoritos de 47. Las fichas y la lectura crítica están en
 
 - **Desafío por link, sin servidor**: semilla y resultado en la URL.
 - **Partido en vivo por link**: necesita un servidor chico y código de red con compensación de latencia.
+  - Plan probable: conexión directa entre los dos jugadores (WebRTC) con un servidor mínimo que solo los presenta, y rollback, aprovechando que la simulación ya es determinista y registra entradas.
+  - Para no cerrarse la puerta desde ya: que la simulación dé **exactamente el mismo resultado en cualquier navegador y procesador**. Evitar en `src/sim/` funciones como `Math.sin`, `Math.cos`, `Math.pow` y `Math.exp`, que pueden variar entre motores, o usar versiones propias. Agregar un test que compare un partido grabado contra un resultado de referencia.
+  - Un "controlador remoto" es solo otro tipo de controlador, junto al humano y la IA.
+  - Desconexiones: pausa, reconexión y que la IA tome el lugar si el otro se va.
 - Modo dobles jugable (la simulación ya lo soporta), torneos y opciones de partido.
 - PWA, y después Capacitor para las tiendas.

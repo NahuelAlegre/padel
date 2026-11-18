@@ -4,54 +4,56 @@ Lista que mantiene la sesión orquestadora: ideas y pedidos acordados con el usu
 
 ## Decisiones del usuario
 
-- **Estilo visual final**: los favoritos del [tablero de referencias](https://claude.ai/artifact/P6WLCVwJxfoabQ2uwoLKgh) (privado) apuntan a 3D estilizado (ver abajo). Falta una escena de prueba que compare 3D prerrenderizado a sprites contra 3D toon en tiempo real, sobre la misma cancha iluminada, medida en un teléfono real.
+- ~~Estilo visual final~~: **decidido el 2026-11-18**, 3D toon en tiempo real con la cancha horneada y la escala media. Ver `CLAUDE.md`.
+  - Base: `design/prueba-3d/` (rama `claude/3d-style-test-9fba4e`).
+  - En el celular del usuario, los dos caminos andan a 60 fps, con 0,4 a 0,8 ms de JavaScript por cuadro.
 - **Juntar en `main` las ramas de investigación**: `visual-research`, `retention-research`, `competitor-research`, `tiny-graphics-research`, `personajes` y `visual-references`. El usuario dijo "todavía no".
 
-## Señales del tablero de referencias (2026-11-18)
+## Siguiente ronda propuesta (2026-11-18)
 
-El usuario marcó 28 favoritos de 47. Las fichas y la lectura crítica están en `docs/referencias-visuales.md` (rama `claude/visual-references-552078`).
+Hay dos trabajos en paralelo que tocan carpetas distintas. Los dos necesitan que la rama de la prueba 3D esté en `main`.
 
-- **Favoritos completos** (todos los de la familia): 3D toon o cel shading (5/5), acogedor con luz cálida (5/5) y navegador (4/4). Sobre shaders e iluminación dijo: "me gustan todos, porque mejora mucho la experiencia".
-- **Favoritos parciales**:
-  - 3D de película animada (3/4, solo como inspiración).
-  - Deportes (3/6: OlliOlli World; Racket Club, "humanoide pero sin gráficos demandantes"; Super Mega Baseball 4, solo por las poses).
-  - 3D low-poly (2/4: "el low poly siempre tiene su encanto").
-  - 2D con profundidad (2/4).
-  - Vectorial plano (2/5: Alto's "demasiado minimalista", Tangle Tower por el contraste).
-- **Ninguno** de 2D ilustrado o pintado (0/5). Rematch le gusta pero es "demasiado realista y demandante".
-- **Por viabilidad**: 16 favoritos son "3D liviano", 7 son "2D Canvas" y 5 son "inspiración".
-- **Escala**: de Overcooked! 2, "me gusta cómo todo parece chico en un espacio grande".
-- **Lectura**: el estilo apunta a **3D estilizado (toon o low-poly) con buena iluminación**, por las direcciones 1 (3D prerrenderizado a sprites) o 2 (3D toon en tiempo real) del documento, con la cancha iluminada como base. La dirección 3 (2D ilustrado) pierde fuerza.
+### A. Personajes con carácter (en `design/`, Blender por scripts)
 
-## Cámara
+La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "prolijo y genérico", según la propia autocrítica y la revisión de la orquestadora. Falta una decisión gráfica fuerte.
 
-- **Idea del usuario**: que la cámara no sea fija y acompañe un poco al jugador, como en Tennis Clash.
-  - Con 3D en tiempo real sale casi gratis.
-  - Con sprites prerrenderizados o Canvas 2D se puede imitar con paneo y zoom suaves sobre capas horneadas, con parallax.
-  - Cuidar que la pelota se siga leyendo bien.
-  - Agregar una opción de accesibilidad para reducir o apagar el movimiento de cámara.
+- Primero, **arte conceptual en Google Flow** (Nano Banana 2.1, OK del usuario para usarlo desde su Chrome): 2 o 3 propuestas de estilización exagerada a la manera de OlliOlli World o Bomb Rush Cyberfunk, con piernas largas, tobillos finos, zapatillas grandes, manos con presencia y pelo con forma. El usuario elige.
+- **Siluetas propias** para Beto (panza y gorra), Romina (hombros y trenza) y Chela (bajita y visera), según `docs/personajes.md`, más el jugador.
+- **Caras**: parpadeo, 3 o 4 expresiones y bustos grandes para el marcador.
+- Pelo con volumen y ropa con pliegues.
+- **Animación**:
+  - Pies que no patinan (paso ajustado a la velocidad).
+  - Carrera hacia atrás propia y split step.
+  - Reacciones al punto.
+  - Pala a la pelota con cinemática inversa en vivo.
+- Malla más liviana, donde sobran vértices: zapatillas, dedos y agujeros de la pala.
 
-## Arte (próxima ronda)
+### B. Integración del render 3D en el motor (en `src/`)
 
-- Probar 3 o 4 variantes de escala de los personajes, con exageración que varíe con la profundidad (≈1,2× para el jugador cercano y ≈1,5× para el rival), y retocar la cámara para que la cancha no se sienta chica.
-- Adoptar el elenco de `docs/personajes.md`, empezando por Beto, Romina y Chela.
-- Escenario horneado con shader al cargar (WebGL2), con respaldo en Canvas 2D.
-- Comparar lado a lado los personajes 2D y 3D toon, a escala de juego y en movimiento.
-- **Más adelante**, pulido visual profundo: piernas y pies con forma (no cilindros), caras con más expresión y detalle, sin sensación de "AI slop". Ver "Exigencia visual" en `CLAUDE.md`.
-- Usar Google Flow (Nano Banana) para generar arte conceptual de referencia antes de programar. El usuario dio su OK para usarlo desde su Chrome.
+- Renderer WebGL2 detrás de la interfaz `Renderer`, a partir de `design/prueba-3d/lib`, con el camino A (Canvas 2D) como respaldo.
+- Escala media, con exageración que varía con la profundidad.
+- Cámara que acompaña con las reglas de encuadre, probada con juego real, contra las paredes y en dobles.
+- **Ronda "pantalla limpia"** con el estilo nuevo de las ayudas: ver "Motor" abajo.
+- Bajar el peso de la cancha: AVIF, capas blandas a media resolución, fundir capas.
+- Arreglos de la cancha:
+  - Los reflejos del vidrio cercano no tienen que pasar sobre el jugador.
+  - Sombra de la pelota coherente con el resto.
+  - Cielo con más vida.
+  - Buffet con más diseño.
+- Sombra propia en los personajes, con un mapa de sombras chico.
+- Medir en el celular del usuario y, si se puede, en un Android de gama media y un iPhone viejo.
 
 ## Motor
 
-- **Ronda "pantalla limpia"** (feedback del primer juego en el celular, 2026-11-18). El usuario dice "simple pero entretenido", pero que "demasiados círculos" lo confundieron. Es diseño de información, no de arte:
+- **Ronda "pantalla limpia"** (feedback del primer juego en el celular, 2026-11-18). El usuario dice "simple pero entretenido", pero que "demasiados círculos" lo confundieron. Es diseño de información; el estilo llega con el 3D:
   - Sacar el anillo que marca cuál es el jugador propio. Para accesibilidad queda como opción (contorno o color).
   - Pisadas de "dónde pararse" apagadas por defecto.
-  - **Una sola señal de timing** en vez de anillo, punto fijo, banda y rayita. Por ejemplo, que aparezca solo en los últimos ~300 ms y sea mínima.
+  - **Una sola señal de timing** en vez de anillo, punto fijo, banda y rayita. Por ejemplo, el brillo en la pelota o la pala que ya probó la escena 3D, solo en el último instante.
   - Marca de pique chica y sutil, solo para el primer pique en tu lado. El seguimiento después del vidrio, como opción.
   - Marca de objetivo solo mientras el pulgar está apretado, sin halo de dispersión por defecto.
   - Nombre del golpe solo para los golpes especiales (bandeja, víbora, salida de pared, remate) y breve.
   - **Ayudas que se van solas**: a medida que el jugador acierta, las ayudas se desvanecen. Niveles "completas / mínimas / ninguna", con "mínimas" por defecto.
   - Tutorial sin texto, que se aprende jugando y con pistas de una sola vez.
-  - El estilo visual de cada ayuda llega con el arte final. Ahora se define qué se muestra, cuándo y cuánto.
 - **Más adelante**: modo "avanzado" opcional para quien quiera elegir cada tipo de golpe. Nunca por defecto.
 - **Modo incrustable**, para poder meter el juego dentro de otras apps, por ejemplo una de reservas de canchas:
   - Que el juego se monte en un elemento contenedor sin asumir que es dueño de toda la página.
@@ -69,3 +71,15 @@ El usuario marcó 28 favoritos de 47. Las fichas y la lectura crítica están en
   - Desconexiones: pausa, reconexión y que la IA tome el lugar si el otro se va.
 - Modo dobles jugable (la simulación ya lo soporta), torneos y opciones de partido.
 - PWA, y después Capacitor para las tiendas.
+
+## Referencia: señales del tablero (2026-11-18)
+
+El usuario marcó 28 favoritos de 47 en el [tablero de referencias](https://claude.ai/artifact/P6WLCVwJxfoabQ2uwoLKgh) (privado). Las fichas están en `docs/referencias-visuales.md` (rama `claude/visual-references-552078`).
+
+- **Favoritos completos**: 3D toon o cel shading (5/5), acogedor con luz cálida (5/5) y navegador (4/4). Sobre shaders e iluminación dijo: "me gustan todos".
+- **Ninguno** de 2D ilustrado (0/5).
+- Notas del usuario:
+  - Racket Club: "humanoide pero sin gráficos demandantes".
+  - Overcooked: "todo parece chico en un espacio grande".
+  - Super Mega Baseball: "una buena animación mejora la experiencia".
+  - Tennis Clash: la cámara que acompaña.

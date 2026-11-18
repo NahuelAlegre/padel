@@ -25,7 +25,19 @@ Lo que distingue a este juego es que es accesible y respetuoso con el jugador:
 ## Decisiones tomadas
 
 - **Cámara**: desde atrás del jugador, con profundidad simulada (2D con proyección en perspectiva). La sombra de la pelota en el piso es lo que muestra a qué altura va.
-- **Estilo visual**: la base actual es plano redondeado, en la dirección "atlético estilizado" de `design/art-direction/` (vectorial, formas redondeadas, paleta cálida). Lo buscado es "interesante y estético", no realista. El pixel art se descartó porque "parece un juego de NES". **El estilo final todavía no está decidido**: falta comparar 2D contra 3D estilizado y definir el nivel de detalle.
+- **Estilo visual (decidido el 2026-11-18)**: **3D toon en tiempo real** (WebGL2, sombreado toon con contorno de tinta) sobre una **cancha con luz horneada en capas**, con ambiente de club cálido al atardecer. Es el camino B de `design/prueba-3d/`.
+  - Se eligió frente a sprites prerrenderizados (camino A) por fluidez, peso, carga y escalabilidad del elenco.
+  - El camino A queda como respaldo para equipos sin WebGL2.
+  - En el celular del usuario, los dos andan a 60 fps.
+  - Lo buscado es "interesante y estético", no realista. El pixel art y el 2D vectorial se descartaron.
+  - Los favoritos del usuario en el tablero de referencias son 3D toon y cel shading (Bomb Rush Cyberfunk, Rollerdrome, OlliOlli World, Racket Club, Messenger) y ambientes cálidos.
+- **Escala de personajes**: la variante media, con exageración que varía con la profundidad (≈1,2× el cercano, ≈1,5× el rival). La cancha tiene que sentirse grande, "todo chico en un espacio grande".
+- **Cámara**: acompaña al jugador de forma sutil, con estas reglas:
+  - El vidrio de fondo propio, con 2 o 3 m de margen, siempre a la vista.
+  - Paneo lateral y zoom leve con límites.
+  - Se abre un poco con globos y pelotas al fondo.
+  - Zona muerta y suavizado.
+  - Con "reducir movimiento", cámara fija de cancha entera.
 - **Calidad del arte**: la primera maqueta se rechazó porque los personajes "parecen palitos y círculos que intentan ser un humano". Los personajes necesitan proporciones estilizadas pero creíbles, volumen y animación con carácter.
 - **Orientación**: vertical primero. En escritorio se muestra como una columna vertical centrada.
 - **Jugadores**: 1 contra 1 al principio, pero la arquitectura tiene que soportar dobles (2 contra 2) sin reescribir. Equipos con N jugadores e IA o control por jugador; nada de 1 contra 1 fijo en el código.
@@ -60,9 +72,10 @@ Lo que sí gustó: elegir a dónde golpear antes de que llegue la pelota y que e
 ## Restricciones técnicas
 
 - **Liviano pero lindo**: se acepta perder algo de liviandad para que se vea bien, pero no puede ser un juego pesado. Objetivo orientativo: 60 fps en un Android de gama media de hace unos 5 años y una descarga inicial chica.
-- TypeScript + Vite + Canvas 2D, sin motores de juego pesados. Dependencias chicas solo si se justifican.
+- TypeScript + Vite, sin motores de juego pesados. Render en WebGL2 escrito a mano (sin three.js ni PixiJS), con respaldo en Canvas 2D. Dependencias chicas solo si se justifican.
 - La física avanza con paso fijo y el render va desacoplado.
-- Lo estático se dibuja una vez y se cachea. Los personajes con detalle pueden pre-renderizarse a sprites al cargar el juego, según el DPR del dispositivo.
+- Lo estático se dibuja una vez y se cachea: la luz de la cancha va horneada. Los personajes son mallas 3D chicas con esqueleto, compartidas entre todo el elenco. Las variantes salen de colores y piezas, y las animaciones se comparten.
+- Los modelos y las animaciones se generan con scripts de Blender en modo consola, guardados en el repo y reproducibles. Usan la GPU dedicada con `--gpu-backend vulkan --gpu-device 1002/747e/0`.
 - DPR con tope y resolución interna ajustable según el rendimiento.
 - **Accesibilidad**:
   - No depender solo del color.

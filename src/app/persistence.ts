@@ -4,6 +4,7 @@ import type { KeyValueStore } from '../platform/types';
 import type { MatchSnapshot } from '../sim/match';
 import type { Quality } from '../sim/types';
 import { readSettings, type Settings } from '../ui/settings';
+import { LESSONS, type LessonId } from './drill';
 
 /**
  * What the game keeps between visits. There are no accounts, so all of it
@@ -77,7 +78,18 @@ export interface Profile {
   assist: number;
   /** Only the rivals the person has met are in here. */
   rivals: Partial<Record<RivalId, RivalRecord>>;
+  /** Lessons of the tutorial the person has completed. */
+  lessons: LessonId[];
+  /** How many of the shots that have to be found the person has played: the ones a hint may point at. */
+  shots: Record<HintId, number>;
+  /** How many times each hint has been shown. */
+  hints: Record<HintId, number>;
 }
+
+/** The shots a hint in the middle of a match can point at: the lob, the chiquita and the ball off the glass. */
+export type HintId = 'lob' | 'drop' | 'wall';
+
+const noHints = (): Record<HintId, number> => ({ lob: 0, drop: 0, wall: 0 });
 
 /** A match in progress, saved at the start of every point. */
 export interface SavedMatch {
@@ -102,6 +114,9 @@ export function emptyProfile(): Profile {
     hits: { perfect: 0, good: 0, early: 0, late: 0 },
     assist: 1,
     rivals: {},
+    lessons: [],
+    shots: noHints(),
+    hints: noHints(),
   };
 }
 
@@ -167,7 +182,15 @@ function readProfile(saved: unknown): Profile {
       late: count(hits.late),
     },
     assist: Math.min(1, count(data.assist, 1)),
+    lessons: LESSONS.map((lesson) => lesson.id).filter((id) => Array.isArray(data.lessons) && data.lessons.includes(id)),
+    shots: readCounts(data.shots),
+    hints: readCounts(data.hints),
   };
+}
+
+function readCounts(saved: unknown): Record<HintId, number> {
+  const data = (typeof saved === 'object' && saved !== null ? saved : {}) as Partial<Record<HintId, unknown>>;
+  return { lob: count(data.lob), drop: count(data.drop), wall: count(data.wall) };
 }
 
 function readMatch(saved: unknown): SavedMatch | null {

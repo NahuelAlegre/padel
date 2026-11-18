@@ -7,11 +7,17 @@
  */
 export type CharacterId = 'beto' | 'romina' | 'chela';
 
-/** Every value is 0..1, and 0.5 is "an average club player". */
+/**
+ * How somebody plays. Every value is 0..1.
+ *
+ * The first ones are tastes: what it likes to do. The last five are where it
+ * is better or worse than its stars say: 0.5 is "what its stars give", and
+ * each end is worth two stars (see `toAILevel`).
+ */
 export interface PlayStyle {
-  /** Hard, deep shots over safe ones to the middle. */
+  /** Hard, deep shots over safe ones to the middle, and finishing the ball that is there to be attacked. */
   aggression: number;
-  /** 0 lives at the back, 1 follows every attacking shot to the net. */
+  /** 0 lives at the back, 1 follows every attacking shot to the net and holds it. */
   netLean: number;
   /** How much it likes to let the ball come off the glass before playing it. */
   wallUse: number;
@@ -29,14 +35,16 @@ export interface PlayStyle {
   reading: number;
   /** 0 plays through the middle, 1 hunts the side walls. */
   angle: number;
+  /** How little a run of difficult balls gets to it. */
+  composure: number;
 }
 
 /** A behaviour that makes a character memorable. Each one is a small hook in the AI. */
 export type Trait =
   /** Plays the ball to the opponent instead of away, the way a coach feeds balls. */
   | { kind: 'feeder'; chance: number; firstMatchChance: number }
-  /** From `afterHits` hits into a rally, every further hit makes it wilder. */
-  | { kind: 'impatient'; afterHits: number; errorPerHit: number }
+  /** From `afterHits` hits into a rally, every further hit adds to its strain: it comes apart when it is made to wait. */
+  | { kind: 'impatient'; afterHits: number; strainPerHit: number }
   /** Loses its aim when it has to play off the glass. */
   | { kind: 'wallWeak'; precisionFactor: number }
   /** Reached late, it always lobs. */

@@ -490,7 +490,13 @@ async function main() {
 
     section('Pantalla limpia (ayudas mínimas, como viene)');
     check('todo el partido se vio en 3D', seen.not3d === 0 && seen.samples > 200, `${seen.samples} miradas`);
-    check('sin anillo bajo tu jugador, sin huellas y sin anillo de timing', seen.ring + seen.steps + seen.timing === 0);
+    check('sin anillo bajo tu jugador y sin anillo de timing', seen.ring + seen.timing === 0);
+    const wallHints = await phone.evaluate('window.padel.profile.hints.wall');
+    check(
+      'las huellas, solo como pista de la pelota que va a salir del vidrio: dos veces como mucho',
+      wallHints <= 2 && (seen.steps === 0 || wallHints > 0) && seen.steps < seen.samples * 0.2,
+      `${wallHints} pistas, huellas en ${seen.steps} de ${seen.samples} miradas`,
+    );
     check('una sola señal de timing: la pelota se enciende en el último instante', seen.glow > 0 && seen.glowFar === 0, `encendida en ${seen.glow} de ${seen.samples} miradas`);
     check('la marca de pique, solo en tu lado', seen.bounce > 0 && seen.bounceFar === 0, `${seen.bounce} miradas con marca`);
     check('la marca de objetivo, solo mientras el pulgar apunta', seen.aim > 0 && seen.aimNoThumb === 0, `${seen.aim} miradas con marca, ${seen.aimNoThumb} con el pulgar ya suelto`);
@@ -521,11 +527,140 @@ async function main() {
     await tapButton('Menú');
     await sleep(200);
     await shot('06-inicio');
+    const pointsBefore = await phone.evaluate('window.padel.profile.pointsWon + window.padel.profile.pointsLost');
     const quick = await buttonAt('Partida rápida');
     check('en el inicio, "Partida rápida" es el botón principal', !!quick?.visible && quick.primary && quick.focused);
     check('y queda en la mitad de abajo, al alcance del pulgar', !!quick && quick.y > HEIGHT * 0.5, `a ${Math.round(quick?.y ?? 0)} px de ${HEIGHT}`);
     const about = await phone.evaluate(`[...document.querySelectorAll('[data-key="rival"] .note')].map((n) => n.textContent).join(' | ')`);
     check('el inicio dice quién es el rival y cómo van', about.includes('«el Profe» ★') && /Vas 1 a 0|Te lleva 1 a 0/.test(about), about);
+
+    // ------------------------------------------------------------ tutorial
+    section('Tutorial: lecciones cortas que se juegan');
+    const tutorialButton = await buttonAt('Tutorial');
+    check('el inicio tiene "Tutorial" a mano, sin sacarle el lugar a la partida rápida', !!tutorialButton?.visible && !tutorialButton.primary);
+    await tapButton('Tutorial');
+    await shot('06b-tutorial');
+    const lessonList = await phone.evaluate(`[...document.querySelectorAll('.lessons .btn')].map((b) => b.textContent)`);
+    check('son ocho lecciones y se ofrece la primera', lessonList.length === 8 && !!(await buttonAt('1. Moverse y pegar'))?.primary, lessonList.join(' · '));
+    await tapButton('3. Globo');
+    check('cualquiera se puede elegir, y empieza a un toque', await reaches('playing'));
+    const lessonState = () =>
+      phone.evaluate(`(() => {
+        const g = window.padel, box = document.querySelector('#lesson'), ghost = g.scene.tutorial, aim = g.renderer.director.frame.aim;
+        return {
+          state: g.state,
+          screen: g.screens.current,
+          mode: g.mode,
+          name: box.querySelector('b').textContent,
+          cue: box.querySelector('small').textContent,
+          pips: box.querySelector('.pips').textContent,
+          lessonShown: !box.hidden,
+          scoreHidden: document.querySelector('.score').hidden,
+          coach: g.scene.players[1]?.character ?? null,
+          coachNet: Math.abs(g.match.players[1].y),
+          ghost: ghost ? { step: ghost.step, drag: ghost.drag ? { ...ghost.drag } : null } : null,
+          aim: aim ? { double: aim.double, radius: aim.radius } : null,
+          progress: g.drill ? g.drill.progress : -1,
+          incoming: g.match.rally.live && g.match.rally.hitter !== 0,
+          eta: g.match.players[0].plan ? g.match.players[0].plan.t - g.match.time : null,
+        };
+      })()`);
+    let lessonView = await lessonState();
+    for (const deadline = Date.now() + 4000; Date.now() < deadline && !(lessonView.incoming && lessonView.ghost); await sleep(40)) lessonView = await lessonState();
+    await shot('06c-leccion-globo');
+    check('en lugar del marcador, el nombre de la lección y sus tres pelotas', lessonView.lessonShown && lessonView.scoreHidden && lessonView.name === '3. Globo' && lessonView.pips === '○○○', `${lessonView.name} ${lessonView.pips}`);
+    check('el profe es Beto, y para el globo se para en la red', lessonView.coach === 'beto' && lessonView.coachNet < 4, `a ${lessonView.coachNet.toFixed(1)} m de la red`);
+    check('el pulgar fantasma muestra el gesto: arrastrar bien arriba', lessonView.ghost?.step === 'aim' && lessonView.ghost.drag?.y < -110, JSON.stringify(lessonView.ghost));
+    // Three lobs, with the real thumb: press, drag well up, let go. The ball comes to where the person stands.
+    let markSaid = null;
+    let plainMark = null;
+    for (const deadline = Date.now() + 45000; Date.now() < deadline; await sleep(40)) {
+      lessonView = await lessonState();
+      if (lessonView.state !== 'playing' || lessonView.progress >= 3) break;
+      if (!lessonView.incoming || lessonView.eta === null || phone.fingers.has(2)) continue;
+      await phone.touchDown(2, AIM.x, AIM.y);
+      await phone.touchMove(2, AIM.x + 6, AIM.y - 40);
+      await sleep(70);
+      plainMark ??= (await lessonState()).aim;
+      await phone.touchMove(2, AIM.x + 6, AIM.y - 135);
+      await sleep(70);
+      markSaid ??= (await lessonState()).aim;
+      await phone.touchUp(2);
+      // Wait for this ball to be played before the next one.
+      for (const until = Date.now() + 4000; Date.now() < until && (await lessonState()).incoming; await sleep(40));
+    }
+    check('la marca de objetivo dice qué golpe es: con el globo, doble anillo', plainMark?.double === false && markSaid?.double === true, JSON.stringify({ plainMark, markSaid }));
+    for (const deadline = Date.now() + 5000; Date.now() < deadline && (await lessonState()).screen !== 'tutorial'; await sleep(50));
+    lessonView = await lessonState();
+    await shot('06d-leccion-hecha');
+    const afterLesson = await phone.evaluate(`(() => ({
+      text: document.querySelector('.panel .result')?.textContent ?? '',
+      done: [...document.querySelectorAll('.lessons .btn')].filter((b) => b.querySelector('small')).map((b) => b.textContent),
+      saved: window.padel.profile.lessons.join(','),
+      shots: window.padel.profile.shots.lob,
+      points: window.padel.profile.pointsWon + window.padel.profile.pointsLost,
+    }))()`);
+    check('con tres globos la lección queda hecha y vuelve la lista', lessonView.screen === 'tutorial' && afterLesson.text === '¡Globo: hecha!', afterLesson.text);
+    check('la lista la marca con una tilde y una palabra, y ofrece la siguiente', afterLesson.done.length === 1 && afterLesson.done[0].includes('✓ Hecha') && !!(await buttonAt('4. Chiquita'))?.primary, afterLesson.done.join(' · '));
+    check('queda guardada, y no cuenta como partido ni como puntos', afterLesson.saved === 'lob' && afterLesson.shots >= 3 && afterLesson.points === pointsBefore, `${afterLesson.saved}, ${afterLesson.points} puntos`);
+    // A lesson can be left at any time, from its own pause.
+    await tapButton('1. Moverse y pegar');
+    await reaches('playing');
+    await sleep(300);
+    const pauseAt = await phone.evaluate(`(() => { const r = document.querySelector('#pause').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    await phone.tap(pauseAt.x, pauseAt.y);
+    check('en pausa, la lección ofrece volver a las lecciones', (await reaches('paused')) && !!(await buttonAt('Lecciones'))?.visible);
+    await tapButton('Menú');
+    check('y al salir vuelve el inicio de siempre', (await look()).screen === 'menu' && !!(await buttonAt('Partida rápida'))?.primary);
+
+    // ------------------------------------------------------------ hints
+    section('Pistas en contexto: el golpe que conviene, una vez');
+    const hint = await phone.evaluate(`(() => {
+      const g = window.padel;
+      // The ball off the glass is already known, so that hint is out of the way.
+      g.profile.shots = { lob: 0, drop: 0, wall: 1 };
+      g.profile.hints = { lob: 0, drop: 0, wall: 0 };
+      g.start('quick');
+      g.stopLoop();
+      const m = g.match, me = m.players[0], rival = m.players[1];
+      let servedAt = -9;
+      for (let i = 0; i < 60 * 60; i++) {
+        if (m.phase === 'serve' && m.serverId === me.id && m.time - servedAt > 1.5) {
+          g.input.pushSwing({ aim: 0, depth: 0.6, lob: false, power: 1 });
+          servedAt = m.time;
+        }
+        // Nobody is on the stick here: the person is stood where the advice says, so the ball comes within reach.
+        if (m.rally.live && m.rally.hitter !== me.team && me.guide) {
+          me.x = me.guide.stanceX;
+          me.y = me.guide.stanceY;
+        }
+        g.advance(1 / 60);
+        const plan = me.plan;
+        const eta = plan ? plan.t - m.time : 9;
+        if (plan && m.rally.live && m.rally.hitter !== me.team && eta < 1.2 && eta > 0.3 && Math.abs(plan.y) >= 5 && plan.z < 1.9) {
+          // The rival is at the net: the ball to play is the lob.
+          rival.y = 3;
+          const first = g.sceneOptions().tutorial;
+          const shown = first ? { step: first.step, drag: first.drag ? { ...first.drag } : null } : null;
+          const counted = g.profile.hints.lob;
+          g.sceneOptions();
+          const again = g.profile.hints.lob;
+          // Once the person has played one, nobody points at it again.
+          g.profile.shots.lob = 1;
+          const after = g.sceneOptions().tutorial;
+          return { shown, counted, again, after: after === null };
+        }
+      }
+      return null;
+    })()`);
+    check('con el rival en la red y sin haber tirado nunca un globo, el pulgar fantasma lo muestra', hint?.shown?.step === 'aim' && hint.shown.drag?.y < -110, JSON.stringify(hint?.shown ?? null));
+    // An earlier ball of this same match may have shown it already: what matters is that this one counts once, and that there are never more than two.
+    check('cuenta una sola vez por pelota, y dos veces como mucho en total', !!hint && hint.counted >= 1 && hint.counted <= 2 && hint.again === hint.counted, hint ? String(hint.counted) + ' y ' + String(hint.again) : 'sin pista');
+    check('y después del primer globo no aparece más', hint?.after === true);
+    await phone.evaluate(`(() => { const g = window.padel; g.toMenu(); g.saved = null; return g.platform.storage.remove('padel.match.v1'); })()`);
+    await sleep(200);
+    await phone.evaluate(`window.padel.toMenu()`);
+    await sleep(150);
     await tapButton('Opciones');
     await sleep(150);
     await shot('07-opciones');

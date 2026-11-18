@@ -58,10 +58,26 @@ export interface PlayerSetup {
    * takes the ball before the glass when it can. Left out, it is 0.
    */
   wallBias?: number;
+  /**
+   * 0..1, how much it would rather take a lob in the air than give up the
+   * net, when it chooses its own contact. Left out, it is 0.
+   */
+  holdNet?: number;
+  /** 0..1, how little a run of difficult balls gets to it. Left out, it is 0.5. */
+  composure?: number;
 }
 
 export interface Player extends PlayerSetup {
   wallBias: number;
+  holdNet: number;
+  composure: number;
+  /**
+   * What the rally has done to it so far: it grows with every difficult ball
+   * it has to play and fades with the comfortable ones. Zero at every serve.
+   */
+  strain: number;
+  /** 0..1, how hard the last ball it played was. For whoever wants to show it. */
+  pressure: number;
   id: number;
   team: TeamId;
   /** Position inside the team: 0 plays the right side, 1 the left. */
@@ -99,6 +115,10 @@ export function createPlayer(id: number, team: TeamId, index: number, setup: Pla
   return {
     ...setup,
     wallBias: setup.wallBias ?? 0,
+    holdNet: setup.holdNet ?? 0,
+    composure: setup.composure ?? 0.5,
+    strain: 0,
+    pressure: 0,
     id,
     team,
     index,

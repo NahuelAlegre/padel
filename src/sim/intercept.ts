@@ -54,13 +54,19 @@ function stanceFor(point: TrajPoint, player: Player, config: GameConfig): void {
   }
 }
 
-/** How uncomfortable a contact is. Lower is better. */
+/**
+ * How uncomfortable a contact is. Lower is better.
+ * `holdNet` (0..1) is how much the player wants to keep the net: above a
+ * half, a lob taken in the air from mid court is worth more than letting it
+ * go to the glass; below, less.
+ */
 function contactCost(
   point: TrajPoint,
   stanceY: number,
   slack: number,
   now: number,
   config: GameConfig,
+  holdNet = 0,
 ): number {
   const pc = config.player;
   const court = config.court;
@@ -69,8 +75,12 @@ function contactCost(
   // Arriving with no time to set up.
   if (slack < 0.2) cost += (0.2 - slack) * 5;
 
-  // Height: between the knees and the shoulders is the comfortable zone.
+  // Height: between the knees and the shoulders is the comfortable zone. An
+  // overhead is the other way round: the higher it is met, the steeper it
+  // can be hit down.
+  const netDistance = Math.abs(stanceY);
   if (point.z < 0.6) cost += (0.6 - point.z) * 3;
+  else if (point.z >= pc.overheadZ && netDistance <= pc.overheadMaxNetDistance) cost += (pc.maxContactZ - point.z) * 0.6;
   else if (point.z > 1.4) cost += (point.z - 1.4) * (point.bounces === 0 ? 0.8 : 1.5);
 
   // A ball still shooting up right after the bounce is a half volley.
@@ -79,13 +89,14 @@ function contactCost(
   // Slower balls are easier, which also favours waiting for the wall rebound.
   cost += Math.hypot(point.vx, point.vy) * 0.035;
 
-  const netDistance = Math.abs(stanceY);
-  if (point.z >= pc.overheadZ && netDistance <= pc.smashMaxNetDistance) {
+  if (point.z >= pc.smashZ && netDistance <= pc.smashMaxNetDistance) {
     // A high ball this close to the net is there to be put away.
     cost -= 1.2;
   } else if (point.z >= pc.overheadZ && netDistance <= pc.overheadMaxNetDistance && point.bounces === 0) {
-    // From mid court it is a bandeja: better than letting a lob push you back.
-    cost -= 0.4;
+    // From mid court it is a bandeja: the way to keep the net against a lob.
+    // Whether that is better than letting the lob go to the glass is up to
+    // how much the player wants the net.
+    cost += (0.5 - holdNet) * pc.holdNetBonus;
   } else if (point.bounces === 0) {
     // Volleys belong to the net; from the back it is better to let it bounce.
     cost += netDistance < 4.5 ? -0.6 : netDistance < 6.5 ? 0.5 : 1.6;
@@ -128,6 +139,8 @@ export function planIntercept(
   const reach = playerReach(player, config);
   const points = trajectory.points;
   const first = Math.max(0, Math.ceil((now + minLead - trajectory.t0) / SIM_DT - 1e-6));
+  // Only somebody who is at the net has a net to hold.
+  const holdNet = Math.abs(player.y) <= pc.holdNetDistance ? player.holdNet : 0;
 
   let best: TrajPoint | null = null;
   let bestCost = Infinity;
@@ -157,7 +170,7 @@ export function planIntercept(
       }
       continue;
     }
-    let cost = contactCost(point, stance.y, slack, now, config);
+    let cost = contactCost(point, stance.y, slack, now, config, holdNet);
     // Some players like the glass and wait for it; others would rather not.
     if (point.walls > 0) cost -= player.wallBias;
     if (cost < bestCost) {
@@ -217,6 +230,11 @@ const LAST_RESORT = 6;
  * A ball that got past the player next to its own glass counts only when the
  * window holds nothing else, and not at all with `allowPast` off.
  *
+ * A lob is the player's call, made with the feet. Standing its ground (or
+ * stepping back for it) up to `holdNetDistance` from the net, the ball that
+ * goes over within reach is taken in the air. Running to the back, it is let
+ * go to the glass.
+ *
  * This is the contact of a player that moves by hand, and also how an
  * assisted player takes a ball that is passing by instead of waiting for it.
  */
@@ -235,7 +253,10 @@ export function contactNear(
   const points = trajectory.points;
   const from = Math.max(0, Math.floor((now - back - trajectory.t0) / SIM_DT));
   const to = Math.min(points.length - 1, Math.ceil((now + ahead - trajectory.t0) / SIM_DT));
-  const frontY = player.y + teamDir(player.team) * pc.contactAhead;
+  const dir = teamDir(player.team);
+  const frontY = player.y + dir * pc.contactAhead;
+  const retreating = -player.vy * dir > pc.holdNetMaxRetreat;
+  const holdNet = Math.abs(player.y) <= pc.holdNetDistance ? 1 : 0;
 
   let best: TrajPoint | null = null;
   let bestScore = Infinity;
@@ -243,12 +264,14 @@ export function contactNear(
     const point = points[i]!;
     if (point.hittable !== player.team) continue;
     if (point.z < pc.minContactZ || point.z > pc.maxContactZ) continue;
+    // Running to the back, the ball over the head is left for the glass.
+    if (retreating && point.bounces === 0 && point.z >= pc.overheadZ) continue;
     const dx = point.x - player.x;
     if (Math.hypot(dx, point.y - player.y) > reach) continue;
     // Distance to the nearer of the two comfortable spots, one on each side of the body.
     let score = Math.hypot(Math.abs(dx) - pc.sweetSpot, point.y - frontY) * PLACEMENT_WEIGHT;
     // Nobody has to run, so there is no hurry to count: only the ball itself.
-    score += contactCost(point, player.y, 1, now, config);
+    score += contactCost(point, player.y, 1, now, config, holdNet);
     if (isPastPlayer(player.team, player.y, point.y, point.bounces, config)) {
       if (!allowPast) continue;
       score += LAST_RESORT;

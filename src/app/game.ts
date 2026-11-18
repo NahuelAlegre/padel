@@ -21,7 +21,7 @@ import { KeyboardInput } from '../input/keyboard';
 import { PointerInput } from '../input/pointer';
 import { InputState } from '../input/state';
 import type { Platform } from '../platform/types';
-import type { Renderer, Scene } from '../render/scene';
+import type { Renderer, Scene, SceneTutorial } from '../render/scene';
 import { figureScale } from '../render/stage/camera';
 import { StageRenderer } from '../render/stage/renderer';
 import { VIEW } from '../render/view';
@@ -37,21 +37,29 @@ import {
   saveMatch,
   saveProfile,
   saveSettings,
+  type HintId,
   type Profile,
   type SavedData,
   type SavedMatch,
 } from './persistence';
 import { isClassic, noteMatch, Personality } from './personality';
 import { createScene, fillScene, type SceneOptions } from './scene';
+import { COACH_SETUP, Drill, LESSONS, type Gesture } from './drill';
 
 export type AppState = 'menu' | 'playing' | 'paused' | 'over';
-/** A match in one of the formats, or the computer playing itself. */
-export type PlayMode = FormatName | 'demo';
+/** A match in one of the formats, the computer playing itself, or a lesson of the tutorial. */
+export type PlayMode = FormatName | 'demo' | 'tutorial';
 
 /** Never simulate more than this per frame: after a long stall, time is dropped instead. */
 const MAX_STEPS_PER_FRAME = 12;
 /** A person reaches further than the computer: getting close to the ball is enough. */
 const HUMAN_REACH = 1.3;
+/**
+ * How much the advice on where to stand (and the assisted movement) leans
+ * toward holding the net against a lob. A person moving by hand decides with
+ * the stick.
+ */
+const HUMAN_HOLD_NET = 0.6;
 /** With assisted movement on, the player is helped but not instantaneous. */
 const ASSISTED_REACTION = 0.12;
 /** How far above the feet a speech bubble points, in metres of a player at life size. */
@@ -65,6 +73,22 @@ const BUBBLE_HEIGHT = 2.05;
 const ASSIST_FADE = 0.03;
 const ASSIST_RETURN = 0.12;
 const ASSIST_FLOOR = 0.25;
+/**
+ * A hint in the middle of a match: the ghost thumb shows a shot worth trying
+ * (a lob over somebody at the net, a chiquita to somebody far back) or the
+ * court shows where to wait for a ball coming off the glass. Each one shows
+ * this many times at most, and never again once the person has played that
+ * shot: it is a nudge, not a lesson.
+ */
+const HINT_TIMES = 2;
+/** A hint shows from this long before the ball arrives. */
+const HINT_LEAD = 1.8;
+/** Where the rival has to be for a lob or a chiquita to be the shot worth trying, in metres from the net. */
+const HINT_RIVAL_NET = 4.8;
+const HINT_RIVAL_BACK = 7.5;
+
+/** The stick pushed away from the net: down the screen. */
+const BACK_PUSH = { x: 0, y: 1 };
 
 /** Today as yyyy-mm-dd on the person's own calendar, for the history with each rival. */
 function today(): string {
@@ -117,10 +141,20 @@ export class Game {
     debug: false,
     cueLead: 0,
     tutorial: null,
+    guide: false,
+    follow: false,
     cast: [],
     acts: [],
   };
   private ais: AIController[] = [];
+  /** The lesson being played, when the mode is the tutorial. */
+  private drill: Drill | null = null;
+  private lessonAt = 0;
+  /** The lesson that has just been completed, for the list to say so once. */
+  private lessonJustDone: number | null = null;
+  /** The ball each hint was last counted for, so a ball counts once. */
+  private readonly hintBalls: Record<HintId, number> = { lob: -1, drop: -1, wall: -1 };
+  private readonly ghost: SceneTutorial = { scheme: 'two', stickSide: 'left', step: 'play', drag: null, push: null };
   private safeArea: Insets = NO_INSETS;
   private safeAreaStale = true;
   private immersive = false;
@@ -178,6 +212,7 @@ export class Game {
         onResume: () => this.resume(),
         onRestart: () => this.rematch(),
         onMenu: () => this.toMenu(),
+        onLesson: (index) => this.startLesson(index),
         onSettings: () => this.applySettings(),
       },
       () => this.screenInfo(),
@@ -214,8 +249,10 @@ export class Game {
     else this.start('quick');
   }
 
-  start(mode: PlayMode, saved: SavedMatch | null = null, greet = true): void {
+  start(mode: Exclude<PlayMode, 'tutorial'>, saved: SavedMatch | null = null, greet = true): void {
     this.mode = mode;
+    this.drill = null;
+    this.hud.lesson(null);
     this.rival = saved?.rival ?? this.settings.rival;
     this.match = this.createMatch(mode, saved);
     // A match that is picked up again was already opened: nobody says hello twice.
@@ -242,6 +279,113 @@ export class Game {
     this.drainEvents();
     if (opening) this.say(opening);
     this.startLoop();
+  }
+
+  /**
+   * A lesson of the tutorial: a practice court with the coach on the other
+   * side. It can be started from the start screen or from the pause of a
+   * match, which stays saved at its last point.
+   */
+  startLesson(index: number): void {
+    const lesson = LESSONS[index];
+    if (!lesson) return;
+    this.mode = 'tutorial';
+    this.lessonAt = index;
+    this.lessonJustDone = null;
+    const config = createConfig();
+    this.config = config;
+    this.ais = [];
+    const seed = (Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0;
+    const drill = new Drill(lesson, config, new Rng(seed + 1));
+    const assisted = this.settings.assistedMovement;
+    this.match = new Match({
+      config,
+      seed,
+      practice: true,
+      teams: [
+        {
+          name: TEXT.you,
+          players: [
+            {
+              name: TEXT.you,
+              isHuman: true,
+              manual: !assisted,
+              speedFactor: 1,
+              reaction: assisted ? ASSISTED_REACTION : 0,
+              errorScale: 1,
+              reachScale: HUMAN_REACH,
+              hand: 1,
+              holdNet: HUMAN_HOLD_NET,
+              controller: new HumanController(this.input),
+            },
+          ],
+        },
+        {
+          name: TEXT.coach,
+          players: [{ name: TEXT.coach, isHuman: false, manual: false, ...COACH_SETUP, reachScale: 1, hand: CAST.beto.hand, controller: drill.coach }],
+        },
+      ],
+    });
+    drill.begin(this.match);
+    this.drill = drill;
+
+    // The coach is Beto, and he has nothing to say: the lesson is the ball.
+    const { cast, acts } = this.options;
+    cast.length = 0;
+    acts.length = 0;
+    for (const player of this.match.players) {
+      cast.push(player.isHuman ? null : CAST.beto);
+      acts.push(null);
+    }
+    this.rivalIndex = -1;
+    this.personality.clear();
+    this.golden = false;
+
+    this.renderer.reset();
+    this.input.clear();
+    this.pointer.release();
+    this.hud.clear();
+    this.hud.setVisible(true);
+    this.showLesson();
+    this.screens.hide();
+    this.state = 'playing';
+    this.accumulator = 0;
+    this.hitStop = 0;
+    this.warmup = 2;
+    this.autoQuality.reset();
+    this.setInputEnabled(true);
+    this.platform.analytics.track('lesson_start', { lesson: lesson.id });
+    if (this.settings.fullscreen) this.setImmersive(true);
+    this.drainEvents();
+    this.startLoop();
+  }
+
+  private showLesson(): void {
+    const drill = this.drill;
+    if (!drill) return;
+    const text = TEXT.lesson[drill.lesson.id];
+    this.hud.lesson({ name: `${this.lessonAt + 1}. ${text.name}`, cue: text.cue, done: drill.progress, goal: drill.lesson.goal });
+  }
+
+  /** The lesson is done: it is marked, and the list comes back with the next one ready. */
+  private finishLesson(): void {
+    const drill = this.drill;
+    if (!drill) return;
+    const id = drill.lesson.id;
+    if (!this.profile.lessons.includes(id)) this.profile.lessons.push(id);
+    // Whoever has done a lesson is no longer a first visit: next time the game opens on the start screen.
+    this.profile.introDone = true;
+    saveProfile(this.platform.storage, this.profile);
+    this.platform.analytics.track('lesson_done', { lesson: id });
+    this.lessonJustDone = this.lessonAt;
+    this.state = 'menu';
+    this.setInputEnabled(false);
+    this.stopLoop();
+    this.hud.clear();
+    this.hud.setVisible(false);
+    this.screens.hide();
+    this.screens.show('tutorial');
+    this.draw();
   }
 
   /**
@@ -300,6 +444,10 @@ export class Game {
   }
 
   private rematch(): void {
+    if (this.mode === 'tutorial') {
+      this.startLesson(this.lessonAt);
+      return;
+    }
     if (this.state === 'over' && this.mode !== 'demo') {
       this.profile.rematches++;
       this.platform.analytics.track('rematch');
@@ -332,6 +480,9 @@ export class Game {
 
   toMenu(): void {
     this.state = 'menu';
+    this.drill = null;
+    this.lessonJustDone = null;
+    this.hud.lesson(null);
     this.setInputEnabled(false);
     this.stopLoop();
     this.hud.clear();
@@ -346,6 +497,7 @@ export class Game {
   }
 
   private finish(): void {
+    if (this.mode === 'tutorial') return;
     if (this.mode === 'demo' && this.loopDemo) {
       this.start('demo');
       return;
@@ -386,7 +538,7 @@ export class Game {
 
   // ---------------------------------------------------------------- match
 
-  private createMatch(mode: PlayMode, saved: SavedMatch | null): Match {
+  private createMatch(mode: Exclude<PlayMode, 'tutorial'>, saved: SavedMatch | null): Match {
     const config = createConfig();
     config.rules.format = { ...FORMATS[mode === 'demo' ? 'quick' : mode] };
     this.config = config;
@@ -410,6 +562,8 @@ export class Game {
         reachScale: 1,
         hand: who.hand,
         wallBias: level.wallBias,
+        holdNet: level.holdNet,
+        composure: level.composure,
         controller,
       };
     };
@@ -436,6 +590,7 @@ export class Game {
       errorScale: 1,
       reachScale: HUMAN_REACH,
       hand: 1,
+      holdNet: HUMAN_HOLD_NET,
       controller: new HumanController(this.input),
     };
     return new Match({
@@ -468,8 +623,9 @@ export class Game {
     if (settings.lines === 'none') this.hud.hush();
 
     // A new rival takes over the match in progress, unless it is a continued one against somebody else.
-    if (this.mode !== 'demo' && this.state !== 'paused') this.rival = settings.rival;
-    if (this.mode !== 'demo' && this.state === 'paused' && settings.rival !== this.rival) {
+    const match = this.mode !== 'demo' && this.mode !== 'tutorial';
+    if (match && this.state !== 'paused') this.rival = settings.rival;
+    if (match && this.state === 'paused' && settings.rival !== this.rival) {
       this.rival = settings.rival;
       this.match.teamNames[1] = CAST[this.rival].name;
       this.hud.showScore(this.match);
@@ -481,14 +637,16 @@ export class Game {
       if (player.isHuman) {
         player.manual = !settings.assistedMovement;
         player.reaction = settings.assistedMovement ? ASSISTED_REACTION : 0;
-      } else if (this.mode !== 'demo') {
+      } else if (match) {
         player.speedFactor = level.speedFactor;
         player.reaction = level.reaction;
         player.errorScale = level.errorScale;
         player.wallBias = level.wallBias;
+        player.holdNet = level.holdNet;
+        player.composure = level.composure;
       }
     }
-    if (this.mode !== 'demo') for (const controller of this.ais) controller.level = level;
+    if (match) for (const controller of this.ais) controller.level = level;
 
     if (!settings.showFps) this.hud.showFps(null);
     if (this.state !== 'menu' || !settings.fullscreen) this.setImmersive(settings.fullscreen);
@@ -499,19 +657,27 @@ export class Game {
     const events = this.match.events;
     if (events.length === 0) return;
     const humanTeam = this.mode === 'demo' ? -1 : 0;
+    const drill = this.drill;
     for (const event of events) {
       this.renderer.onEvent(event, this.scene);
-      this.hud.onEvent(event, this.match, humanTeam);
+      // In a lesson there is no score to tell: the board is the lesson itself.
+      if (drill) drill.onEvent(event, this.match);
+      else this.hud.onEvent(event, this.match, humanTeam);
       this.react(event);
       this.onSimEvent?.(event);
     }
     events.length = 0;
+    if (drill?.justPassed) {
+      this.platform.sound.play('pointWon');
+      this.showLesson();
+    }
   }
 
   /** Everything around the match that follows from what just happened: feel, saving, counting. */
   private react(event: SimEvent): void {
     const { sound, storage, analytics } = this.platform;
-    const playing = this.mode !== 'demo';
+    // A lesson is played by the person, but nothing in it is a match: no rival, no score, nothing to save.
+    const playing = this.mode !== 'demo' && this.mode !== 'tutorial';
     const record = playing ? this.profile.rivals[this.rival] : undefined;
     if (playing) {
       // The rival has its say. The serve closes its bubble: nothing waits for it.
@@ -599,6 +765,11 @@ export class Game {
       analytics.track('first_hit', { seconds: this.profile.firstHitSeconds });
     }
     if (event.kind === 'serve') return;
+    // The shots that have to be found: once the person has played one, nobody points at it again.
+    if (event.kind === 'lob') this.profile.shots.lob++;
+    else if (event.kind === 'drop') this.profile.shots.drop++;
+    else if (event.kind === 'wallExit') this.profile.shots.wall++;
+    if (this.mode === 'tutorial') return;
     this.profile.hits[event.quality]++;
     // A shot armed early came off too: whoever plays like that is not waiting for a signal.
     this.learn(event.quality !== 'late');
@@ -645,7 +816,14 @@ export class Game {
       standing = wins === losses ? TEXT.record.even(wins) : wins > losses ? TEXT.record.ahead(wins, losses) : TEXT.record.behind(wins, losses);
       if (isClassic(history)) standing += ` ${TEXT.record.classic}`;
     }
+    const done = LESSONS.map((lesson) => profile.lessons.includes(lesson.id));
+    const pending = done.indexOf(false);
+    const justDone = this.lessonJustDone;
+    // After a lesson, the next one that is not done; otherwise the first that is not.
+    const after = justDone === null ? -1 : done.indexOf(false, justDone + 1);
     return {
+      lessons: { done, next: after >= 0 ? after : pending, justDone },
+      inLesson: this.mode === 'tutorial',
       saved: savedLabel,
       rival: {
         who: `«${who.nickname}» ${'★'.repeat(who.stars)}`,
@@ -703,25 +881,108 @@ export class Game {
     const settings = this.settings;
     const playing = (this.state === 'playing' || this.state === 'paused') && this.mode !== 'demo';
     const options = this.options;
-    // Behind the start screen the court is only scenery.
-    options.aids = this.state === 'menu' ? 'none' : settings.aids;
-    options.aidStrength = ASSIST_FLOOR + (1 - ASSIST_FLOOR) * this.profile.assist;
+    const drill = this.drill;
+    // Behind the start screen the court is only scenery. A lesson always shows what it teaches with.
+    options.aids = this.state === 'menu' ? 'none' : drill && settings.aids === 'none' ? 'minimal' : settings.aids;
+    options.aidStrength = drill ? 1 : ASSIST_FLOOR + (1 - ASSIST_FLOOR) * this.profile.assist;
     options.reduceMotion = settings.reduceMotion;
     options.debug = settings.showFps;
     options.cueLead = CONTROLS.cueLead[settings.scheme];
-    // First visit: ghost thumbs show the gestures until a hit comes off.
-    if (playing && !this.profile.introDone) {
-      const match = this.match;
+    options.tutorial = null;
+    options.guide = false;
+    options.follow = false;
+    if (!playing) return options;
+
+    const match = this.match;
+    if (drill) {
+      // A lesson: the ghost thumb shows its gesture while the ball is coming.
+      const shown = drill.gesture;
+      options.guide = drill.lesson.guide;
+      options.follow = drill.lesson.follow;
+      if (shown && match.phase === 'rally' && match.rally.live && match.rally.hitter !== 0) {
+        options.tutorial = this.gesture(shown.gesture, shown.side);
+      }
+    } else if (!this.profile.introDone) {
+      // First visit: ghost thumbs show the gestures until a hit comes off.
       const serving = (match.phase === 'serve' || match.phase === 'windup') && match.server.isHuman;
-      options.tutorial = {
-        scheme: settings.scheme,
-        stickSide: settings.stickSide,
-        step: serving ? 'serve' : 'play',
-      };
-    } else {
-      options.tutorial = null;
+      options.tutorial = this.gesture(serving ? 'serve' : 'play', 1);
+    } else if (settings.aids !== 'none') {
+      const hint = this.hint();
+      if (hint === 'wall') {
+        options.guide = true;
+        options.follow = true;
+      } else if (hint) {
+        options.tutorial = this.gesture(hint, 1);
+      }
     }
     return options;
+  }
+
+  /**
+   * A shot the person has not found yet and that is the one to play right
+   * now, or null. It only says something a moment before the ball arrives,
+   * and only until the person has done it once.
+   */
+  private hint(): HintId | null {
+    const match = this.match;
+    const { shots, hints } = this.profile;
+    const me = match.players.find((player) => player.isHuman);
+    const rival = match.players[this.rivalIndex];
+    const plan = me?.plan;
+    if (!me || !rival || !plan || me.swing || !match.rally.live || match.rally.hitter === me.team) return null;
+    if (plan.t - match.time > HINT_LEAD) return null;
+
+    let hint: HintId | null = null;
+    const high = plan.z >= this.config.player.overheadZ;
+    const rivalNet = Math.abs(rival.y);
+    const open = (id: HintId): boolean => shots[id] === 0 && (hints[id] < HINT_TIMES || this.hintBalls[id] === plan.trajId);
+    if (me.guide?.kind === 'wall' && open('wall')) hint = 'wall';
+    else if (!high && rivalNet < HINT_RIVAL_NET && Math.abs(plan.y) >= 5 && open('lob')) hint = 'lob';
+    else if (!high && rivalNet > HINT_RIVAL_BACK && Math.abs(plan.y) < 6.5 && open('drop')) hint = 'drop';
+    // Counted once per ball, the first time it shows.
+    if (hint && this.hintBalls[hint] !== plan.trajId) {
+      this.hintBalls[hint] = plan.trajId;
+      hints[hint]++;
+      saveProfile(this.platform.storage, this.profile);
+    }
+    return hint;
+  }
+
+  /** The ghost hand for a gesture, in the pixels of the control scheme in use. */
+  private gesture(gesture: Gesture | 'serve' | HintId, side: 1 | -1): SceneTutorial {
+    const settings = this.settings;
+    const ghost = this.ghost;
+    const two = settings.scheme === 'two';
+    ghost.scheme = settings.scheme;
+    ghost.stickSide = settings.stickSide;
+    ghost.step = 'aim';
+    ghost.drag = null;
+    ghost.push = null;
+    switch (gesture) {
+      case 'serve':
+        ghost.step = 'serve';
+        break;
+      case 'play':
+        ghost.step = 'play';
+        break;
+      case 'back':
+        // Screen-down is away from the net.
+        ghost.step = 'play';
+        ghost.push = BACK_PUSH;
+        break;
+      case 'side':
+        ghost.drag = two ? { x: side * CONTROLS.aimRadius * 0.85, y: -42 } : { x: side * 57, y: -82 };
+        break;
+      case 'lob':
+        ghost.drag = two ? { x: 0, y: -(CONTROLS.lobAt + 16) } : { x: 0, y: -(CONTROLS.flickLobLength + 20) };
+        break;
+      case 'drop':
+        ghost.drag = two ? { x: 0, y: CONTROLS.dropAt + 14 } : { x: 0, y: 62 };
+        break;
+      default:
+        break;
+    }
+    return ghost;
   }
 
   private readonly frame = (now: number): void => {
@@ -750,11 +1011,16 @@ export class Game {
     let steps = 0;
     while (this.accumulator >= SIM_DT && steps < MAX_STEPS_PER_FRAME) {
       this.match.step();
+      this.drill?.step(this.match);
       this.accumulator -= SIM_DT;
       steps++;
       this.drainEvents();
     }
     if (steps === MAX_STEPS_PER_FRAME) this.accumulator = 0;
+    if (this.drill?.done) {
+      this.finishLesson();
+      return;
+    }
 
     // The rival's tic, if it is in the middle of one, and its bubble over its head.
     if (this.rivalIndex >= 0) this.options.acts[this.rivalIndex] = this.personality.actAt(this.match.time);

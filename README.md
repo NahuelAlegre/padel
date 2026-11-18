@@ -44,8 +44,8 @@ npm run preview:host
 | `npm run dev:host` | Lo mismo, visible desde otros dispositivos de la red. |
 | `npm run build` | Chequea tipos y genera `dist/`. |
 | `npm run preview` | Sirve `dist/` tal como va a quedar publicado. |
-| `npm test` | Tests de física, reglas, puntuación, golpes, gestos, personajes, cámara, animación, pantalla limpia, guardado y arquitectura (Vitest). |
-| `npm run sim` | Juega cientos de partidos sin pantalla e imprime estadísticas de balance. |
+| `npm test` | Tests de física, reglas, puntuación, golpes, profundidad, gestos, personajes, cámara, animación, pantalla limpia, tutorial, guardado y arquitectura (Vitest). |
+| `npm run sim` | Juega cientos de partidos sin pantalla e imprime estadísticas de balance y de profundidad (cómo se juegan los puntos y cuánto paga la táctica). |
 | `npm run smoke` | Abre el build en un Chrome con emulación de celular y lo juega con toques reales. |
 | `npm run perf` | Mide el peso de la primera visita, el tiempo hasta el primer cuadro y el trabajo por cuadro, con emulación de celular, CPU frenada y conexiones lentas. |
 | `npm run art` | Empaqueta la cancha y el personaje para la web (ver "Los archivos del arte"). Necesita Python y Pillow 11.3 o más nuevo. |
@@ -56,7 +56,7 @@ Atajos de desarrollo en la URL: `?demo` arranca un partido de IA contra IA, `?lo
 
 ## Cómo se juega
 
-**La primera vez no hay menú ni nada que leer.** El juego abre directo en la cancha, con tu saque listo, unos pulgares fantasma que muestran los gestos y Beto, el profe, que saluda desde el otro lado. El primer peloteo es el tutorial: devuelve una pelota lenta hacia donde estás y deja pasar la siguiente, hasta que ganás un punto. Una vez que te salió el primer golpe, las visitas siguientes abren en la pantalla de inicio, con "Partida rápida" como botón principal, abajo, donde ya está el pulgar.
+**La primera vez no hay menú ni nada que leer.** El juego abre directo en la cancha, con tu saque listo, unos pulgares fantasma que muestran los gestos y Beto, el profe, que saluda desde el otro lado. El primer peloteo hace de introducción: devuelve una pelota lenta hacia donde estás y deja pasar la siguiente, hasta que ganás un punto. Una vez que te salió el primer golpe, las visitas siguientes abren en la pantalla de inicio, con "Partida rápida" como botón principal, abajo, donde ya está el pulgar. Los demás golpes (el globo, la chiquita, la bandeja, el remate) se aprenden en el Tutorial, o jugando: el juego los muestra una vez, cuando convienen.
 
 | Formato | Qué es |
 | --- | --- |
@@ -64,6 +64,27 @@ Atajos de desarrollo en la URL: `?demo` arranca un partido de IA contra IA, `?lo
 | Partido | Un set a 4 juegos, con punto de oro y tie-break corto (a 5 puntos) si llegan 3 a 3. |
 
 El partido se guarda al empezar cada punto. Si cerrás el juego o te llaman por teléfono, al volver aparece "Seguir el partido" con el marcador tal como estaba.
+
+### Tutorial
+
+Está en el inicio y en la pausa, nunca en el camino: "Partida rápida" sigue siendo el botón principal. Son **ocho lecciones cortas que se juegan**, no se leen. En cada una Beto, el profe, arma la situación y te tira la pelota; un pulgar fantasma muestra el gesto; y la lección queda hecha cuando el golpe te salió tres veces.
+
+| # | Lección | La situación | El gesto que muestra el pulgar |
+| --- | --- | --- | --- |
+| 1 | Moverse y pegar | La pelota va a un costado, una vez a cada lado. | El joystick, y mantener, apuntar y soltar. |
+| 2 | Apuntar | El profe se para de un lado: la pelota va al otro. | Arrastrar hacia el lado vacío. |
+| 3 | Globo | El profe está en la red. | Arrastrar bien arriba. |
+| 4 | Chiquita | El profe está lejos, en el fondo. | Arrastrar hacia abajo. |
+| 5 | La pared | Una pelota profunda: dejarla picar y salir del vidrio. | Las pisadas muestran dónde esperarla. |
+| 6 | Bandeja | Estás en la red y te tiran un globo. | El joystick hacia atrás, y pegarle sin dejarla picar. |
+| 7 | Remate | Estás en la red y el globo queda corto. | Pegarle arriba. |
+| 8 | Leer el gesto | Peloteás con el profe: antes de pegar señala a dónde va a tirar. | Ninguno: hay que mirarlo a él. |
+
+En pantalla hay un nombre, media línea ("Por arriba del que está en la red") y tres círculos que se van llenando. Se puede elegir cualquier lección en cualquier orden, repetirla o saltearla; las hechas llevan una tilde y la palabra "Hecha". No cuentan como partido ni tocan el marcador de nada.
+
+**Pistas en medio de un partido.** Los golpes que hay que descubrir (el globo, la chiquita y esperar la pared) se muestran una vez, justo cuando convienen: con el rival en la red, el pulgar fantasma arrastra bien arriba; con el rival en el fondo y vos cerca de la red, hacia abajo; y si la pelota va a salir del vidrio, las pisadas marcan dónde esperarla. Cada pista aparece dos veces como mucho y nunca más desde que hiciste ese golpe. Con las ayudas en "Ninguna" no aparecen.
+
+**La marca de objetivo dice qué golpe es por su forma**, también con las ayudas mínimas: anillo simple para el golpe normal, doble para el globo y chico para la chiquita. Cuando el pulgar pasa de un golpe a otro la marca da un salto, que es como se nota sin leer que arrastrando más arriba pasa algo distinto.
 
 ### Los dos esquemas de control
 
@@ -97,8 +118,8 @@ Vos solo decís a dónde querés la pelota. El nombre del golpe lo pone el conte
 
 | Situación | Golpe |
 | --- | --- |
-| Pelota alta, cerca de la red | Remate |
-| Pelota alta, desde media cancha | Bandeja, o víbora si apuntás a un costado |
+| Pelota bien alta (más de 2,2 m), a menos de 4,5 m de la red y sin ir para atrás | Remate |
+| Pelota por arriba de la cabeza, hasta media cancha (6,6 m) | Bandeja, o víbora si apuntás a un costado |
 | En el aire, cerca de la red | Volea |
 | Después de un rebote en la pared | Salida de pared |
 | La pelota ya te pasó, contra tu vidrio | Contrapared |
@@ -110,28 +131,70 @@ Vos solo decís a dónde querés la pelota. El nombre del golpe lo pone el conte
 
 **La pelota se enciende un instante antes de que haya que pegarle.** Es la única señal de timing que hay en pantalla. Lo que cuenta es el momento en que soltás (o deslizás) respecto de la llegada de la pelota:
 
-- **Perfecto** (±60 ms): más rápido y preciso.
+- **Perfecto** (±60 ms): más preciso, y además le da a cada golpe lo suyo (ver la tabla de abajo).
 - **Bien** (±150 ms): normal.
 - **Temprano**: si soltás antes de que la pelota esté a tu alcance, el golpe queda **armado** y sale solo cuando llega, tan bien como uno bueno. Lo único que perdés es el perfecto. Así se puede elegir a dónde pegar bastante antes de que llegue la pelota.
 - **Tarde** (hasta 240 ms): la pelota vuelve, pero floja, alta y corta.
 
 Un timing mediocre no manda la pelota afuera. Los errores salen del riesgo que elegís (apuntar cerca de las paredes agranda la dispersión) y de no llegar. Las ventanas están medidas en tiempo de juego: con la velocidad al 60 % son ±100 ms y ±250 ms reales. No hay cámara lenta ni pausas para apuntar.
 
-**La ayuda está en el alcance, no en el movimiento.** Alcanza con acercarse: la persona llega a pelotas que pasan a 1,6 m (la máquina, a 1,25 m) y el jugador se estira para llegar. Cuanto más estirado, menos preciso el golpe.
+**Cada golpe tiene su perfecto.** No es solo una palabra: se nota en lo que le pasa al rival.
+
+| Golpe | Qué le da el perfecto |
+| --- | --- |
+| Derecha, revés, volea | 15 % más de ritmo y más baja sobre la red |
+| Globo | Pica junto al vidrio (ver "Globo con calidad") |
+| Chiquita | Más corta, más suave, y muerde más al picar |
+| Bandeja | Más profunda y más baja: pica cerca del vidrio y no sale |
+| Víbora | 15 % más de ritmo y más abierta |
+| Salida de pared | No flota: sale baja sobre la red |
+| Remate | Salta todavía más después del pique |
+
+Armar el golpe temprano es lo seguro (sale como uno bueno); esperar y soltar justo da calidad; soltar tarde sale flojo.
+
+**La ayuda está en el alcance, no en el movimiento.** Alcanza con acercarse: la persona llega a pelotas que pasan a 1,6 m (la máquina, a 1,25 m) y el jugador se estira para llegar. Cuanto más estirado, más débil y menos preciso el golpe.
 
 **Qué pelota se juega.** Si desde donde estás parado la pelota pasa dos veces a tu alcance (antes y después del vidrio de fondo, por ejemplo), la señal es para la más cómoda, con el mismo criterio que usa la máquina. Desde el fondo eso suele ser dejarla picar y esperar la salida de pared. La contrapared queda como último recurso: sale cuando la pelota ya te pasó y no va a volver.
 
+### Construir el punto
+
+Fácil de aprender, difícil de dominar: los controles son los mismos de siempre, y lo que cambia es que **el buen golpe depende de la situación**. No hay barras ni indicadores; se ve en la pelota y en los cuerpos.
+
+**Calidad de pelota.** Cada pelota es más o menos difícil para quien la recibe, según lo que le hizo el golpe anterior:
+
+- por debajo de la faja cerca de la red, o contra el piso en cualquier lado: hay que pegarle hacia arriba;
+- lejos del cuerpo: hay que estirarse;
+- rápida;
+- pegada al vidrio del fondo o en un rincón: no hay lugar para el swing;
+- por arriba de la cabeza mientras vas para atrás.
+
+Una pelota difícil **le baja el techo a la respuesta**: sale más lenta, más alta sobre la red, con menos ángulo y más corta. Es decir, una pelota para atacar. Así se construye: un buen golpe complica la devolución, la devolución floja se ataca, y el punto se gana un escalón a la vez.
+
+**La red se gana y se defiende.**
+
+- **Globo con calidad.** Qué tan profundo cae un globo no lo elige el pulgar: sale de la ejecución. Perfecto pica junto al vidrio (9,3 m) y obliga a irse atrás; bueno, a unos 8,3 m; armado temprano, un poco menos; tarde o exigido queda corto, y se remata.
+- **Aguantar o retroceder, con el joystick.** Si te tiran un globo y te quedás (o das dos pasos atrás), la pelota que pasa a tu alcance por arriba se juega de bandeja o de víbora, sin dejarla picar: así se conserva la red. Si corrés al fondo, la dejás pasar y te queda la salida de pared. La decisión es tuya en una fracción de segundo, como en la cancha.
+- **El remate es para el globo corto.** Hace falta la pelota bien alta y cerca de la red, y tener los pies debajo: yendo para atrás sale bandeja.
+
+**Los golpes que definen tienen efecto.** El remate salta al picar y sale del vidrio por arriba de todos, de vuelta hacia la red. La chiquita muerde: pica y se queda. La volea, la bandeja y la víbora van cortadas: quedan bajas y mueren en el vidrio del fondo en lugar de volver. Pegarle fuerte y profundo desde el fondo, en cambio, es regalarle la pared al otro.
+
+**La presión se acumula.** Una seguidilla de pelotas difíciles desordena a cualquiera: la dispersión crece con la tensión acumulada, más para quien tiene menos entereza. Quien ataca no la acumula; quien defiende sí. Cada punto empieza de cero.
+
+Nadie erra porque sí: los rivales ya no tienen golpes malos al azar. Los puntos se pierden por no llegar, por arriesgar cerca de las paredes y por la presión. Los peloteos largos igual tienen una red de seguridad: desde el golpe 10 se van acelerando.
+
 ### Rivales
 
-Son los tres primeros del elenco diseñado en `docs/personajes.md` (rama de personajes). La idea es que se reconozcan por cómo juegan, no por el nombre:
+Son los tres primeros del elenco diseñado en `docs/personajes.md` (rama de personajes). La idea es que se reconozcan por cómo juegan, no por el nombre, y que **a cada uno se le gane jugando al pádel**:
 
 | Rival | Cómo juega | Cómo se le gana | Gesto delator |
 | --- | --- | --- | --- |
-| **Beto**, «el Profe» ★ | Pelotas cómodas, al medio y hacia vos. Poca potencia. | Con ángulos: se mueve poco de costado y se equivoca seguido. | Señala con la mano libre a dónde va a tirar. |
-| **Romina**, «la Topadora» ★★ | Pega plano y fuerte desde donde esté y sube a la red. | Con paciencia: después del cuarto golpe se va desordenando, y la pared le cuesta. | Se planta con las piernas abiertas y la pala detrás de la cabeza: viene un cañonazo. |
-| **Chela**, «la Astronauta» ★★★ | Globos altísimos, pared y casi ningún error. Si llega exigida, siempre tira globo. | Atacando y haciéndola correr: es lenta. | Se agacha con la pala abierta: viene globo. Un pasito adelante: viene chiquita. |
+| **Beto**, «el Profe» ★ | Pelotas cómodas, al medio y hacia vos. No define la pelota fácil y casi no sube a la red. | Apuntando al lado vacío y subiendo: te deja la red, y de ahí cualquier volea al costado lo pasa. | Señala con la mano libre a dónde va a tirar. |
+| **Romina**, «la Topadora» ★★ | Pega plano y fuerte desde donde esté, sube a la red y castiga la pelota corta y flotada. | Con paciencia y sin darle pelotas flojas: se va desarmando cuando el punto se alarga (después del cuarto golpe cada uno le suma tensión) y la pared le cuesta. Globo cuando sube a la red. | Se planta con las piernas abiertas y la pala detrás de la cabeza: viene un cañonazo. |
+| **Chela**, «la Astronauta» ★★★ | Vive en el fondo, devuelve todo, te saca de la red con globos altísimos y te mueve con chiquitas. Casi no se desordena. | Desde el fondo no se le gana: hay que **ganar la red y aguantarla**. Bandeja a sus globos buenos; volea cortada y chiquita para hacerla correr (es lenta) y levantar la pelota del piso; exigida globea corto, y ese globo se remata. | Se agacha con la pala abierta: viene globo. Un pasito adelante: viene chiquita. |
 
-Ninguno hace trampa: predicen la pelota con la misma física que la marca de pique. Por ahora los tres comparten el mismo cuerpo y se distinguen por los colores: Beto de blanco, azul marino y mostaza; Romina de rojo, amarillo y negro; Chela de lavanda, blanco y rosa.
+Las estrellas son **qué tan bien juegan al pádel**, no qué tan rápido corren: leer el punto, definir la pelota fácil, subir y aguantar la red, manos firmes y entereza. Ninguno corre más que una persona (entre el 75 % y el 100 % de tu velocidad) ni llega más lejos, y ninguno mira lo que estás por hacer: deciden con lo que cualquiera ve en la cancha.
+
+Ninguno hace trampa: predicen la pelota con la misma física que la marca de pique. Por ahora los tres comparten el mismo modelo, cada uno con su cuerpo (proporciones, postura y ritmo propios), sus colores y sus piezas: Beto de blanco, azul marino y mostaza, con gorra y bigote; Romina de rojo, amarillo y negro; Chela de lavanda, blanco y rosa, más baja.
 
 **El gesto delator no miente.** El rival decide el golpe entre 0,45 y 0,55 s antes del contacto y desde ese momento su armado lo muestra. No lo cambia salvo que cambie la pelota. La primera vez no se nota; a la quinta te anticipás.
 
@@ -283,25 +346,26 @@ Los modelos, las animaciones y la cancha salen de los scripts de Blender de [des
 | --- | --- |
 | `court/<capa>.avif` | Cada capa en AVIF: 131 KB en total contra 306 KB del WebP, con una diferencia promedio de un nivel en 255 |
 | `court/<capa>.webp` | La misma capa como vino, para los navegadores sin AVIF. El juego pregunta una sola vez si el navegador decodifica AVIF, para no bajar nada de más. |
-| `character.bin` | La malla (7.309 vértices), el esqueleto (25 huesos) y los 10 clips, como vinieron |
-| `character.bin.gz` | Lo mismo comprimido: 116 KB en vez de 236 KB. Los servidores de archivos estáticos no siempre comprimen un tipo que no conocen, así que el juego pide este primero y lo descomprime él. |
+| `character.bin` | La malla (4.676 vértices), el esqueleto (25 huesos), los 24 clips y los cuatro cuerpos del elenco, como vinieron |
+| `character.bin.gz` | Lo mismo comprimido: 105 KB en vez de 248 KB. Los servidores de archivos estáticos no siempre comprimen un tipo que no conocen, así que el juego pide este primero y lo descomprime él. |
 
 El script también reescribe la tabla de capas de [court-art.ts](src/render/stage/court-art.ts). Volver a correrlo con la misma entrada da los mismos archivos.
 
 ### Personajes animados
 
-Hay un solo cuerpo, compartido por todos, con diez clips. La simulación sabe dónde está cada jugador, a qué velocidad va, si tiene la pala atrás, qué golpe es y cuándo toca la pelota. Lo que va en el medio es `FigureAnimator` ([src/render/toon/animator.ts](src/render/toon/animator.ts)):
+Hay un solo modelo, compartido por todos, con 24 clips; cada personaje lo usa con su propio cuerpo (escala de huesos, postura, ritmo y amplitud), sus colores y sus piezas (gorra, trenza, bigote). La simulación sabe dónde está cada jugador, a qué velocidad va, si tiene la pala atrás, qué golpe es y cuándo toca la pelota. Lo que va en el medio es `FigureAnimator` ([src/render/toon/animator.ts](src/render/toon/animator.ts)):
 
-- **Las piernas siguen al piso.** El ciclo de correr avanza con los metros realmente recorridos (dividido por la zancada del clip y por la escala del personaje), no con el tiempo: los pies no patinan a ninguna velocidad. De costado usa los pasos laterales y hacia atrás corre el mismo ciclo al revés.
+- **Las piernas siguen al piso.** Cada marcha (correr, correr de espaldas, galope lateral a cada lado) avanza con los metros realmente recorridos, divididos por la zancada que trae su clip y por la escala del personaje: el pie apoyado se mueve menos de 3 cm en una corrida de 12 m, y hay un test que lo mide para las cuatro. En diagonal la pelvis gira lo que le falta al clip para apuntar hacia donde va.
+- **Antes de que pegue el rival, un saltito** (*split step*) para quien está esperando parado; entre puntos, una postura de descanso.
 - **Los golpes se estiran en el tiempo.** El cuadro del clip en que la pala toca la pelota cae en el instante en que la simulación le pega. Si el golpe se armó con tiempo, el cuerpo hace su preparación y espera con la pala atrás; los últimos 0,24 s van siempre en fase con la pelota. Si se pidió a último momento (un deslizamiento, una tecla), entra tan rápido como haga falta para estar ahí.
 - **Se pega corriendo.** El tronco y los brazos hacen el golpe mientras las piernas siguen el piso; parado, golpea el cuerpo entero.
 - **La pala va a la pelota de verdad.** El clip pasa por donde estaba su pelota cuando se animó; la real viene más alta, más baja o más lejos, y además el personaje está agrandado y la pelota no. Alrededor del contacto el cuerpo da un paso hacia la pelota (hasta 0,9 m), se agacha con los pies en el piso si viene baja, y el brazo lleva la pala el resto del camino. Brazos y piernas se resuelven con la misma cinemática inversa de dos huesos ([reach.ts](src/render/toon/reach.ts)). No es un salto en el último cuadro: todo el recorrido del golpe se dobla hacia la pelota. En un partido simulado la pala queda a menos de 20 cm de la pelota en la mitad de los golpes; el resto son pelotas tomadas a dos metros de los pies y golpes a destiempo, donde la simulación es generosa y el cuerpo llega hasta donde llega.
-- **El clip se elige por la altura relativa al cuerpo dibujado.** Una pelota a dos metros está sobre la cabeza de alguien de tamaño real y a la altura del pecho del rival agrandado, así que para él es una volea alta y no un remate.
+- **Cada golpe tiene su clip**: derecha, revés, volea de los dos lados, bandeja, remate, globo y las dos estiradas, además del saque. Se elige por el golpe, el lado y la altura relativa al cuerpo dibujado: una pelota a dos metros está sobre la cabeza de alguien de tamaño real y a la altura del pecho del rival agrandado, así que para él es una volea alta y no un remate.
 - **Los cambios se funden**, nunca se cortan. La cabeza sigue a la pelota y la trenza se balancea detrás del movimiento.
-- **El saque**: la pelota se muestra donde está la mano del personaje agrandado y se desliza a su lugar real apenas se le pega.
-- **Cada personaje agrega lo suyo** encima: su gesto delator mientras tiene la pala atrás (Beto señala con la mano libre, Romina se planta con las piernas abiertas, Chela se agacha o da un paso) y su manía entre puntos, como unos pocos lugares donde tienen que estar las manos, la cadera y los pies. El gesto suelta la pala 0,3 s antes del contacto para que el golpe sea el del clip. Quien gana el punto hace un festejo corto.
+- **El saque**: antes de sacar la pelota está en la mano libre, donde el clip dice que la sostiene, y la suelta en el cuadro en que el clip la suelta.
+- **Cada personaje agrega lo suyo** encima: su gesto delator mientras tiene la pala atrás (Beto señala con la mano libre, Romina se planta con las piernas abiertas, Chela se agacha o da un paso) y su manía entre puntos. Las manías que tienen clip propio (acomodarse la gorra, golpear la zapatilla, saludar) usan ese clip; las demás siguen siendo unos pocos lugares donde tienen que estar las manos. El gesto suelta la pala 0,3 s antes del contacto para que el golpe sea el del clip. Quien gana el punto hace un festejo corto y quien lo pierde se desinfla un momento.
 
-**Preparado para los clips nuevos.** Los clips pueden traer metadatos y el código ya los lee si están: `stride` (metros por ciclo), `contact` (el instante del contacto) y `hit` (dónde está la pala en ese instante). Si faltan, usa valores razonables: 1,45 m de zancada para correr y 1,05 m para los pasos laterales, y el contacto al 52 % del clip. Los nombres de los huesos y el formato del archivo son los de [design/prueba-3d](design/prueba-3d/).
+**Lo que el archivo dice, el código lo usa.** Los metadatos de cada clip vienen del contrato de [design/prueba-3d](design/prueba-3d/): zancada y dirección de cada marcha, por dónde entra el ciclo, cuándo apoya cada pie, el instante del contacto y dónde está la pala en ese instante, el tramo de armado en que se espera con la pala atrás, y la pelota en la mano del saque. Un archivo viejo, sin esos datos, se sigue leyendo con valores razonables. Todavía no se usan las caras (parpadeo y expresiones: a este tamaño no se ven) ni los clips de arranque y de frenada.
 
 ### Pantalla limpia
 
@@ -310,7 +374,8 @@ Qué ayuda existe en cada nivel se decide una sola vez, al armar la escena ([src
 - El anillo bajo tu jugador, las pisadas y el anillo de timing no existen.
 - La señal de timing es un resplandor sobre la pelota que aparece 0,18 s antes del contacto.
 - La marca de pique es un anillo fino y chico, solo para el primer pique de una pelota que viene a tu lado.
-- La marca de objetivo está mientras el pulgar apunta; al soltar ya no hay nada que decidir y se va.
+- La marca de objetivo está mientras el pulgar apunta; al soltar ya no hay nada que decidir y se va. Su forma dice qué golpe es (simple, doble para el globo, chica para la chiquita) y da un salto cuando el pulgar pasa de uno a otro.
+- Las pistas de los golpes por descubrir (el pulgar fantasma del globo y de la chiquita, las pisadas de la pelota que sale del vidrio) aparecen dos veces como mucho cada una, y nunca más desde que la persona hizo ese golpe.
 - Los efectos de los impactos duran entre 0,16 y 0,22 s y no dejan anillos: un destello en el golpe, un poco de polvo en el pique, un brillo en el vidrio.
 
 Cuánto le queda de esas ayudas a cada persona (`assist`, de 0 a 1) se guarda en su perfil.
@@ -329,17 +394,35 @@ Un `Match` recibe dos equipos con la cantidad de jugadores que sea, y cada jugad
 - el movimiento de los rivales y el movimiento asistido,
 - la decisión de dejar pasar una pelota que se va afuera sola.
 
+El efecto de un golpe (el salto del remate, la mordida de la chiquita, lo cortado de la volea) viaja con la pelota como dos números que se gastan en su primer pique, así que la predicción lo conoce y la marca de pique sigue siendo exacta.
+
 ### El golpe en dos tiempos
 
-Pedir un golpe no es pegar: **arma** al jugador con una intención (lado, profundidad, por arriba o no). El contacto ocurre cuando la pelota llega, y ahí `resolveShot` decide qué golpe sale y a dónde va. Es una función pura, así que la marca de objetivo muestra exactamente lo que va a pasar. El error de timing es la diferencia entre el momento en que se pidió el golpe y el del contacto.
+Pedir un golpe no es pegar: **arma** al jugador con una intención (lado, profundidad, por arriba o no). El contacto ocurre cuando la pelota llega, y ahí `resolveShot` decide qué golpe sale, a dónde va y qué tan bien: el timing, lo difícil que era la pelota (`ballPressure`, en [src/sim/pressure.ts](src/sim/pressure.ts)) y el perfecto propio de cada golpe ya están adentro. Es una función pura, así que la marca de objetivo muestra lo que el golpe puede hacer con la pelota que viene: exigido, no deja apuntar tan abierto ni tan profundo. El error de timing es la diferencia entre el momento en que se pidió el golpe y el del contacto.
 
-Para un jugador que se mueve a mano, el contacto se recalcula en cada paso para el lugar donde está parado (`contactNear`): la pelota a su alcance que quede mejor ubicada y sea más cómoda. Un jugador automático, en cambio, elige el contacto y corre hacia él (`planIntercept`).
+Para un jugador que se mueve a mano, el contacto se recalcula en cada paso para el lugar donde está parado (`contactNear`): la pelota a su alcance que quede mejor ubicada y sea más cómoda. Ahí también se decide el globo: quien aguanta se lleva el contacto por arriba, quien corre al fondo deja pasar la pelota. Un jugador automático, en cambio, elige el contacto y corre hacia él (`planIntercept`), y cuánto prefiere la bandeja al vidrio es su `holdNet`.
+
+### La cancha de práctica
+
+El tutorial no es un modo aparte de la simulación: es un `Match` creado con `practice`, donde nadie saca y nada suma. Quien lo maneja ([src/app/drill.ts](src/app/drill.ts)) manda a cada uno a su lugar con `rest` y pone pelotas en juego con `feed`; desde ahí es un peloteo como cualquier otro, con la misma física y los mismos golpes. Una lección es un dato: dónde se para cada uno, qué pelota se alimenta, qué gesto se muestra y qué cuenta como acierto.
 
 ### Rivales con personalidad
 
 Un personaje es un dato ([src/characters/](src/characters/)). Lo que cambia cómo juega entra a la simulación como números; todo lo demás es presentación y no toca un peloteo.
 
-**Lo que juega.** `toAILevel` traduce el estilo (once valores de 0 a 1: agresividad, red, pared, globo, chiquita, potencia, precisión, errores, velocidad, lectura, ángulo) y los rasgos a los parámetros de la IA. Los ganchos nuevos en el motor son pocos:
+**Lo que juega.** `toAILevel` separa el filo de la forma. **Las estrellas dan el filo**: una tabla ([src/characters/style.ts](src/characters/style.ts)) dice cuánto vale cada eje con una, tres y cinco estrellas. **El estilo da la forma**: lo que le gusta hacer, y en qué es un poco mejor o peor que lo que dicen sus estrellas (cada gusto mueve su número hasta dos estrellas para arriba o para abajo).
+
+| Eje | Parámetro | ★ | ★★★ | ★★★★★ |
+| --- | --- | --- | --- | --- |
+| Decisiones: elige el golpe que pide la situación | `smart` | 0,2 | 0,65 | 0,92 |
+| Castigo: define la pelota que está para atacar | `punish` | 0,1 | 0,55 | 0,9 |
+| Red: sube detrás del globo o la chiquita, y la aguanta | `netRush`, `holdNet` | 0,1 | 0,5 | 0,85 |
+| Consistencia: timing y dispersión | `timingSigma`, `errorScale` | 0,2 s; 1,5 | 0,1 s; 1,1 | 0,06 s; 0,9 |
+| Entereza: cuánto le pesa la presión acumulada | `composure` | 0,2 | 0,6 | 0,9 |
+| Lectura: cuánto tarda en reaccionar | `reaction` | 0,45 s | 0,28 s | 0,18 s |
+| Piernas, siempre dentro de las de una persona | `speedFactor` | 0,75 | 0,9 | 1,0 |
+
+Lo demás es estilo y rasgos:
 
 | Gancho | Qué hace |
 | --- | --- |
@@ -347,11 +430,14 @@ Un personaje es un dato ([src/characters/](src/characters/)). Lo que cambia cóm
 | `power` | Multiplica la velocidad de sus golpes (el remate tiene tope). |
 | `wallBias` | Gusto por la pelota que vuelve de la pared, al elegir el contacto. |
 | `angle`, `aggression` | Qué tan abierto apunta, y cuánto prefiere el golpe fuerte y profundo al seguro. |
+| `lobChance`, `dropChance` | Cuánto globea a quien está en la red y cuánto juega corto a quien está en el fondo. |
 | `feed` | Juega hacia el rival en vez de lejos, como un profe (rasgo de Beto; más la primera vez). |
-| `impatientAfter`, `impatience` | Dispersión que crece con cada golpe del peloteo (rasgo de Romina). |
+| `impatientAfter`, `impatience` | Desde ese golpe del peloteo, cada golpe más le suma tensión (rasgo de Romina): se desarma cuando la hacés esperar. |
 | `wallScatter` | Dispersión al jugar de pared (rasgo de Romina). |
-| `lobUnderPressure` | Exigida, siempre globo (rasgo de Chela). |
-| `mishit` | Cada tanto le pega mal. Sin esto, un rival que juega seguro no erraría nunca, porque el timing solo debilita el golpe. |
+| `lobUnderPressure` | Exigida, siempre globo (rasgo de Chela). Como el globo exigido queda corto, es también su debilidad. |
+| `mishit` | Golpes malos al azar. Está en 0 para todos: quedó como rasgo posible, no como forma de hacer fácil a un rival. |
+
+**Cómo decide.** Después de cada golpe propio elige dónde esperar: detrás de un globo sube recién cuando lo ve pasar (cuando pica), detrás de una chiquita sube enseguida, y después de una volea o una bandeja se queda en la red según cuánto la aguanta. Para el golpe mira dónde está el otro: globo o pelota a los pies si está en la red, pelota corta si está en el fondo. Una pelota para atacar (cerca de la red, por arriba de la faja y con tiempo) la define quien sabe castigar: lejos del otro y sin darle el vidrio, o corta si el otro está muy atrás; quien no sabe, la devuelve al medio. Nada de eso mira lo que la persona tiene armado: hay un test que juega dos partidos idénticos salvo por el apuntado de la persona y compara al rival paso por paso.
 
 **Lo que se ve y se lee.** `Personality` ([src/app/personality.ts](src/app/personality.ts)) escucha los eventos del partido y decide frases y manías. Tiene su propio generador de azar, distinto del de la simulación: con las frases prendidas o apagadas el partido es idéntico, golpe por golpe, y hay un test que lo verifica. El globito es DOM y sigue a la cabeza del rival; los gestos y las manías son poses de cuerpo entero, para que se lean al tamaño del rival, y existen en los dos aspectos: en 3D con cinemática inversa sobre el esqueleto, en 2D sobre la figura simple.
 
@@ -359,7 +445,7 @@ Un personaje es un dato ([src/characters/](src/characters/)). Lo que cambia cóm
 
 ### Los errores salen de la física
 
-La calidad del golpe no mueve el punto de pique: desvía el lanzamiento (dirección, ángulo y velocidad). Un drive plano y rápido tiene poco margen sobre la red y antes del vidrio; un golpe alto y al centro perdona mucho. La dispersión crece con lo estirado que llega el jugador, con la velocidad de la pelota que viene, con las pelotas bajas, con el riesgo del lugar al que se apunta y con el largo del peloteo: después de 5 golpes el punto se va acelerando, así que ninguno dura para siempre.
+La calidad del golpe no mueve el punto de pique: desvía el lanzamiento (dirección, ángulo y velocidad). Un drive plano y rápido tiene poco margen sobre la red y antes del vidrio; un golpe alto y al centro perdona mucho. La dispersión crece con lo estirado que llega el jugador, con la velocidad de la pelota que viene, con las pelotas bajas, con el riesgo del lugar al que se apunta, con lo difícil que era la pelota y con la tensión acumulada de quien pega. No hay errores al azar. El "calor" de los peloteos largos quedó solo como red de seguridad: desde el golpe 10 cada golpe sale un 5 % más rápido y más difícil de controlar, así que ningún punto dura para siempre.
 
 ### Cámara
 
@@ -416,12 +502,12 @@ No hay cuentas ni registro. Son tres documentos JSON chicos, detrás de `platfor
 
 - **Opciones.**
 - **Partido en curso**: formato, rival, marcador, quién saca y qué intento de saque es. Se guarda al empezar cada punto y se borra al terminar el partido.
-- **Perfil**: solo cuentas. Partidos empezados, terminados y ganados; puntos; golpes por calidad de timing; revanchas; cuántos segundos pasaron desde abrir el juego hasta el primer golpe; y cuánto le queda de las ayudas mínimas.
+- **Perfil**: solo cuentas. Partidos empezados, terminados y ganados; puntos; golpes por calidad de timing; revanchas; cuántos segundos pasaron desde abrir el juego hasta el primer golpe; cuánto le queda de las ayudas mínimas; qué lecciones del tutorial hizo; y, para las pistas, cuántos globos, chiquitas y salidas de pared jugó y cuántas veces se le mostró cada pista.
 - **Historia con cada rival** (unos 150 bytes por rival): cuándo se conocieron y cuándo jugaron por última vez, partidos ganados y perdidos, racha, puntos de oro, el peloteo más largo y si ya contó su gesto delator.
 
 `exportData` e `importData` pasan todo a un único texto y de vuelta, para llevarse el progreso a otro dispositivo. Todavía no hay un botón que los use.
 
-El juego avisa por `platform.analytics` de los momentos que importan para medir retención (`open`, `match_start`, `first_hit`, `first_point_won`, `intro_done`, `rematch`, `match_end`). Hoy quedan en memoria y no se envía nada.
+El juego avisa por `platform.analytics` de los momentos que importan para medir retención (`open`, `match_start`, `first_hit`, `first_point_won`, `intro_done`, `rematch`, `match_end`, `lesson_start`, `lesson_done`). Hoy quedan en memoria y no se envía nada.
 
 ## Parámetros para iterar
 
@@ -432,12 +518,18 @@ Casi todo lo que define cómo se siente el juego está en [src/config.ts](src/co
 | Ventanas de timing, compensación de latencia | `timing` |
 | Velocidad, altura y profundidad de cada golpe | `shots.specs` |
 | Cuánto cuesta cada calidad de timing, estirarse, el riesgo | `shots.quality` y los `*Penalty` |
-| Velocidad y alcance de los jugadores, desde dónde se remata o se volea | `player` |
+| Qué hace difícil a una pelota y cuánto le baja el techo a la respuesta | `shots.pressure` |
+| Lo que el perfecto le da a cada golpe, la profundidad del globo según la ejecución, el efecto de cada golpe | `shots.perfect`, `shots.lobQuality`, `shots.spin` |
+| Presión acumulada y red de seguridad de los peloteos largos | `rules.strain`, `rules.heat*` |
+| Velocidad y alcance de los jugadores, desde dónde se remata, se volea o se aguanta la red | `player` |
+| Qué vale cada eje de dificultad con una, tres y cinco estrellas | `EDGE` en [src/characters/style.ts](src/characters/style.ts) |
+| Lecciones del tutorial: situación, pelota, gesto y criterio de acierto | `LESSONS` en [src/app/drill.ts](src/app/drill.ts) |
+| Cuándo y cuántas veces aparece una pista | `HINT_*` en [src/app/game.ts](src/app/game.ts) |
 | Rivales: estilo, rasgos, gesto delator, manías | [src/characters/cast.ts](src/characters/cast.ts) |
 | Cómo el estilo se vuelve juego | [src/characters/style.ts](src/characters/style.ts) |
 | Frases | [src/characters/lines.es.ts](src/characters/lines.es.ts) |
 | Formatos de partido | `FORMATS` |
-| Pausas, aceleración de los peloteos largos | `rules` |
+| Pausas entre puntos | `rules` |
 | Gestos: joystick, distancias para apuntar, qué es un deslizamiento rápido | `CONTROLS` |
 | Física: gravedad, restitución del piso, del vidrio y de la reja | `physics` |
 | Medidas de la cancha y de las paredes | `court` |
@@ -450,19 +542,46 @@ Casi todo lo que define cómo se siente el juego está en [src/config.ts](src/co
 
 El alcance extra de la persona (`HUMAN_REACH`) está en [src/app/game.ts](src/app/game.ts).
 
-`npm run sim` sirve para ver el efecto de un cambio sin jugar. Usa un jugador simulado que pasa por la misma entrada que una persona: empuja el joystick hacia las pisadas, con demora y con error, y suelta el golpe mirando el anillo. Con los valores actuales, sobre 40 partidas rápidas por casilla:
+`npm run sim` sirve para ver el efecto de un cambio sin jugar. Usa un jugador simulado que pasa por la misma entrada que una persona: empuja el joystick hacia las pisadas, con demora y con error, y suelta el golpe mirando el anillo. Tiene tres niveles de manos (principiante: timing ±160 ms y se para a 70 cm del lugar ideal; promedio: ±100 ms y 45 cm; experto: ±50 ms y 25 cm) y, aparte, **táctica**: sin ella pega cualquier golpe y espera en el fondo; con ella juega al pádel con las mismas manos (sube detrás de un golpe de ataque y aguanta la red, globo o pelota a los pies cuando el rival está en la red, define la pelota fácil lejos del otro y sin darle el vidrio, no arriesga la volea baja).
 
-| Jugador simulado | contra Beto ★ | contra Romina ★★ | contra Chela ★★★ |
+Hay tres informes:
+
+- **Balance** ([tests/sim/balance.sim.ts](tests/sim/balance.sim.ts)): quién gana y cómo terminan los puntos, por casilla.
+- **Profundidad** ([tests/sim/depth.sim.ts](tests/sim/depth.sim.ts)): cómo se juegan los puntos y **cuánto paga pensar**, contra las metas de `docs/profundidad.md` (rama de investigación). Lo que queda fuera de una meta sale como advertencia, no como error. Con `SIM_TWEAK='{"rivals.chela.speedFactor":0.9}'` se prueba otro número sin tocar los archivos.
+- **Peloteo** ([tests/sim/rally.sim.ts](tests/sim/rally.sim.ts)): un partido golpe por golpe.
+
+**Cuánto paga la táctica.** Puntos ganados por el jugador simulado sin táctica → con táctica (entre paréntesis, partidos ganados de 30). "Antes" es el motor de la ronda anterior medido con este mismo jugador simulado; cada casilla son 30 partidas rápidas y el ruido entre corridas es de unos 3 puntos.
+
+| Manos | | contra Beto ★ | contra Romina ★★ | contra Chela ★★★ |
+| --- | --- | --- | --- | --- |
+| Principiante | antes | 55 → 68 % (19 → 29) | 38 → 50 % (3 → 14) | 27 → 37 % (1 → 5) |
+| | **ahora** | 49 → 62 % (14 → 26) | 41 → 54 % (6 → 19) | 19 → 34 % (0 → 3) |
+| Promedio | antes | 72 → 78 % (29 → 30) | 56 → 61 % (21 → 27) | 40 → 55 % (7 → 19) |
+| | **ahora** | 72 → 79 % (29 → 30) | 61 → 71 % (26 → 29) | 31 → 50 % (2 → 16) |
+| Experto | antes | 91 → 94 % (30 → 30) | 87 → 85 % (30 → 30) | 71 → 77 % (30 → 30) |
+| | **ahora** | 91 → 98 % (30 → 30) | 82 → 89 % (30 → 30) | 67 → 80 % (27 → 30) |
+
+| Lo que suma la táctica, en puntos porcentuales | contra Beto | contra Romina | contra Chela |
 | --- | --- | --- | --- |
-| Principiante (timing ±160 ms, se para a 70 cm del lugar ideal) | gana 65 % | gana 15 % | gana 3 % |
-| Promedio (±100 ms, 45 cm) | gana 98 % | gana 65 % | gana 23 % |
-| Experto (±50 ms, 25 cm) | gana 100 % | gana 100 % | gana 100 % |
+| Antes (principiante / promedio / experto) | +13 / +6 / +3 | +12 / +5 / −2 | +10 / +15 / +6 |
+| **Ahora** | +13 / +7 / +7 | +13 / +10 / +7 | **+15 / +19 / +13** |
 
-Un punto dura de promedio entre 5 y 7 golpes contra Beto, entre 7 y 11 contra Romina y entre 9 y 13 contra Chela. Una partida rápida dura entre 2 y 5 minutos y medio de juego. Con movimiento asistido el jugador promedio le gana a Romina 39 de 40.
+Cómo se juegan los puntos, con el jugador promedio con táctica:
 
-La forma de cada estilo es la del diseño del elenco. El filo (precisión, errores, velocidad, lectura) se calibró con esta simulación para que las estrellas digan lo que dicen, y no coincide con la tabla del diseño: en este motor un rival que juega seguro casi no erra, así que Beto es fácil porque le pega mal seguido y es lento, y los errores de Romina están en sus rasgos y en el riesgo de pegarle fuerte a todo, no en sus números base.
+| Indicador | Meta | Beto: antes → ahora | Romina | Chela |
+| --- | --- | --- | --- | --- |
+| Golpes por punto, mediana | 6 a 9 (Chela: 9 a 12) | 4 → 4 | 8 → 7 | 7 → 8 |
+| Golpes por punto, percentil 90 | hasta 18 (Chela: 24) | 10 → 12 | 18 → 15 | 17 → 21 |
+| Segundos de peloteo, media | 8 a 14 | 8,1 → 9,6 | 12,3 → 11,4 | 15,9 → **19,1** |
+| Golpes desde la red | 35 % o más | 20 → 23 % | 24 → 27 % | 13 → 21 % |
+| Puntos que terminan con alguien en la red | 50 % o más | 49 → 47 % | 58 → 66 % | 40 → 51 % |
+| El globo le saca la red a quien estaba ahí | 50 a 70 % | 62 → 61 % | 48 → 42 % | 61 → 62 % |
+| Gana el punto quien dejó una pelota difícil | 65 % o más | no existía → 58 % | → 48 % | → 53 % |
+| Puntos que terminan en error de quien pega | 55 a 65 % | 14 → 10 % | 55 → 37 % | 18 → 18 % |
 
-Estos números sirven para comparar cambios. No dicen cómo le va a una persona de verdad: nadie midió todavía qué tan bien se mueve alguien con el joystick.
+**Qué se cumplió y qué no.** La táctica suma igual o más que antes en todas las casillas. Contra Chela llega a la meta de 15 puntos para el principiante y el promedio (+15 y +19) y queda cerca para el experto (+13); contra Beto y Romina queda entre +7 y +13. Chela es más difícil sin táctica (el promedio le gana 2 de 30 en vez de 7) y parecida con táctica (16 de 30). Lo que **no** se cumplió: los puntos contra Chela son más largos que antes (19 s de media contra una meta de 14), la experta sin táctica todavía le gana casi siempre (27 de 30; la meta era 21), los golpes desde la red siguen lejos del 35 %, y los puntos terminan mucho más porque el otro no llega que por error: una pelota exigida vuelve floja, no afuera. Construir paga (58 %, 48 % y 53 %), pero menos que la meta del 65 %.
+
+Para leer estos números: el jugador simulado "sin táctica" igual apunta al lado vacío buena parte de las veces, que contra Chela ya es media táctica; y el promedio deja sin devolver más o menos una pelota cómoda de cada veinte, así que contra quien devuelve todo pierde por desgaste antes de que la táctica llegue a pesar. Sirven para comparar cambios. No dicen cómo le va a una persona de verdad: nadie midió todavía qué tan bien se mueve alguien con el joystick.
 
 ## Rendimiento
 
@@ -475,50 +594,53 @@ Objetivo: 60 cuadros por segundo en un Android de gama media de hace unos cinco 
 | Parte | Viaja |
 | --- | --- |
 | Cancha (7 capas en AVIF) | 133,0 KB |
-| Personaje (malla, esqueleto y 10 clips, con gzip) | 116,0 KB |
-| Código (JavaScript, con gzip) | 55,8 KB |
-| Página y estilos | 3,8 KB |
-| **Total** | **308,5 KB en 11 archivos** |
+| Personaje (malla, esqueleto, 24 clips y cuatro cuerpos, con gzip) | 105,4 KB |
+| Código (JavaScript, con gzip) | 64,1 KB |
+| Página y estilos | 3,9 KB |
+| **Total** | **306,4 KB en 11 archivos** |
 
-Antes de empaquetar el arte, la cancha y el personaje sumaban 542 KB (306 KB de WebP y 236 KB sin comprimir); ahora son 249 KB. Un navegador sin AVIF baja la cancha en WebP (306 KB). No hay fuentes ni dependencias en tiempo de ejecución.
+El personaje nuevo trae más del doble de clips y pesa menos que el anterior, porque su malla es más liviana; el código creció 8 KB con la profundidad, la IA y el tutorial. Sin empaquetar, la cancha y el personaje sumarían 554 KB (306 KB de WebP y 248 KB sin comprimir); así son 238 KB. Un navegador sin AVIF baja la cancha en WebP (306 KB). No hay fuentes ni dependencias en tiempo de ejecución.
 
 **Tiempo desde que se pide la página hasta el primer cuadro**, sin nada en caché. El primer cuadro ya es en 3D en todos los casos: la cancha y el personaje se piden desde el HTML, en paralelo con el código.
 
 | Conexión | CPU sin frenar | CPU 4× más lenta |
 | --- | --- | --- |
-| Sin límite (servidor local) | 97 ms | 262 ms |
-| 4G rápida (9 Mbit/s, 60 ms de demora) | 533 ms | 671 ms |
-| 4G lenta (1,6 Mbit/s, 150 ms de demora) | 1972 ms | 2067 ms |
+| Sin límite (servidor local) | 98 ms | 262 ms |
+| 4G rápida (9 Mbit/s, 60 ms de demora) | 537 ms | 695 ms |
+| 4G lenta (1,6 Mbit/s, 150 ms de demora) | 1952 ms | 2060 ms |
 
 **Cuadros**, con un partido de IA contra IA andando:
 
 | Aspecto | CPU | Trabajo del juego por cuadro | Tiempo entre cuadros (mediana / p99 / peor) | Cuadros de más de 17,5 ms |
 | --- | --- | --- | --- | --- |
-| 3D | 1× | 0,16 ms | 4,2 / 4,4 / 4,5 ms | 0 % |
-| 3D | 4× | 0,90 ms | 4,2 / 4,3 / 4,4 ms | 0 % |
-| 3D | 6× | 1,11 ms | 4,2 / 4,4 / 12,4 ms | 0 % |
-| 2D | 1× | 0,14 ms | 4,2 / 4,4 / 4,5 ms | 0 % |
-| 2D | 4× | 0,52 ms | 4,2 / 4,4 / 4,5 ms | 0 % |
-| 2D | 6× | 0,84 ms | 4,2 / 4,4 / 8,4 ms | 0 % |
+| 3D | 1× | 0,24 ms | 4,2 / 4,4 / 8,4 ms | 0 % |
+| 3D | 4× | 0,78 ms | 4,2 / 4,4 / 8,3 ms | 0 % |
+| 3D | 6× | 1,07 ms | 4,2 / 4,4 / 4,5 ms | 0 % |
+| 2D | 1× | 0,11 ms | 4,2 / 4,4 / 4,5 ms | 0 % |
+| 2D | 4× | 0,51 ms | 4,2 / 4,4 / 8,3 ms | 0 % |
+| 2D | 6× | 0,86 ms | 4,2 / 4,4 / 8,4 ms | 0 % |
 
-Chrome headless pinta a 240 cuadros por segundo en esta máquina, así que 4,2 ms entre cuadros significa que no perdió ninguno. El "trabajo del juego" es todo lo que hace el JavaScript en un cuadro: simular, animar los esqueletos con su cinemática inversa, decidir la cámara y mandar a dibujar. Con la CPU frenada 6× usa 1,11 ms de los 16,7 ms que hay por cuadro a 60 cuadros por segundo. El canvas queda en 720×1600 por el tope de densidad.
+Chrome headless pinta a 240 cuadros por segundo en esta máquina, así que 4,2 ms entre cuadros significa que no perdió ninguno. El "trabajo del juego" es todo lo que hace el JavaScript en un cuadro: simular, animar los esqueletos con su cinemática inversa, decidir la cámara y mandar a dibujar. Con la CPU frenada 6× usa 1,07 ms de los 16,7 ms que hay por cuadro a 60 cuadros por segundo. El canvas queda en 720×1600 por el tope de densidad.
 
 **Qué no dice esta medición.** Frenar la CPU no frena la placa de video, y el tiempo entre cuadros es el de la gráfica de esta máquina, no el de un teléfono. La prueba de estilo 3D ([design/prueba-3d](design/prueba-3d/)), que dibuja lo mismo, dio 60 cuadros por segundo en el celular del usuario, pero este renderer todavía no se midió ahí. Con `?fps` (o la opción "Mostrar fps") el juego muestra cuadros por segundo, el peor cuadro del último segundo, el trabajo por cuadro y si está dibujando en `3d` o en `2d`.
 
 ## Verificación
 
-- `npm test`: 256 tests. Cubren la física de la pelota (pique, vidrio, reja, red, salida de la cancha), que la predicción coincide exactamente con la simulación, las reglas, la puntuación, qué golpe sale en cada situación, el timing y el golpe armado, el movimiento a mano y el asistido, los gestos de los dos esquemas, el tutorial, guardar y seguir un partido (y leer lo que guardó la versión anterior), la repetición exacta de un partido grabado, partidos completos entre IA (también de dobles), las reglas de arquitectura y el elenco. De esta ronda:
+- `npm test`: 335 tests. Cubren la física de la pelota (pique, vidrio, reja, red, salida de la cancha), que la predicción coincide exactamente con la simulación, las reglas, la puntuación, qué golpe sale en cada situación, el timing y el golpe armado, el movimiento a mano y el asistido, los gestos de los dos esquemas, el tutorial, guardar y seguir un partido (y leer lo que guardó la versión anterior), la repetición exacta de un partido grabado, partidos completos entre IA (también de dobles), las reglas de arquitectura y el elenco. De las últimas rondas:
+  - **La profundidad** ([tests/depth.test.ts](tests/depth.test.ts)): que una pelota más baja, más estirada, más rápida o más pegada al vidrio es más difícil; que una pelota difícil sale más lenta, más alta, menos abierta y más corta; la profundidad del globo según la ejecución; el perfecto de cada golpe; que yendo para atrás no hay remate; el efecto de cada golpe y que la predicción lo conoce; aguantar la red o irse al fondo, a mano y con la IA; la presión acumulada y la entereza; cómo define y cuándo sube la IA; que **no lee el pulgar** (dos partidos que solo difieren en el apuntado de la persona); que nadie erra al azar ni corre más que una persona; y que, con las mismas manos, jugar con táctica le saca más puntos a Chela.
+  - **El tutorial** ([tests/drill.test.ts](tests/drill.test.ts)): que cada una de las ocho lecciones se completa haciendo lo que enseña y no cuenta otro golpe; la cancha de práctica (sin saque ni marcador); y que las lecciones hechas, los golpes encontrados y las pistas mostradas se guardan y se leen bien.
   - **El personaje** ([tests/toon.test.ts](tests/toon.test.ts)): que el archivo se lee bien, que la pala está donde dice cada clip en su instante de contacto y que los ciclos cierran.
-  - **La animación** ([tests/animator.test.ts](tests/animator.test.ts)): un ciclo de piernas son los metros de una zancada a cualquier velocidad; arrancar y frenar sin saltos; la pala en el punto de contacto en el instante del contacto, se haya armado el golpe con mucho tiempo o con 90 ms; que armado con tiempo espera con la pala atrás; el paso hacia la pelota y la vuelta; pegar corriendo; la cabeza que sigue a la pelota; los gestos delatores y las manías de cada personaje; el festejo; y, en un partido simulado entero, que la pala queda cerca de la pelota en el contacto.
+  - **La animación** ([tests/animator.test.ts](tests/animator.test.ts)): el pie apoyado no patina en ninguna de las cuatro marchas; la pelvis gira en diagonal; el saltito antes del golpe del rival; la pelota en la mano libre antes del saque; la pala en el punto de contacto con el cuerpo de cada personaje; arrancar y frenar sin saltos; la pala en el punto de contacto en el instante del contacto, se haya armado el golpe con mucho tiempo o con 90 ms; que armado con tiempo espera con la pala atrás; el paso hacia la pelota y la vuelta; pegar corriendo; la cabeza que sigue a la pelota; los gestos delatores y las manías de cada personaje; el festejo; y, en un partido simulado entero, que la pala queda cerca de la pelota en el contacto.
   - **La cámara y la pantalla limpia** ([tests/stage.test.ts](tests/stage.test.ts)): las reglas de la cámara que acompaña pieza por pieza y jugando partidos enteros contra los tres rivales; que "Fija", "Reducir movimiento" y el respaldo 2D no mueven nada; y qué hay en pantalla con cada nivel de ayudas, cuadro por cuadro.
-- `npm run smoke`: 85 verificaciones en un Chrome con emulación de celular, con toques reales. Hace la primera visita (en 3D, sin textos de ayuda, con el saludo del rival), juega un partido entero con dos dedos a la vez mientras mira que la pantalla siga limpia, que la cámara tenga siempre a la vista lo que importa y que el rival delate sus golpes, tenga sus manías y diga sus frases; pausa y saltea la espera entre puntos; pasa por el inicio y las opciones (ayudas y cámara incluidas); **le quita el contexto gráfico a la página en medio del juego** y mira que siga en 2D y que vuelva al 3D; juega con una mano, la cámara fija y las ayudas completas; cierra el juego a mitad de un partido y lo retoma; prueba un dispositivo sin WebGL2; emula un notch; prueba mouse y teclado en tamaño de escritorio; abre el build desde `file://`; y revisa que no se pida nada de afuera y que la cancha baje en AVIF y el personaje comprimido. Guarda capturas de cada etapa en `.smoke/`.
+- `npm run smoke`: 101 verificaciones en un Chrome con emulación de celular, con toques reales. Hace la primera visita (en 3D, sin textos de ayuda, con el saludo del rival), juega un partido entero con dos dedos a la vez mientras mira que la pantalla siga limpia, que la cámara tenga siempre a la vista lo que importa y que el rival delate sus golpes, tenga sus manías y diga sus frases; pausa y saltea la espera entre puntos; pasa por el inicio; **abre el tutorial, juega la lección del globo con el pulgar de verdad** (mira el pulgar fantasma, el doble anillo de la marca, las tres pelotas, la tilde de "Hecha" y que no sume puntos) y comprueba la pista del globo en medio de un partido; pasa por las opciones (ayudas y cámara incluidas); **le quita el contexto gráfico a la página en medio del juego** y mira que siga en 2D y que vuelva al 3D; juega con una mano, la cámara fija y las ayudas completas; cierra el juego a mitad de un partido y lo retoma; prueba un dispositivo sin WebGL2; emula un notch; prueba mouse y teclado en tamaño de escritorio; abre el build desde `file://`; y revisa que no se pida nada de afuera y que la cancha baje en AVIF y el personaje comprimido. Guarda capturas de cada etapa en `.smoke/`.
 
 Los dedos de la prueba los maneja un programa que lee el estado del partido. Sirve para saber que los controles funcionan de punta a punta; no para saber cómo se sienten. Para mirar la animación cuadro por cuadro, `Game.advance(dt)` avanza el partido un cuadro con el bucle detenido.
 
 ## Accesibilidad
 
 - Los gestos delatores y las manías son de cuerpo entero: no dependen del color ni de la cara. Las frases son texto, se pueden apagar y no llevan información necesaria; por eso el globito queda fuera de los lectores de pantalla, que ya anuncian el marcador y el resultado de cada punto.
-- Nada depende solo del color: tu jugador es siempre el de adelante y de espaldas, la marca de objetivo cambia de forma según el golpe, la señal de timing es un cambio de brillo y de tamaño, y la opción elegida lleva una marca además del relleno.
+- Nada depende solo del color: tu jugador es siempre el de adelante y de espaldas, la marca de objetivo cambia de forma según el golpe, la señal de timing es un cambio de brillo y de tamaño, la opción elegida lleva una marca además del relleno, y una lección hecha lleva una tilde y la palabra "Hecha".
+- El tutorial se puede hacer con cualquiera de los dos esquemas, con teclado y con movimiento asistido; cada lección dice en media línea de qué se trata, para quien no pueda seguir el pulgar fantasma. Nunca es obligatorio.
 - Reducir movimiento (toma la preferencia del sistema): cámara fija, sin estela, sin destellos, sin pausa de impacto y sin mensajes que se desplazan.
 - Ayudas completas para quien las quiera o las necesite, en Opciones: anillo bajo tu jugador, anillo de timing con sus ventanas, pisadas donde conviene pararse, marca de cada pique, el nombre y la calidad de cada golpe y los textos del saque. No se apagan solas.
 - Quien juega con teclado ve qué teclas sacan, aunque las ayudas estén en mínimas: un pulgar fantasma no puede mostrar una tecla.
@@ -535,11 +657,25 @@ Los dedos de la prueba los maneja un programa que lee el estado del partido. Sir
 
 ## Pendientes conocidos
 
-- **Probarlo en un celular real.** Sigue siendo lo más importante. De esta ronda hay que mirar ahí: los cuadros por segundo del renderer 3D (acá solo se midió el trabajo de la CPU), cómo se siente la cámara que acompaña, si la señal de timing alcanza sola, y qué tan rápido conviene que se apaguen las ayudas.
-- **Clips nuevos.** El código ya lee la zancada, el instante de contacto y la posición de la pala de cada clip si vienen en el archivo. Lo que traigan de más (la mano en el contacto, dónde sostiene la pelota la mano libre y cuándo la suelta) todavía no se usa: en el saque la pelota se muestra al costado del cuerpo, no en la mano.
+- **Probarlo en un celular real.** Sigue siendo lo más importante, y de esta ronda hay mucho que solo se puede juzgar ahí:
+  - **Aguantar o retroceder**: si la decisión ante un globo se llega a tomar con el pulgar, y si se entiende por qué a veces sale bandeja y a veces hay que irse al fondo.
+  - **Si la presión se siente justa** ("me apuraron") y no arbitraria ("la pelota me salió floja sin razón"). Hoy solo se ve en la pelota; el cuerpo todavía no lo muestra.
+  - **Si Chela se le puede ganar** subiendo a la red, y cuánto duran sus puntos de verdad.
+  - **El tutorial**: si los gestos del pulgar fantasma se entienden sin leer, si tres pelotas por lección son muchas o pocas, y si la lección de la bandeja se puede hacer con el pulgar.
+  - **Las pistas**: si se notan, y si dos veces alcanza.
+  - Lo que venía de antes: los cuadros por segundo del renderer 3D, la cámara que acompaña, la señal de timing y qué tan rápido se apagan las ayudas.
+- **Lo que no se cumplió de las metas de profundidad** (los números están en "Parámetros para iterar"):
+  - Los puntos contra Chela duran más que antes (19 s de media; la meta era 14).
+  - La táctica suma 15 puntos o más solo contra Chela (y con manos de experto, 13); contra Beto y Romina, entre 7 y 13.
+  - La experta sin táctica le sigue ganando a Chela casi siempre.
+  - Los puntos terminan sobre todo porque el otro no llega, no por error: una pelota exigida vuelve floja en lugar de irse afuera o a la red.
+  - Se juega más en la red que antes, pero lejos del 35 % de los golpes.
+- **Mecánicas de profundidad que quedaron afuera**: que los rivales lean tus patrones, los cambios de ritmo, el "por tres" y el "por cuatro" (el remate ya salta, pero no saca la pelota de la cancha) y el medio en dobles.
+- **La presión no se ve en el cuerpo.** El evento del golpe ya dice qué tan exigido fue y por qué (`pressure`, `Match.pressureParts`), pero la animación todavía no lo usa: faltan la rodilla al piso en la pelota baja, la estirada larga y el paso atrás apurado, y el sonido sordo del golpe forzado.
+- **Animación**: no se usan las caras (parpadeo y expresiones) ni los clips de arranque y de frenada. Antes del saque, vista desde atrás, la pelota en la mano libre queda tapada por el cuerpo del jugador cercano.
+- **Tutorial**: la lección "Leer el gesto" enseña solo el gesto de Beto (señalar el lado). Con teclado no hay pulgar fantasma que mostrar: queda la media línea de texto. No hay lección de saque ni de contrapared.
 - **Límites de la cinemática inversa.** El paso hacia la pelota llega a 0,9 m y el brazo a 0,5 m; las pelotas tomadas más lejos y los golpes tardíos no llegan. El brazo lleva la pala pero no la gira, y el tronco no rota hacia la pelota.
 - **Zurdos.** El modelo es diestro. Todo el elenco de hoy lo es; un personaje zurdo necesita el cuerpo espejado.
-- **Siluetas propias.** Los tres rivales comparten el cuerpo y cambian los colores.
 - **Si el 3D anda lento, no se pasa solo a 2D.** El respaldo entra cuando no hay WebGL2 o se pierde el contexto. En un equipo con WebGL2 por software, hoy solo baja la resolución.
 - **La cancha en AVIF se recodifica desde el WebP** de la prueba de estilo. Exportarla directo desde los originales daría un poco más de calidad por el mismo peso.
 - **Precarga.** Un navegador que no puede descomprimir por su cuenta (Safari anterior a 16.4) baja el personaje dos veces: el comprimido que precarga la página y el otro.
@@ -550,11 +686,10 @@ Los dedos de la prueba los maneja un programa que lee el estado del partido. Sir
 El resto:
 
 - No hay sonido. El juego ya pide cada sonido por lo que pasó (`platform.sound.play('hit', fuerza)`); falta quien los haga sonar.
-- La interfaz (marcador, menús) tomó los colores del atardecer, pero es la del prototipo: falta diseñarla.
+- La interfaz (marcador, menús, lista de lecciones) tomó los colores del atardecer, pero es la del prototipo: falta diseñarla.
 - El resumen de fin de partido muestra solo el resultado: faltan los números del partido y un "Siguiente rival".
 - No hay botón para exportar o importar los datos guardados, ni pantalla de privacidad. No se envía nada a ningún lado.
 - El saque no tiene timing: entra casi siempre. Las faltas existen (hay segundo saque y doble falta), pero son raras.
-- La pelota no tiene efecto. Con eso, un remate bien colocado gana por tiempo y no porque "salga por tres".
 - El globito del rival y el cartel del punto pueden pisarse cuando el rival está cerca de la red.
 - Dobles funciona en la simulación y la cámara ya encuadra a los compañeros, pero falta la interfaz para jugarlo.
 - La red no tiene postes con hueco ni puertas, y la pelota no choca con los jugadores.

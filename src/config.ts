@@ -21,7 +21,7 @@ export const SIM_DT = 1 / SIM_HZ;
  * (physics, rules, shot maths, AI). Recorded matches carry the version they
  * were played with, so an old recording is replayed right or cleanly refused.
  */
-export const PHYSICS_VERSION = 1;
+export const PHYSICS_VERSION = 2;
 
 export interface SideSegment {
   /** Distance from the back wall where this segment ends. */
@@ -77,8 +77,13 @@ export interface PlayerConfig {
    * reach, so getting close is enough.
    */
   reach: number;
-  /** Extra reach for a swing that comes late, when the ball has already gone by. */
+  /** Extra reach of a lunge, for a swing that comes late, when the ball has already gone by. */
   lungeExtra: number;
+  /**
+   * Extra reach of a player that runs by itself and does not quite get there:
+   * it stretches for the ball, and a ball played like that comes back weak.
+   */
+  stretchExtra: number;
   /** Ideal lateral distance between body and ball at contact. */
   sweetSpot: number;
   /** The ball is taken slightly in front of the body. */
@@ -87,7 +92,8 @@ export interface PlayerConfig {
   maxContactZ: number;
   /** A ball at least this high is played over the head... */
   overheadZ: number;
-  /** ...as a smash this close to the net... */
+  /** ...as a smash when it is at least this high, with room to hit it down, and this close to the net... */
+  smashZ: number;
   smashMaxNetDistance: number;
   /** ...and as a bandeja or a víbora up to here. */
   overheadMaxNetDistance: number;
@@ -102,6 +108,17 @@ export interface PlayerConfig {
   /** Distance from the net of the two resting positions. */
   homeBack: number;
   homeNet: number;
+  /**
+   * Holding the net. A player up to `holdNetDistance` from it has a net to
+   * hold: a lob that goes over within reach can be taken in the air (bandeja,
+   * víbora) instead of letting it go to the glass. When the contact is
+   * chosen, that is worth up to half of `holdNetBonus` more, or less, by how
+   * much the player wants the net. A player moved by hand chooses with the
+   * stick: going back faster than `holdNetMaxRetreat` means the glass.
+   */
+  holdNetDistance: number;
+  holdNetBonus: number;
+  holdNetMaxRetreat: number;
 }
 
 export interface TimingConfig {
@@ -168,9 +185,117 @@ export interface QualityEffect {
   shorten: number;
 }
 
+/**
+ * How hard a ball is to play, 0..1, and what that does to the answer.
+ *
+ * The ball is hard because of what the other player did with it: it came low
+ * to somebody at the net, fast, away from the body, into a corner, over the
+ * head of somebody going backwards. A hard ball lowers the ceiling of the
+ * answer before anything else: it comes back slower, higher and with less
+ * angle, which is a ball to attack. That is how a point is built.
+ */
+export interface PressureConfig {
+  /** Closer to the net than this, a ball under the tape has to be hit upwards. Full weight from `belowFull` in. */
+  belowFrom: number;
+  belowFull: number;
+  /** How far under the tape (plus `belowMargin`) counts as all the way down. */
+  belowSpan: number;
+  belowMargin: number;
+  /**
+   * Anywhere on the court, a ball lower than `floorFrom` has to be picked up
+   * from the floor: all the way down `floorSpan` below that. It is what a
+   * sliced volley that dies at the back leaves.
+   */
+  floorFrom: number;
+  floorSpan: number;
+  /** A ball is fast from `paceFrom` m/s, and as fast as it gets `paceSpan` above that. */
+  paceFrom: number;
+  paceSpan: number;
+  /**
+   * How much of the way from the sweet spot to the edge of the reach is
+   * still comfortable. Past that the player is stretching, up to a lunge.
+   */
+  comfort: number;
+  /** A ball this close to the back glass leaves no room to swing; the side wall adds `corner` of that. */
+  crampedWithin: number;
+  corner: number;
+  /** Going away from the net this fast under a high ball is a full backpedal. */
+  backpedalSpeed: number;
+  /** How much each thing weighs. The sum is cut at 1. */
+  weights: {
+    below: number;
+    stretch: number;
+    pace: number;
+    cramped: number;
+    backpedal: number;
+    /** The risk the other player took by aiming near the walls, when it came off. */
+    risk: number;
+  };
+  /** The answer to a ball of pressure p: pace × (1 − paceCut·p)... */
+  paceCut: number;
+  /** ...p × liftAdd metres more over the net... */
+  liftAdd: number;
+  /** ...aim range × (1 − aimCut·p)... */
+  aimCut: number;
+  /** ...the landing point pulled p × shortenAdd of the way toward mid court... */
+  shortenAdd: number;
+  /** ...and scatter + scatterAdd·p. */
+  scatterAdd: number;
+  /** Backpedalling more than this (0..1), an overhead cannot be a smash. */
+  forcedBandeja: number;
+  /** A lob under pressure p loses p × lobCut of its quality: it lands short. */
+  lobCut: number;
+}
+
+/** What the first bounce of a ball keeps of its speed: `kick` of the vertical, `grip` of the horizontal. */
+export interface Spin {
+  kick?: number;
+  grip?: number;
+}
+
+/** What a perfectly timed swing adds to a shot. Each shot has its own. */
+export interface PerfectBonus {
+  /** Its own spin, instead of the usual one of the shot (see `Spin`). */
+  kick?: number;
+  grip?: number;
+  /** Multiplier on the pace. */
+  pace?: number;
+  /** Metres added to the height over the net (negative: it skims it). */
+  clearance?: number;
+  /** Metres added to the depth. */
+  depth?: number;
+  /** Multiplier on how wide it can be aimed. */
+  aim?: number;
+}
+
 export interface ShotsConfig {
   specs: Record<ShotKind, ShotSpec>;
   quality: Record<Quality, QualityEffect>;
+  /**
+   * The depth of a lob is not chosen with the thumb: it comes out of the
+   * swing. 1 lands it at `depthFar`, next to the glass; 0 at `depthNear`,
+   * where it can be smashed.
+   */
+  lobQuality: Record<Quality, number>;
+  /** How much higher a better lob flies, in metres per point of quality over a good one. */
+  lobApexGain: number;
+  perfect: Partial<Record<ShotKind, PerfectBonus>>;
+  /** No shot is asked to clear the net by less than this, however good the swing. */
+  minClearance: number;
+  /**
+   * The spin each shot leaves with, as what its first bounce does (an
+   * ordinary one keeps `floorRestitution` of the vertical speed and
+   * `floorGrip` of the horizontal).
+   *
+   * The smash kicks: it jumps off the floor and leaves the glass over
+   * everybody's head, back toward the net. The chiquita bites: it lands and
+   * stays, instead of rolling on to whoever is waiting at the back. The
+   * volley, the bandeja and the víbora are sliced: they skid and die at the
+   * back glass instead of coming back off it. That is what the net is for.
+   * Under pressure the spin is the first thing to go.
+   */
+  spin: Partial<Record<ShotKind, Spin>>;
+  pressure: PressureConfig;
   /** Scatter of the serve, which has no timing: same fields as a quality. */
   serve: QualityEffect;
   /** Asking for this little depth (0..1) or less is a chiquita. */
@@ -210,15 +335,27 @@ export interface RulesConfig {
   /** A point that lasts longer than this is replayed (safety net). */
   maxPointTime: number;
   /**
-   * Long rallies heat up: after `heatAfter` hits every further hit is
-   * `heatPerHit` faster, up to `heatMax`, and that much harder to control
-   * (`heatError` times the heat is added to the scatter). It keeps points
-   * short and tense.
+   * A safety net against the point that never ends. After `heatAfter` hits
+   * a rally heats up: every further hit is `heatPerHit` faster, up to
+   * `heatMax`, and that much harder to control (`heatError` times the heat
+   * is added to the scatter).
    */
   heatAfter: number;
   heatPerHit: number;
   heatMax: number;
   heatError: number;
+  /**
+   * What a run of difficult balls does to a player. After each of its own
+   * hits, strain = carry × strain + the pressure of that ball. Above `from`
+   * its scatter grows by `error` × (1 − composure) for every point of strain.
+   * Whoever attacks builds none; whoever defends does. It starts from zero
+   * at every point.
+   */
+  strain: {
+    carry: number;
+    from: number;
+    error: number;
+  };
 }
 
 /** How a computer player plays. Nothing here lets it break the rules a person plays by. */
@@ -238,6 +375,12 @@ export interface AILevel {
   mishit: number;
   /** 0..1, how often it picks the best target instead of a random one. */
   smart: number;
+  /** 0..1, how often it finishes a ball that is there to be attacked instead of just putting it back. */
+  punish: number;
+  /** 0..1, how much it would rather take a lob in the air than give up the net. */
+  holdNet: number;
+  /** 0..1, how little a run of difficult balls gets to it. A person has 0.5. */
+  composure: number;
   lobChance: number;
   dropChance: number;
   /** 0..1, how often it follows its serve and its attacking shots to the net. */
@@ -328,18 +471,23 @@ const defaults: GameConfig = {
     netGap: 0.6,
     reach: 1.25,
     lungeExtra: 0.6,
+    stretchExtra: 0.35,
     sweetSpot: 0.62,
     contactAhead: 0.2,
     minContactZ: 0.15,
     maxContactZ: 2.7,
     overheadZ: 1.9,
+    smashZ: 2.2,
     smashMaxNetDistance: 4.5,
-    overheadMaxNetDistance: 8,
+    overheadMaxNetDistance: 6.6,
     volleyMaxNetDistance: 6,
     backWallZone: 2.4,
     backWallBehind: 0.25,
     homeBack: 7.4,
     homeNet: 3.2,
+    holdNetDistance: 6.6,
+    holdNetBonus: 1.2,
+    holdNetMaxRetreat: 2.5,
   },
   timing: {
     perfect: 0.06,
@@ -359,11 +507,12 @@ const defaults: GameConfig = {
       // Groundstroke: derecha or revés.
       drive: { depthNear: 4.8, depthFar: 8.2, clearance: 0.55, apex: 0, speed: 16, aimRange: 3.8 },
       volley: { depthNear: 4.6, depthFar: 7.6, clearance: 0.3, apex: 0, speed: 18, aimRange: 3.9 },
-      lob: { depthNear: 8.3, depthFar: 8.3, clearance: 2, apex: 5.6, speed: 30, aimRange: 3.4 },
+      // How deep it lands is the quality of the swing: see `lobQuality`.
+      lob: { depthNear: 4.5, depthFar: 9.3, clearance: 2, apex: 5.6, speed: 30, aimRange: 3.4 },
       // Chiquita (after the bounce) or dejada (in the air): short and soft.
       drop: { depthNear: 2.2, depthFar: 2.2, clearance: 0.3, apex: 0, speed: 9, aimRange: 3.4 },
       // Steep and short on purpose: it bounces over the walls or back over the net.
-      smash: { depthNear: 3.6, depthFar: 3.6, clearance: 0.2, apex: 0, speed: 26, aimRange: 3.7 },
+      smash: { depthNear: 3.6, depthFar: 3.6, clearance: 0.12, apex: 0, speed: 26, aimRange: 3.7 },
       // The safe overhead from mid court: deep, to keep the net.
       bandeja: { depthNear: 7.6, depthFar: 7.6, clearance: 0.45, apex: 0, speed: 15, aimRange: 3.2 },
       // The aggressive one: faster, lower and to the side.
@@ -374,7 +523,8 @@ const defaults: GameConfig = {
       backWall: { depthNear: 6.5, depthFar: 6.5, clearance: 0.6, apex: 0, speed: 21, aimRange: 3 },
     },
     quality: {
-      perfect: { azimuth: 0.5, elevation: 0.5, speed: 0.01, pace: 1.12, lift: 0, shorten: 0 },
+      // What a perfect adds to the ball itself depends on the shot: see `perfect`.
+      perfect: { azimuth: 0.5, elevation: 0.5, speed: 0.01, pace: 1, lift: 0, shorten: 0 },
       good: { azimuth: 1.3, elevation: 1.2, speed: 0.02, pace: 1, lift: 0.1, shorten: 0 },
       // Swinging early arms the shot and it is played when the ball arrives:
       // as good as a good one, it only misses the perfect.
@@ -384,6 +534,54 @@ const defaults: GameConfig = {
       late: { azimuth: 2.4, elevation: 1.6, speed: 0.035, pace: 0.76, lift: 0.7, shorten: 0.35 },
     },
     serve: { azimuth: 0.7, elevation: 0.7, speed: 0.012, pace: 1, lift: 0, shorten: 0 },
+    lobQuality: { perfect: 1, good: 0.8, early: 0.7, late: 0.1 },
+    lobApexGain: 0.6,
+    perfect: {
+      // More pace and lower over the net: a harder ball for whoever gets it.
+      drive: { pace: 1.15, clearance: -0.12 },
+      volley: { pace: 1.15, clearance: -0.1 },
+      // Faster and wider.
+      vibora: { pace: 1.15, aim: 1.1 },
+      // Shorter and softer: it dies at the feet.
+      drop: { depth: -0.5, pace: 0.9, grip: 0.4 },
+      // Deeper and lower: it bounces next to the glass and does not come out.
+      bandeja: { depth: 0.6, clearance: -0.1 },
+      // It does not float.
+      wallExit: { clearance: -0.3 },
+      // It jumps even more: over the glass, or all the way back over the net.
+      smash: { kick: 0.97 },
+    },
+    minClearance: 0.15,
+    spin: {
+      smash: { kick: 0.9 },
+      drop: { grip: 0.5 },
+      // Sliced: they stay low after the bounce and die at the back glass.
+      volley: { kick: 0.55 },
+      bandeja: { kick: 0.4 },
+      vibora: { kick: 0.45 },
+    },
+    pressure: {
+      belowFrom: 6.5,
+      belowFull: 5,
+      belowSpan: 0.55,
+      belowMargin: 0.15,
+      floorFrom: 0.5,
+      floorSpan: 0.35,
+      paceFrom: 14,
+      paceSpan: 8,
+      comfort: 0.5,
+      crampedWithin: 0.8,
+      corner: 0.3,
+      backpedalSpeed: 3,
+      weights: { below: 0.5, stretch: 0.6, pace: 0.5, cramped: 0.4, backpedal: 0.35, risk: 0.15 },
+      paceCut: 0.4,
+      liftAdd: 1,
+      aimCut: 0.5,
+      shortenAdd: 0.6,
+      scatterAdd: 1.2,
+      forcedBandeja: 0.5,
+      lobCut: 0.85,
+    },
     dropAt: 0.22,
     viboraAim: 0.55,
     stretchPenalty: 0.6,
@@ -406,10 +604,12 @@ const defaults: GameConfig = {
     serveDropSpeed: 1.5,
     serveWindup: 0.57,
     maxPointTime: 90,
-    heatAfter: 5,
-    heatPerHit: 0.03,
-    heatMax: 0.45,
-    heatError: 1.2,
+    // Points end because somebody built them. The heat is only what keeps one from lasting for ever.
+    heatAfter: 10,
+    heatPerHit: 0.05,
+    heatMax: 0.6,
+    heatError: 1.5,
+    strain: { carry: 0.5, from: 0.6, error: 2 },
   },
   // How each character plays, worked out from its style (see src/characters).
   rivals: {

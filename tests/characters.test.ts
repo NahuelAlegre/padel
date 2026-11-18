@@ -101,17 +101,32 @@ describe('el elenco', () => {
     expect(chela.lobChance).toBeGreaterThan(beto.lobChance * 2);
     expect(chela.wallBias).toBeGreaterThan(0);
     expect(romina.wallBias).toBeLessThan(0);
-    // Beto plays through the middle and is the one who makes mistakes.
+    // Beto plays through the middle, and his hands are the least steady of the three.
     expect(beto.angle).toBeLessThan(romina.angle);
-    expect(beto.mishit).toBeGreaterThan(romina.mishit);
+    expect(beto.timingSigma).toBeGreaterThan(romina.timingSigma);
     expect(chela.errorScale).toBeLessThan(beto.errorScale);
+    // The stars are how well they play padel: reading the point, finishing, keeping their head.
+    expect(chela.smart).toBeGreaterThan(romina.smart);
+    expect(romina.smart).toBeGreaterThan(beto.smart);
+    expect(romina.punish).toBeGreaterThan(beto.punish);
+    expect(chela.composure).toBeGreaterThan(beto.composure);
+    // And each one's own way: Romina finishes what she can and loses her head; Chela never does.
+    expect(romina.punish).toBeGreaterThan(chela.punish);
+    expect(romina.composure).toBeLessThan(chela.composure);
+    expect(romina.holdNet).toBeGreaterThan(chela.holdNet);
+    // Nobody misses for no reason, and nobody is faster than a person.
+    for (const level of [beto, romina, chela]) {
+      expect(level.mishit).toBe(0);
+      expect(level.speedFactor).toBeGreaterThanOrEqual(0.75);
+      expect(level.speedFactor).toBeLessThanOrEqual(1);
+    }
   });
 
   it('los rasgos son ganchos concretos en la IA', () => {
     expect(toAILevel(CAST.beto).feed).toBeCloseTo(0.4);
     // The first time he meets somebody the coach feeds more.
     expect(toAILevel(CAST.beto, true).feed).toBeCloseTo(0.7);
-    expect(toAILevel(CAST.romina)).toMatchObject({ impatientAfter: 4, impatience: 0.08, wallScatter: 2 });
+    expect(toAILevel(CAST.romina)).toMatchObject({ impatientAfter: 4, impatience: 0.15, wallScatter: 2 });
     expect(toAILevel(CAST.chela).lobUnderPressure).toBe(true);
     expect(toAILevel(CAST.chela).feed).toBe(0);
   });
@@ -166,7 +181,7 @@ describe('gesto delator: la IA decide antes y lo muestra', () => {
   });
 
   it('no miente: lo que mostró es lo que juega', () => {
-    const { seen } = watch({ ...LEVELS.hard, lobChance: 0.6, dropChance: 0.3, tellLead: 0.45 }, 80);
+    const { seen } = watch({ ...LEVELS.hard, lobChance: 1, dropChance: 0.3, tellLead: 0.45 }, 160);
     const lobs = seen.filter((entry) => entry.cue.lob);
     expect(lobs.length).toBeGreaterThan(3);
     // The situation can still name it differently when the ball got past (contrapared).
@@ -271,7 +286,8 @@ describe('estilo y rasgos en la cancha', () => {
     // And in a rally: the same shots from the same places, only harder. The
     // rally is kept from heating up, which would hide the difference.
     const mean = (level: AILevel): number => {
-      const volleys = hitsOf({ ...level, lobChance: 0, dropChance: 0, smart: 1, aggression: 1 }, 60, {}, (cfg) => {
+      // It puts every ball back the same way, so the only thing that changes is how hard.
+      const volleys = hitsOf({ ...level, lobChance: 0, dropChance: 0, smart: 1, punish: 0, aggression: 1 }, 180, {}, (cfg) => {
         cfg.rules.heatMax = 0;
       }).filter((entry) => entry.hit.kind === 'volley');
       expect(volleys.length).toBeGreaterThan(10);
@@ -279,7 +295,8 @@ describe('estilo y rasgos en la cancha', () => {
     };
     const soft = mean({ ...LEVELS.hard, power: 0.85 });
     const hard = mean({ ...LEVELS.hard, power: 1.14 });
-    expect(hard).toBeGreaterThan(soft * 1.15);
+    // Not the whole difference: a volley hit from below the tape cannot go any faster than its arc over the net allows.
+    expect(hard).toBeGreaterThan(soft * 1.08);
   });
 
   it('el que alimenta juega hacia donde está el otro; el que no, lejos', () => {
@@ -328,9 +345,11 @@ describe('estilo y rasgos en la cancha', () => {
     };
     const calm = miss(0);
     const impatient = miss(0.3);
-    // The first shots of a rally are the same for both; the late ones are not.
+    // Her impatience is strain she brings to the swing once the point goes on:
+    // the first shots of a rally are much the same for both, the late ones are not.
     expect(impatient.late).toBeGreaterThan(calm.late * 1.4);
-    expect(impatient.early).toBeLessThan(calm.early * 1.3);
+    expect(impatient.early).toBeLessThan(calm.early * 1.6);
+    expect(impatient.late / impatient.early).toBeGreaterThan((calm.late / calm.early) * 1.2);
   });
 
   it('exigida, la que siempre tira globo, tira globo', () => {
@@ -551,7 +570,7 @@ describe('frases y manías: no tocan el partido', () => {
     });
     let acts = 0;
     let tosses = 0;
-    for (let i = 0; i < 120 * 120; i++) {
+    for (let i = 0; i < 120 * 240; i++) {
       match.step();
       for (const event of match.events) {
         const reaction = who.onEvent(event, match);

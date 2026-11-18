@@ -1,11 +1,12 @@
 import { SIM_DT, createConfig, type GameConfig, type QualityEffect } from '../config';
-import { clamp, lerp } from '../core/math';
+import { clamp } from '../core/math';
 import { Rng } from '../core/rng';
 import { createBall, stepBall, type BallEvent, type Surface, type WallId } from './ball';
 import { teamDir } from './court';
 import { receiverIndex, serveBoxSign, serveSpot } from './formation';
 import { contactNear, planIntercept } from './intercept';
 import { createPlayer, movePlayer, playerReach, type Player, type PlayerSetup } from './player';
+import { backpedalOf, ballPressure, type BallAsk, type PressureParts } from './pressure';
 import { InputRecorder, type Recording } from './replay';
 import {
   applyBallEvent,
@@ -26,6 +27,7 @@ import {
   solveShot,
   type Launch,
   type ShotContext,
+  type ShotParams,
 } from './shots';
 import { pointAt, predictTrajectory, type Trajectory } from './trajectory';
 import {
@@ -69,6 +71,12 @@ export type SimEvent =
       y: number;
       z: number;
       speed: number;
+      /**
+       * 0..1, how hard the ball was to play: what the shot before this one
+       * did to whoever hit it. It is what the body shows (a low volley dug
+       * out, a stretch, a hurried step back), and why the answer came out weak.
+       */
+      pressure: number;
     }
   | { type: 'whiff'; player: number; reason: 'far' | 'nothing' }
   | { type: 'bounce'; x: number; y: number; speed: number }
@@ -115,6 +123,23 @@ export interface MatchOptions {
   record?: boolean;
   /** First ever point: the rival plays gently until the person wins one. */
   tutorial?: boolean;
+  /**
+   * A practice court: nobody serves and nothing is scored. Whoever runs the
+   * practice sends the players to their places with `rest` and puts balls
+   * in play with `feed`.
+   */
+  practice?: boolean;
+}
+
+/** A ball put in play on a practice court: where it lands and how it flies. */
+export interface Feed {
+  targetX: number;
+  targetY: number;
+  /** What the shot is called, for whoever shows or hears it. */
+  kind: ShotKind;
+  params: ShotParams;
+  /** Height it is struck at. Left out, a comfortable one. */
+  z?: number;
 }
 
 /** How long before contact the swing animation starts. */
@@ -122,6 +147,8 @@ const SWING_LEAD = 0.12;
 const SWING_DURATION = 0.42;
 /** How often the advice on where to stand is refreshed for a hand-moved player, in steps. */
 const GUIDE_EVERY = 12;
+/** A lob at least this good (0..1) is one to follow to the net. */
+const FOLLOW_LOB = 0.5;
 
 /**
  * The whole simulation of a match: players, ball, rules and score.
@@ -163,6 +190,10 @@ export class Match {
   rallyHits = 0;
   /** True until a person wins a point: the rival goes easy meanwhile. */
   tutorial: boolean;
+  /** A practice court: see `MatchOptions.practice`. */
+  readonly practice: boolean;
+  /** Practice: the feeder is holding the ball it is about to put in play. */
+  ballHeld = false;
 
   private readonly controllers: Controller[] = [];
   private readonly intents: PlayerIntent[] = [];
@@ -184,7 +215,14 @@ export class Match {
     ballZ: 0,
     bounces: 0,
     walls: 0,
+    pressure: 0,
+    backpedal: 0,
   };
+  private readonly ask: BallAsk = { ballX: 0, ballY: 0, ballZ: 0, speed: 0, gap: 0, reach: 1, retreat: 0, risk: 0 };
+  /** The risk the last shot took by aiming near the walls, if it came off. It makes the ball harder for whoever gets it. */
+  private lastRisk = 0;
+  /** Why the last ball that was hit was hard: what each thing added to its pressure. */
+  readonly pressureParts: PressureParts = { below: 0, stretch: 0, pace: 0, cramped: 0, backpedal: 0, risk: 0 };
   private rallyStartedAt = 0;
 
   constructor(options: MatchOptions) {
@@ -194,6 +232,7 @@ export class Match {
     this.teamNames = [options.teams[0].name, options.teams[1].name];
     this.format = { ...this.config.rules.format };
     this.tutorial = options.tutorial ?? false;
+    this.practice = options.practice ?? false;
     this.recorder = options.record ? new InputRecorder() : null;
 
     for (const team of [0, 1] as const) {
@@ -217,7 +256,8 @@ export class Match {
       this.score = createScore(options.firstServer ?? 0);
     }
     this.assignSpots();
-    this.beginServe();
+    if (this.practice) this.rest(this.players.map((player) => ({ x: player.spotX, y: player.spotY })), this.serverId, true);
+    else this.beginServe();
   }
 
   get server(): Player {
@@ -250,7 +290,7 @@ export class Match {
    * ended the point does not also swallow its result.
    */
   skipPause(): boolean {
-    if (this.phase !== 'pointOver' || this.afterPause !== 'serve') return false;
+    if (this.practice || this.phase !== 'pointOver' || this.afterPause !== 'serve') return false;
     if (this.time - this.phaseStarted < this.config.rules.skipAfter) return false;
     this.phaseUntil = this.time;
     return true;
@@ -310,7 +350,7 @@ export class Match {
     if (this.phase === 'windup' && this.time >= this.serveHitAt) this.executeServe();
     if (this.phase === 'rally') this.resolveSwings();
 
-    if (this.phase === 'serve') {
+    if (this.phase === 'serve' || this.ballHeld) {
       this.holdBall();
     } else {
       this.stepBall();
@@ -362,6 +402,9 @@ export class Match {
       player.cue = null;
       player.homeMode = 'back';
       player.anim.kind = 'idle';
+      // Every point starts fresh: nobody carries the last one in the legs.
+      player.strain = 0;
+      player.pressure = 0;
     }
     this.phase = 'serve';
     this.rally.live = false;
@@ -390,6 +433,8 @@ export class Match {
     ball.vz = 0;
     ball.rolling = false;
     ball.outside = false;
+    ball.kick = 0;
+    ball.grip = 0;
   }
 
   /** Sign of x of the service box the next serve has to land in. */
@@ -435,6 +480,7 @@ export class Match {
     this.phase = 'rally';
     this.rallyStartedAt = this.time;
     this.rallyHits = 1;
+    this.lastRisk = 0;
     this.serveIntent = null;
     // In padel the serving side takes the net behind the serve.
     for (const mate of this.teams[server.team]) mate.homeMode = 'net';
@@ -451,12 +497,116 @@ export class Match {
       y,
       z,
       speed,
+      pressure: 0,
     });
 
     // The serve is returned by the player standing diagonally.
     const receivers = this.teams[otherTeam(server.team)];
     const receiver = receivers[receiverIndex(receivers.length, side)] ?? receivers[0]!;
     this.onBallStruck(server.team, receiver.id);
+  }
+
+  // ---------------------------------------------------------------- practice
+
+  /**
+   * Practice: everybody walks to a place, and `feeder` waits there with a
+   * ball in its hand. `spots` goes by position in `players`. With `now`
+   * they are put there at once.
+   */
+  rest(spots: ReadonlyArray<{ x: number; y: number }>, feeder: number, now = false): void {
+    for (const player of this.players) {
+      const spot = spots[player.id];
+      if (spot) {
+        player.spotX = spot.x;
+        player.spotY = spot.y;
+      }
+      if (now) {
+        player.x = player.spotX;
+        player.y = player.spotY;
+        player.px = player.x;
+        player.py = player.y;
+        player.vx = 0;
+        player.vy = 0;
+      }
+      player.plan = null;
+      player.guide = null;
+      player.swing = null;
+      player.swingLockUntil = 0;
+      player.cue = null;
+      player.homeMode = 'back';
+      player.anim.kind = 'idle';
+      player.strain = 0;
+      player.pressure = 0;
+    }
+    this.serverId = feeder;
+    this.rally.live = false;
+    this.trajectory = null;
+    this.assigned[0] = -1;
+    this.assigned[1] = -1;
+    this.phase = 'pointOver';
+    this.phaseStarted = this.time;
+    this.phaseUntil = Infinity;
+    this.afterPause = 'serve';
+    this.ballHeld = true;
+    this.holdBall();
+    this.ballPrev.x = this.ball.x;
+    this.ballPrev.y = this.ball.y;
+    this.ballPrev.z = this.ball.z;
+  }
+
+  /** Practice: true once everybody is where `rest` sent them. */
+  get settled(): boolean {
+    for (const player of this.players) {
+      if (Math.hypot(player.x - player.spotX, player.y - player.spotY) > 0.12) return false;
+    }
+    return true;
+  }
+
+  /** Practice: the feeder plays the ball it is holding. From here on it is a rally like any other. */
+  feed(feed: Feed): void {
+    const feeder = this.server;
+    const config = this.config;
+    const ball = this.ball;
+    this.holdBall();
+    ball.z = feed.z ?? 0.9;
+    const launch = solveShot(ball.x, ball.y, ball.z, feed.targetX, feed.targetY, feed.params, config.physics, config.court);
+    ball.vx = launch.vx;
+    ball.vy = launch.vy;
+    ball.vz = launch.vz;
+    const speed = Math.hypot(launch.vx, launch.vy, launch.vz);
+
+    registerHit(this.rally, feeder.team, false, 1);
+    this.phase = 'rally';
+    this.rallyStartedAt = this.time;
+    this.rallyHits = 1;
+    this.lastRisk = 0;
+    this.ballHeld = false;
+    const anim = feeder.anim;
+    anim.kind = 'swing';
+    anim.t0 = this.time - SWING_LEAD;
+    anim.duration = SWING_DURATION;
+    anim.contactAt = this.time;
+    anim.shot = feed.kind;
+    anim.side = ball.x >= feeder.x ? 1 : -1;
+    anim.reachX = ball.x - feeder.x;
+    anim.reachY = ball.y - feeder.y;
+    anim.reachZ = ball.z;
+    this.events.push({
+      type: 'hit',
+      player: feeder.id,
+      team: feeder.team,
+      kind: feed.kind,
+      forehand: true,
+      volley: false,
+      quality: 'good',
+      error: 0,
+      x: ball.x,
+      y: ball.y,
+      z: ball.z,
+      speed,
+      pressure: 0,
+    });
+    this.onBallStruck(feeder.team, -1);
   }
 
   // ---------------------------------------------------------------- swings
@@ -560,7 +710,29 @@ export class Match {
     context.ballZ = plan.z;
     context.bounces = point.bounces;
     context.walls = point.walls;
+    context.backpedal = backpedalOf(-player.vy * teamDir(player.team), plan.z, this.config);
     return shotKind(context, intent, this.config);
+  }
+
+  /**
+   * How hard the ball this player is waiting for is going to be (0..1), as
+   * things stand: from where it is and how it is moving right now. For the
+   * aim marker, so it shows what the shot can really do.
+   */
+  expectedPressure(player: Player): number {
+    const plan = player.plan;
+    const point = plan && this.trajectory ? pointAt(this.trajectory, plan.t) : null;
+    if (!plan || !point) return 0;
+    const ask = this.ask;
+    ask.ballX = plan.x;
+    ask.ballY = plan.y;
+    ask.ballZ = plan.z;
+    ask.speed = Math.hypot(point.vx, point.vy, point.vz);
+    ask.gap = Math.hypot(plan.x - player.x, plan.y - player.y);
+    ask.reach = playerReach(player, this.config) + this.config.player.lungeExtra;
+    ask.retreat = -player.vy * teamDir(player.team);
+    ask.risk = this.lastRisk;
+    return ballPressure(ask, this.config);
   }
 
   private playSwing(player: Player, kind: 'swing' | 'whiff', t0: number, intent: ShotIntent): void {
@@ -617,7 +789,9 @@ export class Match {
     if (ball.z < pc.minContactZ * 0.5 || ball.z > pc.maxContactZ + 0.15) return false;
     const gap = Math.hypot(ball.x - player.x, ball.y - player.y);
     const reach = playerReach(player, this.config);
-    if (gap > (error > 0 ? reach + pc.lungeExtra : reach * 1.1)) return false;
+    // A late swing lunges; whoever runs by itself and did not quite get there stretches.
+    const most = error > 0 ? reach + pc.lungeExtra : player.manual ? reach * 1.1 : reach + pc.stretchExtra;
+    if (gap > most) return false;
     this.executeHit(player, intent, error, gap);
     return true;
   }
@@ -627,8 +801,25 @@ export class Match {
     const pc = config.player;
     const shots = config.shots;
     const ball = this.ball;
+    const rules = config.rules;
     const quality = qualityFromError(error, config.timing);
     const effect = shots.quality[quality];
+    const dir = teamDir(player.team);
+    const incoming = Math.hypot(ball.vx, ball.vy, ball.vz);
+    const reach = playerReach(player, config);
+    const retreat = -player.vy * dir;
+
+    // What the ball asks of the player: that is the work of the shot before this one.
+    const ask = this.ask;
+    ask.ballX = ball.x;
+    ask.ballY = ball.y;
+    ask.ballZ = ball.z;
+    ask.speed = incoming;
+    ask.gap = gap;
+    ask.reach = reach + pc.lungeExtra;
+    ask.retreat = retreat;
+    ask.risk = this.lastRisk;
+    const pressure = ballPressure(ask, config, this.pressureParts);
 
     const context: ShotContext = {
       team: player.team,
@@ -640,44 +831,50 @@ export class Match {
       ballZ: ball.z,
       bounces: this.rally.bounces,
       walls: this.rally.walls,
+      pressure,
+      backpedal: backpedalOf(retreat, ball.z, config),
     };
-    const shot = resolveShot(context, intent, config);
-    const spec = shots.specs[shot.kind];
+    // The shot that comes out: the timing and the pressure are already in it.
+    const shot = resolveShot(context, intent, config, quality);
 
-    // How hard the ball was to play: reached at full stretch, coming fast, dug
-    // out from the floor, deep into a long rally. And the risk the player
-    // chose by aiming close to the walls. All of it widens the scatter.
-    const incoming = Math.hypot(ball.vx, ball.vy, ball.vz);
-    const reach = playerReach(player, config);
+    // How wild it is. The ball itself (reached at full stretch, coming fast,
+    // dug out from the floor), the risk the player chose by aiming close to
+    // the walls, and what the rally has done to the player so far: a run of
+    // difficult balls gets to anybody, to some sooner than to others.
     const stretch = clamp((gap - pc.sweetSpot) / (reach - pc.sweetSpot), 0, 1.5);
     const fast = clamp((incoming - shots.paceFrom) / 12, 0, 1.5);
     const low = clamp((0.45 - ball.z) / 0.45, 0, 1);
+    const strain = player.strain + (intent.tension ?? 0);
     let scale =
       1 +
       stretch * shots.stretchPenalty +
       fast * shots.pacePenalty +
       low * shots.lowPenalty +
       shot.risk * shots.riskPenalty +
-      this.heat * config.rules.heatError;
+      pressure * shots.pressure.scatterAdd +
+      Math.max(0, strain - rules.strain.from) * rules.strain.error * (1 - player.composure) +
+      this.heat * rules.heatError;
     scale *= player.errorScale * (intent.scatter ?? 1);
+    player.strain = player.strain * rules.strain.carry + pressure;
+    player.pressure = pressure;
+    this.lastRisk = quality === 'late' ? 0 : shot.risk;
 
-    // A weak ball lands short and floats.
-    const dir = teamDir(player.team);
-    const depth = lerp(Math.abs(shot.targetY), shots.shortDepth, effect.shorten);
     const params = {
-      clearance: shot.params.clearance + effect.lift,
+      clearance: shot.params.clearance,
       apex: shot.params.apex,
-      speed: shot.params.speed * effect.pace * (1 + this.heat),
+      speed: shot.params.speed * (1 + this.heat),
     };
     const launch =
       shot.kind === 'backWall'
-        ? solveBackWall(ball.x, ball.y, ball.z, shot.targetX, dir * depth, player.team, params, config.physics, config.court)
-        : solveShot(ball.x, ball.y, ball.z, shot.targetX, dir * depth, params, config.physics, config.court);
+        ? solveBackWall(ball.x, ball.y, ball.z, shot.targetX, shot.targetY, player.team, params, config.physics, config.court)
+        : solveShot(ball.x, ball.y, ball.z, shot.targetX, shot.targetY, params, config.physics, config.court);
     this.rallyHits++;
     const x = ball.x;
     const y = ball.y;
     const z = ball.z;
     const speed = this.launch(launch, effect, scale);
+    ball.kick = shot.kick;
+    ball.grip = shot.grip;
 
     registerHit(this.rally, player.team, false, 1);
     player.swing = null;
@@ -689,9 +886,13 @@ export class Match {
     player.anim.reachX = x - player.x;
     player.anim.reachY = y - player.y;
     player.anim.reachZ = z;
-    // After an attacking shot hold the net; otherwise fall back. A controller
-    // can overrule this with its own idea of where to wait.
-    const attacking = spec.apex > 0 || shot.kind === 'drop' || shot.kind === 'volley' || shot.kind === 'smash' || shot.kind === 'bandeja' || shot.kind === 'vibora';
+    // After an attacking shot hold the net; otherwise fall back. A lob that
+    // came out short is no way to the net: it is about to be smashed. A
+    // controller can overrule this with its own idea of where to wait.
+    const attacking =
+      shot.kind === 'lob'
+        ? shot.lobQuality >= FOLLOW_LOB
+        : shot.kind === 'drop' || shot.kind === 'volley' || shot.kind === 'smash' || shot.kind === 'bandeja' || shot.kind === 'vibora';
     player.homeMode = attacking ? 'net' : 'back';
 
     this.events.push({
@@ -707,6 +908,7 @@ export class Match {
       y,
       z,
       speed,
+      pressure,
     });
     this.onBallStruck(player.team, -1);
   }
@@ -728,6 +930,8 @@ export class Match {
     ball.vy = speed * cos * Math.cos(azimuth);
     ball.vz = speed * Math.sin(elevation);
     ball.rolling = false;
+    ball.kick = 0;
+    ball.grip = 0;
     return speed;
   }
 
@@ -865,6 +1069,12 @@ export class Match {
       // A swing that was still waiting for the ball never happens.
       if (player.swing) player.anim.kind = 'idle';
       player.swing = null;
+    }
+
+    if (this.practice) {
+      // Nothing is scored here: the result is only told, and the ball is left where it is.
+      if (result.kind === 'point') this.events.push({ type: 'point', winner: result.winner, reason: result.reason });
+      return;
     }
 
     if (result.kind === 'let') {

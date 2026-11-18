@@ -19,8 +19,11 @@ interface Label {
 
 /** Seconds before the contact at which the timing ring starts closing (for those who ask for every aid). */
 const RING_LEAD = 0.9;
-/** Seconds one loop of the first-time ghost hand lasts. */
+/** Seconds one loop of the ghost hand lasts. */
 const GHOST_LOOP = 2;
+/** Where the ghost thumb goes when the gesture is no shot in particular: with two thumbs, and with a flick. */
+const PLAIN_DRAG = { x: 16, y: -44 };
+const PLAIN_FLICK = { x: 0, y: -78 };
 
 /**
  * Everything drawn with Canvas 2D, on the canvas that sits on top.
@@ -558,8 +561,8 @@ export class FlatPainter {
   }
 
   /**
-   * First visit: ghost thumbs show the gestures, with no words. They go away
-   * for good after the first hit that comes off.
+   * Ghost thumbs show a gesture, with no words: the first visit (until the
+   * first hit that comes off), a lesson, or a shot worth trying.
    */
   private drawTutorial(scene: Scene): void {
     const tutorial = scene.tutorial;
@@ -571,18 +574,24 @@ export class FlatPainter {
     const stickX = this.width * (tutorial.stickSide === 'left' ? 0.26 : 0.74);
     const aimX = this.width * (tutorial.stickSide === 'left' ? 0.74 : 0.26);
 
+    const push = tutorial.push;
     if (tutorial.scheme === 'two') {
-      if (tutorial.step === 'play' && !stick.active) {
+      if (!stick.active && push) {
+        // The stick thumb, pushing one way and easing off.
+        const lean = 14 + 10 * Math.sin(t * Math.PI);
+        this.ghostStick(stickX, y, push.x * lean, push.y * lean);
+      } else if (!stick.active && tutorial.step === 'play') {
         // The stick thumb: pressed, circling around its centre.
         const angle = t * TAU;
         this.ghostStick(stickX, y, Math.cos(angle) * 20, Math.sin(angle) * 20);
       }
       if (!stroke.active) {
-        // The aiming thumb: press, drag, hold, let go.
+        // The aiming thumb: press, drag, hold, let go. How far and which way it drags is the shot.
+        const to = tutorial.drag ?? PLAIN_DRAG;
         const drag = easeOutCubic(clamp((t - 0.15) / 0.3, 0, 1));
         const pressed = t > 0.08 && t < 0.72;
-        const x = aimX + drag * 16;
-        const fingerY = y - drag * 44;
+        const x = aimX + drag * to.x;
+        const fingerY = y + drag * to.y;
         this.ghostPath(aimX, y, x, fingerY);
         this.ghostFinger(x, fingerY, pressed, t >= 0.72 ? (t - 0.72) / 0.28 : -1);
       }
@@ -595,16 +604,20 @@ export class FlatPainter {
     if (tutorial.step === 'play' && t < 0.5) {
       // A slow drag is the stick...
       const k = t / 0.5;
-      this.ghostStick(x, y, Math.sin(k * Math.PI) * 26, -k * 18);
+      if (push) this.ghostStick(x, y, push.x * 26 * k, push.y * 26 * k);
+      else this.ghostStick(x, y, Math.sin(k * Math.PI) * 26, -k * 18);
       return;
     }
-    // ...and a quick stroke is the shot.
+    // ...and a quick stroke is the shot: its length and its direction say which.
+    const to = tutorial.drag ?? PLAIN_FLICK;
     const start = tutorial.step === 'play' ? 0.6 : 0.2;
     const k = clamp((t - start) / 0.12, 0, 1);
-    const fingerY = y - easeOutCubic(k) * 78;
+    const reach = easeOutCubic(k);
+    const fingerX = x + reach * to.x;
+    const fingerY = y + reach * to.y;
     if (t >= start - 0.1) {
-      this.ghostPath(x, y, x, fingerY);
-      this.ghostFinger(x, fingerY, k < 1, k >= 1 ? clamp((t - start - 0.12) / 0.2, 0, 1) : -1);
+      this.ghostPath(x, y, fingerX, fingerY);
+      this.ghostFinger(fingerX, fingerY, k < 1, k >= 1 ? clamp((t - start - 0.12) / 0.2, 0, 1) : -1);
     }
   }
 

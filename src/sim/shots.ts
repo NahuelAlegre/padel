@@ -25,6 +25,8 @@ const MAX_FLIGHT_TIME = 2.6;
 /** The most pace a player can put on a shot, against the usual pace of that shot. */
 const MAX_POWER = 1.2;
 const MAX_SMASH_POWER = 1.05;
+/** The slowest a ball can be sent into the own glass and still come back off it. */
+const MIN_BACK_WALL_SPEED = 9;
 
 /**
  * Launch velocity that takes the ball from (x0, y0, z0) to the floor at
@@ -113,7 +115,8 @@ export function solveBackWall(
   const needed = netHeightAt(court, targetX * 0.5) + params.clearance + physics.ballRadius;
 
   let best: Launch | null = null;
-  for (let speed = params.speed; speed >= 9; speed -= 1) {
+  // A weak one is still hit hard enough to come back off the glass.
+  for (let speed = Math.max(params.speed, MIN_BACK_WALL_SPEED); speed >= MIN_BACK_WALL_SPEED; speed -= 1) {
     const out = speed * physics.glassRestitution;
     const t1 = toWall / speed;
     const t2 = fromWall / out;
@@ -148,6 +151,10 @@ export interface ShotContext {
   bounces: number;
   /** Walls touched after that bounce. */
   walls: number;
+  /** 0..1, how hard the ball is to play (see `ballPressure`). Left out, it is a comfortable one. */
+  pressure?: number;
+  /** 0..1, how much the player is going backwards under a high ball. Left out, not at all. */
+  backpedal?: number;
 }
 
 /**
@@ -179,6 +186,11 @@ export interface ResolvedShot {
   params: ShotParams;
   /** 0..1: how close to the walls it is aimed. The risk the player chose. */
   risk: number;
+  /** For a lob, 0..1: how good it came out. 1 lands next to the glass, 0 where it can be smashed. */
+  lobQuality: number;
+  /** The spin it leaves with: what its first bounce keeps of its vertical and horizontal speed, or 0 for an ordinary bounce. */
+  kick: number;
+  grip: number;
 }
 
 /** Which shot an intent turns into in a given situation. See `resolveShot`. */
@@ -188,7 +200,9 @@ export function shotKind(ctx: ShotContext, intent: ShotIntent, config: GameConfi
   if (isPastPlayer(ctx.team, ctx.playerY, ctx.ballY, ctx.bounces, config)) return 'backWall';
   if (intent.lob) return 'lob';
   if (clamp(intent.depth, 0, 1) <= shots.dropAt) return 'drop';
-  if (ctx.ballZ >= pc.overheadZ && netDistance <= pc.smashMaxNetDistance) return 'smash';
+  // A smash needs the feet under the ball: going backwards it is a bandeja.
+  const settled = (ctx.backpedal ?? 0) <= shots.pressure.forcedBandeja;
+  if (ctx.ballZ >= pc.smashZ && netDistance <= pc.smashMaxNetDistance && settled) return 'smash';
   if (ctx.ballZ >= pc.overheadZ && netDistance <= pc.overheadMaxNetDistance) {
     return Math.abs(clamp(intent.aim, -1, 1)) >= shots.viboraAim ? 'vibora' : 'bandeja';
   }
@@ -212,9 +226,24 @@ export function shotKind(ctx: ShotContext, intent: ShotIntent, config: GameConfi
  *   after a wall                                     salida de pared
  *   anything else                                    derecha / revés
  *
+ * And how well it comes out, which is not chosen but earned:
+ *
+ *   the timing     a late swing is weak, short and floats; a perfect one adds
+ *                  to each shot what that shot is for (`shots.perfect`)
+ *   the ball       a difficult one (`pressure`) comes back slower, higher
+ *                  and with less angle
+ *   a lob          its depth is its quality: timing and pressure decide
+ *                  whether it lands next to the glass or where it gets smashed
+ *
  * It is a pure function, so the aim marker shows exactly what will happen.
+ * `quality` is the timing of the swing; before the swing, a good one stands in.
  */
-export function resolveShot(ctx: ShotContext, intent: ShotIntent, config: GameConfig): ResolvedShot {
+export function resolveShot(
+  ctx: ShotContext,
+  intent: ShotIntent,
+  config: GameConfig,
+  quality: Quality = 'good',
+): ResolvedShot {
   const { shots, court } = config;
   const dir = teamDir(ctx.team);
   const aim = clamp(intent.aim, -1, 1);
@@ -222,12 +251,40 @@ export function resolveShot(ctx: ShotContext, intent: ShotIntent, config: GameCo
   const kind = shotKind(ctx, intent, config);
 
   const spec = shots.specs[kind];
-  const deep = clamp((depth - shots.dropAt) / (1 - shots.dropAt), 0, 1);
-  const targetDepth = lerp(spec.depthNear, spec.depthFar, deep);
-  const targetX = aim * spec.aimRange;
+  const effect = shots.quality[quality];
+  const perfect = quality === 'perfect' ? shots.perfect[kind] : undefined;
+  const squeeze = shots.pressure;
+  const pressure = clamp(ctx.pressure ?? 0, 0, 1);
+
+  let targetDepth: number;
+  let apex = spec.apex;
+  let lobQuality = 0;
+  if (kind === 'lob') {
+    lobQuality = shots.lobQuality[quality] * (1 - squeeze.lobCut * pressure);
+    targetDepth = lerp(spec.depthNear, spec.depthFar, lobQuality);
+    apex += shots.lobApexGain * (lobQuality - shots.lobQuality.good);
+  } else {
+    const deep = clamp((depth - shots.dropAt) / (1 - shots.dropAt), 0, 1);
+    targetDepth = lerp(spec.depthNear, spec.depthFar, deep) + (perfect?.depth ?? 0);
+    // A weak ball lands short: a late one, and one that was hard to play.
+    targetDepth = lerp(targetDepth, shots.shortDepth, effect.shorten);
+    if (kind !== 'drop') targetDepth = lerp(targetDepth, shots.shortDepth, squeeze.shortenAdd * pressure);
+  }
+  const targetX = aim * spec.aimRange * (1 - squeeze.aimCut * pressure) * (perfect?.aim ?? 1);
   // A hard hitter gets a little more out of every shot, but not out of a
   // smash: that one is already as fast as the game can take.
   const power = clamp(intent.power, 0.3, kind === 'smash' ? MAX_SMASH_POWER : MAX_POWER);
+  const speed = spec.speed * power * effect.pace * (perfect?.pace ?? 1) * (1 - squeeze.paceCut * pressure);
+  const clearance = Math.max(
+    shots.minClearance,
+    spec.clearance + effect.lift + (perfect?.clearance ?? 0) + squeeze.liftAdd * pressure,
+  );
+
+  // The spin of the shot. Under pressure it is the first thing to go: a
+  // forced smash bounces like any other ball.
+  const spin = shots.spin[kind];
+  const kick = perfect?.kick ?? spin?.kick ?? 0;
+  const grip = perfect?.grip ?? spin?.grip ?? 0;
 
   // Risk: how little room is left to the side wall and, for flat shots, to the back wall.
   const sideRoom = court.halfWidth - Math.abs(targetX);
@@ -240,8 +297,11 @@ export function resolveShot(ctx: ShotContext, intent: ShotIntent, config: GameCo
     forehand: (ctx.ballX - ctx.playerX) * dir * ctx.hand >= 0,
     targetX,
     targetY: dir * targetDepth,
-    params: { clearance: spec.clearance, apex: spec.apex, speed: spec.speed * power },
+    params: { clearance, apex, speed },
     risk: clamp(risk, 0, 1),
+    lobQuality,
+    kick: kick > 0 ? lerp(kick, config.physics.floorRestitution, pressure) : 0,
+    grip: grip > 0 ? lerp(grip, config.physics.floorGrip, pressure) : 0,
   };
 }
 

@@ -242,8 +242,8 @@ describe('timing del golpe', () => {
     expect(early.quality).toBe('early');
     expect(early.error).toBeCloseTo(-0.5, 2);
     expect(early.speed).toBeCloseTo(good.speed, 1);
-    // Only a perfect one is better.
-    expect(returnWith(0).returned!.speed).toBeGreaterThan(early.speed);
+    // Only a perfect one is better, and what it adds depends on the shot: see tests/depth.test.ts.
+    expect(returnWith(0).returned!.quality).toBe('perfect');
   });
 
   it('después de tiempo es tarde: sale, pero más débil', () => {

@@ -35,6 +35,8 @@ export class Hud {
   private readonly bubble: HTMLElement;
   private readonly hint: HTMLElement;
   private readonly fps: HTMLElement;
+  private readonly score: HTMLElement;
+  private readonly lessonBox: HTMLElement;
   private bannerTimer = 0;
   private bubbleTimer = 0;
   private bubbleWidth = 0;
@@ -48,6 +50,8 @@ export class Hud {
     this.bubble = need<HTMLElement>(this.root, '#bubble');
     this.hint = need<HTMLElement>(this.root, '#hint');
     this.fps = need<HTMLElement>(this.root, '#fps');
+    this.score = need<HTMLElement>(this.root, '.score');
+    this.lessonBox = need<HTMLElement>(this.root, '#lesson');
     need<HTMLButtonElement>(this.root, '#pause').addEventListener('click', onPause);
     // Hints mention the device actually in use.
     window.addEventListener('pointerdown', () => (this.usesKeys = false), { passive: true });
@@ -129,6 +133,22 @@ export class Hud {
       default:
         break;
     }
+  }
+
+  /**
+   * A lesson of the tutorial takes the place of the scoreboard: its name, a
+   * few words and a pip for every ball that has to come off. Null puts the
+   * scoreboard back.
+   */
+  lesson(lesson: { name: string; cue: string; done: number; goal: number } | null): void {
+    this.score.hidden = lesson !== null;
+    this.lessonBox.hidden = lesson === null;
+    if (!lesson) return;
+    need<HTMLElement>(this.lessonBox, 'b').textContent = lesson.name;
+    need<HTMLElement>(this.lessonBox, 'small').textContent = lesson.cue;
+    // Filled and hollow, not only two colours.
+    need<HTMLElement>(this.lessonBox, '.pips').textContent = '●'.repeat(lesson.done) + '○'.repeat(Math.max(0, lesson.goal - lesson.done));
+    this.lessonBox.setAttribute('aria-label', `${lesson.name}: ${lesson.done} de ${lesson.goal}`);
   }
 
   /** Shows a message in the middle of the court for a moment. */

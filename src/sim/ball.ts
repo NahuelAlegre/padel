@@ -13,6 +13,14 @@ export interface BallState {
   rolling: boolean;
   /** Flew over a wall: it is out of the court and nothing stops it any more. */
   outside: boolean;
+  /**
+   * Spin, as what it does to the next bounce on the floor, where it is spent.
+   * `kick` is how much of its vertical speed that bounce keeps (a smash
+   * jumps, a sliced ball stays low) and `grip` how much of its horizontal
+   * speed (a chiquita bites and stays). 0 means the usual bounce.
+   */
+  kick: number;
+  grip: number;
 }
 
 export type WallId = 'backNear' | 'backFar' | 'left' | 'right';
@@ -27,7 +35,7 @@ export type BallEvent =
   | { type: 'out'; wall: WallId; x: number; y: number; z: number };
 
 export function createBall(): BallState {
-  return { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, rolling: false, outside: false };
+  return { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, rolling: false, outside: false, kick: 0, grip: 0 };
 }
 
 export function copyBall(from: BallState, to: BallState): void {
@@ -39,6 +47,8 @@ export function copyBall(from: BallState, to: BallState): void {
   to.vz = from.vz;
   to.rolling = from.rolling;
   to.outside = from.outside;
+  to.kick = from.kick;
+  to.grip = from.grip;
 }
 
 /**
@@ -86,15 +96,18 @@ export function stepBall(
 
   if (!ball.rolling && ball.z <= radius && ball.vz < 0) {
     const impact = -ball.vz;
+    const grip = ball.grip > 0 ? ball.grip : physics.floorGrip;
     ball.z = radius;
-    ball.vx *= physics.floorGrip;
-    ball.vy *= physics.floorGrip;
+    ball.vx *= grip;
+    ball.vy *= grip;
     if (impact < physics.rollSpeed) {
       ball.vz = 0;
       ball.rolling = true;
     } else {
-      ball.vz = impact * physics.floorRestitution;
+      ball.vz = impact * (ball.kick > 0 ? ball.kick : physics.floorRestitution);
     }
+    ball.kick = 0;
+    ball.grip = 0;
     events.push({ type: 'floor', x: ball.x, y: ball.y, speed: impact, rolling: ball.rolling });
   }
 

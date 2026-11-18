@@ -1,9 +1,10 @@
 import { CAST } from '../characters/cast';
 import type { FormatName } from '../config';
 import { RIVALS, SPEEDS, type LineFrequency, type Settings } from './settings';
+import { LESSONS } from '../app/drill';
 import { TEXT } from './text';
 
-export type ScreenName = 'menu' | 'pause' | 'options' | 'over';
+export type ScreenName = 'menu' | 'pause' | 'options' | 'over' | 'tutorial';
 
 export interface ScreenHandlers {
   onPlay(format: FormatName): void;
@@ -13,6 +14,8 @@ export interface ScreenHandlers {
   onResume(): void;
   onRestart(): void;
   onMenu(): void;
+  /** Start a lesson of the tutorial, by its place in the list. */
+  onLesson(index: number): void;
   /** A setting changed: apply it and save it. */
   onSettings(settings: Settings): void;
 }
@@ -27,6 +30,10 @@ export interface ScreenInfo {
   stats: string[];
   canVibrate: boolean;
   canGoFullscreen: boolean;
+  /** The tutorial: which lessons are done, which comes next, and the one that has just been completed, if any. */
+  lessons: { done: boolean[]; next: number; justDone: number | null };
+  /** A lesson is being played: the pause is the one of the tutorial. */
+  inLesson: boolean;
 }
 
 export interface MatchResult {
@@ -77,7 +84,10 @@ export class Screens {
 
   show(name: ScreenName, result?: MatchResult): void {
     if (result) this.result = result;
-    if (name === 'options' && this.current && this.current !== 'options') this.cameFrom = this.current;
+    const leaf = name === 'options' || name === 'tutorial';
+    if (leaf && this.current && this.current !== 'options' && this.current !== 'tutorial') this.cameFrom = this.current;
+    // With nothing behind it (a lesson has just ended), the way back from the tutorial is the start screen.
+    if (name === 'tutorial' && !this.current) this.cameFrom = 'menu';
     this.current = name;
     this.root.replaceChildren(this.build(name));
     this.root.classList.add('open');
@@ -104,6 +114,8 @@ export class Screens {
         return this.options();
       case 'over':
         return this.over();
+      case 'tutorial':
+        return this.tutorial();
     }
   }
 
@@ -126,6 +138,7 @@ export class Screens {
       el(
         'div',
         'row',
+        button(TEXT.tutorial, 'btn quiet', () => this.show('tutorial')),
         button(TEXT.options, 'btn quiet', () => this.show('options')),
         button(TEXT.demo, 'btn quiet', this.handlers.onDemo),
       ),
@@ -134,15 +147,35 @@ export class Screens {
   }
 
   private pause(): HTMLElement {
+    const inLesson = this.info().inLesson;
     return el(
       'section',
       'panel',
       el('h2', '', TEXT.paused),
       button(TEXT.resume, 'btn primary', this.handlers.onResume),
       button(TEXT.restart, 'btn', this.handlers.onRestart),
+      // Never in the way, always at hand: the shots can be learnt at any time.
+      button(inLesson ? TEXT.lessons : TEXT.tutorial, 'btn', () => this.show('tutorial')),
       button(TEXT.options, 'btn', () => this.show('options')),
       button(TEXT.menu, 'btn quiet', this.handlers.onMenu),
     );
+  }
+
+  /** The lessons: any of them, in any order, as many times as wanted. The next one to do is the main button. */
+  private tutorial(): HTMLElement {
+    const { done, next, justDone } = this.info().lessons;
+    const panel = el('section', 'panel', el('h2', '', TEXT.tutorial));
+    const just = justDone === null ? null : LESSONS[justDone];
+    panel.append(el('p', just ? 'result' : '', just ? TEXT.lessonJustDone(TEXT.lesson[just.id].name) : TEXT.lessonsNote));
+    const list = el('div', 'lessons');
+    LESSONS.forEach((lesson, index) => {
+      const name = `${index + 1}. ${TEXT.lesson[lesson.id].name}`;
+      // Done is said with a mark and a word, not with a colour.
+      const item = button(name, index === next ? 'btn primary' : 'btn', () => this.handlers.onLesson(index), done[index] ? `✓ ${TEXT.lessonDone}` : '');
+      list.append(item);
+    });
+    panel.append(list, button(this.cameFrom === 'pause' ? TEXT.back : TEXT.menu, 'btn quiet', () => (this.cameFrom === 'pause' ? this.show('pause') : this.handlers.onMenu())));
+    return panel;
   }
 
   private over(): HTMLElement {

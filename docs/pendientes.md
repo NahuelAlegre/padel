@@ -49,6 +49,8 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
 - **Pendiente de esa ronda** (revisión de la orquestadora):
   - **La marca de objetivo se ve tenue**: en algunas capturas es un anillo gris fino sobre el azul. Tiene que verse bien mientras se apunta.
   - **El menú del tutorial es una grilla de texto**: falta un dibujito de la trayectoria en cada lección para que sea "visual".
+  - **Las pisadas de "dónde pararse" no se entienden** (el usuario preguntó qué eran): en las lecciones 1, 5, 6 y 7 se ven como dos puntitos blancos. Dibujarlas como suelas de zapatilla o sacarlas.
+  - Probar el tutorial con alguien que no juegue videojuegos (el usuario sí juega, y por eso lo entendió).
   - **Metas de profundidad sin cumplir**:
     - La táctica suma +15 pp solo contra Chela; contra Beto y Romina suma entre 7 y 13.
     - Los puntos contra Chela duran 19 s (meta: 8 a 14).

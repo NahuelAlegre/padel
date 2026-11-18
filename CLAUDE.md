@@ -15,6 +15,11 @@ Lo que distingue a este juego es que es accesible y respetuoso con el jugador:
 - **Más adelante**: torneos y opciones de partido (sets, dificultad, dobles). Suman profundidad sin tapar la partida rápida.
 - **Nada de patrones oscuros**: sin presión para pagar, sin notificaciones abusivas, sin trucos para retener a la fuerza.
 - **Rivales y compañeros con personalidad**: se juega contra alguien, no contra "la CPU". La personalidad se nota jugando (estilo de juego, gestos, frases cortas) y nunca corta la fluidez.
+- **Pantalla limpia, sin tener que leer**: el juego es para quien busca algo simple y entretenido, como en el colectivo. Esa persona no quiere leer y juega el tutorial rápido.
+  - Pocas ayudas en pantalla, sutiles, integradas en el mundo y con estilo, que aparecen solo cuando hacen falta.
+  - Nada de saturar con información, círculos u opciones.
+  - Lo que sobra cuando hay arte se saca: por ejemplo, el anillo que marca cuál es tu jugador.
+  - La complejidad (elegir cada tipo de golpe, ayudas detalladas) puede existir como opción para quien la busque, nunca por defecto.
 - **Control arcade, resultado realista**: pocas decisiones para el jugador (moverse, a dónde, qué tan fuerte o alto, cuándo) y pádel de verdad como resultado (golpes reales, paredes y reglas).
 
 ## Decisiones tomadas

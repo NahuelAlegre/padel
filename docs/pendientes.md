@@ -42,6 +42,17 @@ El usuario marcó 28 favoritos de 47. Las fichas y la lectura crítica están en
 
 ## Motor
 
+- **Ronda "pantalla limpia"** (feedback del primer juego en el celular, 2026-11-18). El usuario dice "simple pero entretenido", pero que "demasiados círculos" lo confundieron. Es diseño de información, no de arte:
+  - Sacar el anillo que marca cuál es el jugador propio. Para accesibilidad queda como opción (contorno o color).
+  - Pisadas de "dónde pararse" apagadas por defecto.
+  - **Una sola señal de timing** en vez de anillo, punto fijo, banda y rayita. Por ejemplo, que aparezca solo en los últimos ~300 ms y sea mínima.
+  - Marca de pique chica y sutil, solo para el primer pique en tu lado. El seguimiento después del vidrio, como opción.
+  - Marca de objetivo solo mientras el pulgar está apretado, sin halo de dispersión por defecto.
+  - Nombre del golpe solo para los golpes especiales (bandeja, víbora, salida de pared, remate) y breve.
+  - **Ayudas que se van solas**: a medida que el jugador acierta, las ayudas se desvanecen. Niveles "completas / mínimas / ninguna", con "mínimas" por defecto.
+  - Tutorial sin texto, que se aprende jugando y con pistas de una sola vez.
+  - El estilo visual de cada ayuda llega con el arte final. Ahora se define qué se muestra, cuándo y cuánto.
+- **Más adelante**: modo "avanzado" opcional para quien quiera elegir cada tipo de golpe. Nunca por defecto.
 - **Modo incrustable**, para poder meter el juego dentro de otras apps, por ejemplo una de reservas de canchas:
   - Que el juego se monte en un elemento contenedor sin asumir que es dueño de toda la página.
   - Configuración de entrada: tema o club, idioma, sonido.

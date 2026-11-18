@@ -15,6 +15,8 @@
   /* Hacia el sol: atrás y a la izquierda. Coincide con la luz con la que se renderizó la cancha. */
   P3.SUN = (() => { const v = [-0.42, 0.80, 0.43]; const l = Math.hypot(...v); return v.map((c) => c / l); })();
   P3.SHADOW_RGB = [0.60, 0.56, 0.80];        /* la sombra multiplica el piso y lo vira al violeta */
+  /* duración de los efectos de impacto, en segundos: cortos, para no ensuciar la pantalla */
+  P3.FX = { golpe: 0.16, pique: 0.2, vidrio: 0.22 };
 
   /* ------------------------------------------------------------------
      Cámara. La de referencia es la del render de la cancha; la de juego se aparta
@@ -43,44 +45,131 @@
     return cam;
   };
 
-  /* Cámara de juego: se corre de costado con el jugador, gira apenas para no perder la cancha
-     y se acerca un poco. `amount` 0 = fija. */
-  P3.followCamera = function (state, follow) {
-    const R = P3.REF;
-    const dx = follow.x, dolly = follow.dolly;
-    const p = (R.pitch * PI) / 180;
-    return P3.makeCamera({
-      pos: [R.pos[0] + dx, R.pos[1] + dolly * cos(p), R.pos[2] - dolly * sin(p)],
-      pitch: R.pitch, yaw: (atan2(follow.aim - dx, 28) * 180) / PI, f: R.f,
-    });
+  /* ------------------------------------------------------------------
+     Cámara que acompaña. Criterio (pádel, no tenis): la pelota que pasa al jugador sigue en juego
+     porque rebota en el vidrio, así que la cámara nunca se pega al jugador. Queda en un punto
+     medio: se mueve sobre todo de costado y con un zoom leve, de límites estrictos.
+       1. Siempre a la vista, con margen: el jugador propio, la pelota, su marca de pique y el
+          vidrio del fondo propio.
+       2. El rival y la red, siempre a la vista.
+       3. Paneo lateral y zoom entre zoomMin y zoomMax. Nada más.
+       4. Se abre cuando la pelota va al fondo propio o es un globo; se cierra con el juego en la red.
+       5. Zona muerta y suavizado: no sigue cada pasito y no salta.
+       6. Con «reducir movimiento»: fija, con la cancha entera.
+     ------------------------------------------------------------------ */
+  P3.CAMERA = {
+    zoomMin: 1.0, zoomMax: 1.30,                    /* límites estrictos */
+    zoomOpen: 1.04, zoomMid: 1.16, zoomNet: 1.28,   /* abierta, media y con el juego en la red */
+    panShare: 0.55,                                 /* parte del paneo que es traslación (da parallax); el resto es giro */
+    margin: { player: 52, ball: 26, mark: 30, rival: 24 },   /* px de diseño hasta el borde */
+    hard: 10,                                       /* margen mínimo que no se rompe ni en transición */
+    bar: 78, top: 34,                               /* franjas reservadas abajo (barra) y arriba, en px de diseño */
+    deadZone: 0.5,                                  /* m que tiene que cambiar el encuadre ideal para que la cámara se mueva */
+    panSpeed: 1.7,                                  /* m/s con que el destino del paneo busca el encuadre ideal */
   };
 
-  /* Seguimiento suave (resorte críticamente amortiguado), igual en las dos versiones. */
+  /** Cámara de juego a partir del paneo (m) y el zoom. */
+  P3.followCamera = function (follow) {
+    const R = P3.REF, c = follow.pan || 0, dx = c * P3.CAMERA.panShare;
+    return P3.makeCamera({ pos: [R.pos[0] + dx, R.pos[1], R.pos[2]], pitch: R.pitch, yaw: (atan2(c - dx, 28) * 180) / PI, f: R.f * (follow.zoom || 1) });
+  };
+
   P3.makeFollow = function () {
-    const s = { x: 0, vx: 0, aim: 0, va: 0, dolly: 0, vd: 0 };
-    const spring = (cur, vel, target, k, dt) => {
-      const a = (target - cur) * k * k - 2 * k * vel;
-      vel += a * dt;
-      return [cur + vel * dt, vel];
-    };
-    const targets = (player, ball, enabled) => (enabled
-      ? [P3.clamp(player.x * 0.34, -1.3, 1.3), P3.clamp(player.x * 0.13 + ball.x * 0.05, -0.7, 0.7), P3.clamp((player.y + 8.2) * 0.42, 0, 1.9)]
-      : [0, 0, 0]);
-    s.update = function (player, ball, dt, enabled) {
-      const [tx, ta, td] = targets(player, ball, enabled);
+    const C = P3.CAMERA, HALF = P3.REF.design[0] / 2;
+    const s = { pan: 0, vpan: 0, zoom: 1, vzoom: 0, x: 0, aim: 0, target: 0, mode: 'media', timer: 0, moving: false };
+    const ref = P3.makeCamera(P3.REF), shifted = P3.followCamera({ pan: 1, zoom: 1 });
+    const pa = {}, pb = {};
+    /* dónde cae un punto con la cámara de referencia y cuánto se corre por cada metro de paneo */
+    const item = (x, y, z, margin) => { ref.project(x, y, z, pa); shifted.project(x, y, z, pb); return { x0: pa.x, y0: pa.y, g: pa.x - pb.x, L: HALF - margin }; };
+    const spring = (cur, vel, target, k, dt) => { vel += ((target - cur) * k * k - 2 * k * vel) * dt; return [cur + vel * dt, vel]; };
+    const gNear = item(0, -10, 0, 0).g;
+
+    /* intervalo de paneo que deja todos los puntos adentro de sus márgenes, con un zoom dado */
+    function interval(items, zoom, hard) {
+      let lo = -Infinity, hi = Infinity;
+      for (const it of items) {
+        const L = hard ? HALF - C.hard : it.L;
+        lo = max(lo, (it.x0 - L / zoom) / it.g);
+        hi = min(hi, (it.x0 + L / zoom) / it.g);
+      }
+      /* no mostrar mucho más allá de las paredes laterales */
+      const cmax = max(0.35, (zoom * 189 - HALF + 30) / gNear);
+      return [max(lo, -cmax), min(hi, cmax), lo <= hi];
+    }
+
+    function plan(ctx) {
+      const { player, rival, ball, mark, lay } = ctx;
+      const live = ball.visible && !ball.held;
+      /* 4. qué pide el juego */
+      let want = 'media';
+      if (live && (ball.z > 2.6 || (mark && mark.y < -5) || (ball.y < -6.8 && ball.vy < 0.5))) want = 'abierta';
+      else if (player.y > -5.6) want = 'red';
+      /* 1 y 2. topes de zoom para que entren, de arriba abajo, el rival, la pelota y el vidrio propio */
+      const visTop = lay.cy - P3.REF.design[1] / 2 - lay.visH / 2 + C.top;
+      const visBot = lay.cy - P3.REF.design[1] / 2 + lay.visH / 2 - C.bar;
+      let cap = C.zoomMax;
+      const down = [item(0, -P3.COURT.halfL, 0, 0), item(player.x, max(-P3.COURT.halfL, player.y - 2.5), 0, 0)];
+      for (const it of down) if (it.y0 > 1) cap = min(cap, visBot / it.y0);
+      const up = [item(rival.x, rival.y, 1.95 * rival.k, 0), item(0, 0, 1.0, 0)];
+      if (live) up.push(item(ball.x, ball.y, ball.z + 0.2, 0));
+      for (const it of up) if (it.y0 < -1) cap = min(cap, visTop / it.y0);
+      /* 1 y 2. de costado: jugador, pelota, marca de pique y rival */
+      const items = [item(player.x, player.y, 0.9 * player.k, C.margin.player), item(rival.x, rival.y, 0.9 * rival.k, C.margin.rival)];
+      if (live) items.push(item(ball.x, ball.y, ball.z, C.margin.ball));
+      if (mark) items.push(item(mark.x, mark.y, 0, C.margin.mark));
+      return { want, cap, items, pref: 0.62 * player.x };
+    }
+
+    function fit(items, zoom) {
+      /* si con ese zoom no entra todo, se abre hasta que entre */
+      let z = zoom, iv = interval(items, z);
+      for (let n = 0; n < 8 && !iv[2] && z > C.zoomMin; n++) { z = max(C.zoomMin, z - 0.035); iv = interval(items, z); }
+      return [z, iv];
+    }
+    const zoomOf = (mode) => (mode === 'abierta' ? C.zoomOpen : mode === 'red' ? C.zoomNet : C.zoomMid);
+
+    s.update = function (ctx, dt, enabled) {
       dt = min(dt, 0.05);
-      [s.x, s.vx] = spring(s.x, s.vx, tx, 3.2, dt);
-      [s.aim, s.va] = spring(s.aim, s.va, ta, 3.2, dt);
-      [s.dolly, s.vd] = spring(s.dolly, s.vd, td, 2.6, dt);
+      if (!enabled) {
+        [s.pan, s.vpan] = spring(s.pan, s.vpan, 0, 3.0, dt);
+        [s.zoom, s.vzoom] = spring(s.zoom, s.vzoom, 1, 2.2, dt);
+        s.target = 0; s.moving = false;
+      } else {
+        const pl = plan(ctx);
+        /* cambia de plano enseguida para abrir y con un poco de espera para cerrar */
+        if (pl.want !== s.mode) { s.timer += dt; if (s.timer >= (pl.want === 'abierta' ? 0 : 0.35)) { s.mode = pl.want; s.timer = 0; } } else s.timer = 0;
+        const [zt, iv] = fit(pl.items, P3.clamp(min(zoomOf(s.mode), pl.cap), C.zoomMin, C.zoomMax));
+        /* 5. zona muerta: el destino solo se mueve si algo se sale del margen o si el ideal se alejó bastante */
+        const pref = P3.clamp(pl.pref, iv[0], iv[1]);
+        if (s.target < iv[0]) s.target = iv[0]; else if (s.target > iv[1]) s.target = iv[1];
+        if (!s.moving && abs(pref - s.target) > C.deadZone) s.moving = true;
+        if (s.moving) {
+          s.target += P3.clamp(pref - s.target, -C.panSpeed * dt, C.panSpeed * dt);
+          if (abs(pref - s.target) < 0.06) s.moving = false;
+        }
+        [s.pan, s.vpan] = spring(s.pan, s.vpan, s.target, 3.0, dt);
+        [s.zoom, s.vzoom] = spring(s.zoom, s.vzoom, zt, zt < s.zoom ? 2.8 : 1.9, dt);     /* abre rápido, cierra más despacio */
+        s.zoom = P3.clamp(s.zoom, C.zoomMin, C.zoomMax);
+        /* garantía: aun en plena transición, nada importante toca el borde */
+        const hard = interval(pl.items, s.zoom, true);
+        if (hard[0] <= hard[1]) { if (s.pan < hard[0]) { s.pan = hard[0]; s.vpan = max(0, s.vpan); } else if (s.pan > hard[1]) { s.pan = hard[1]; s.vpan = min(0, s.vpan); } }
+      }
+      s.x = s.pan * C.panShare; s.aim = s.pan;
       return s;
     };
-    /* sin transición: para arrancar o para mirar un instante fijo */
-    s.jump = function (player, ball, enabled) {
-      [s.x, s.aim, s.dolly] = targets(player, ball, enabled);
-      s.vx = s.va = s.vd = 0;
+    /* sin transición: para arrancar, para el reinicio del peloteo o para mirar un instante fijo */
+    s.jump = function (ctx, enabled) {
+      s.vpan = s.vzoom = 0; s.timer = 0; s.moving = false;
+      if (!enabled) { s.pan = s.target = 0; s.zoom = 1; } else {
+        const pl = plan(ctx);
+        s.mode = pl.want;
+        const [zt, iv] = fit(pl.items, P3.clamp(min(zoomOf(s.mode), pl.cap), C.zoomMin, C.zoomMax));
+        s.zoom = zt;
+        s.pan = s.target = P3.clamp(pl.pref, iv[0], iv[1]);
+      }
+      s.x = s.pan * C.panShare; s.aim = s.pan;
       return s;
     };
-    s.snap = function () { s.x = s.vx = s.aim = s.va = s.dolly = s.vd = 0; };
     return s;
   };
 
@@ -122,9 +211,7 @@
     meta.byName = Object.fromEntries(meta.layers.map((l) => [l.name, l]));
     return meta;
   };
-  /* Cuánto acompaña cada capa al paneo de la cámara en la versión 2D (1 = como el piso). */
-  P3.PARALLAX = { cielo: 0.06, entorno: 0.62, piso: 1, paredes: 1, red: 1, cerca: 1.1, frente: 1.22 };
-  P3.NEAR_WALL_ALPHA = 0.7;
+  P3.NEAR_WALL_ALPHA = 0.7;                  /* la pared del fondo propio se dibuja más tenue para no tapar al jugador */
 
   /* ------------------------------------------------------------------
      Escala de los personajes: tres variantes, con exageración según la profundidad
@@ -177,9 +264,9 @@
     const hits = [
       { who: 0, clip: 'saque', root: [1.5, -7.9], t: 1.0 },
       { who: 1, clip: 'derecha', root: [-2.3, 8.3], t: 2.4 },
-      { who: 0, clip: 'reves', root: [-2.2, -8.9], t: 4.42 },
-      { who: 1, clip: 'globo', root: [2.6, 7.4], t: 5.95 },
-      { who: 0, clip: 'remate', root: [-0.2, -4.4], t: 7.75 },
+      { who: 0, clip: 'reves', root: [-2.2, -8.9], t: 4.42, label: 'Salida de pared' },
+      { who: 1, clip: 'globo', root: [2.6, 7.4], t: 5.95, label: 'Globo' },
+      { who: 0, clip: 'remate', root: [-0.2, -4.4], t: 7.75, label: '¡Remate!' },
     ];
     for (const h of hits) {
       h.k = scaleOf(h.who, h.root[1]);
@@ -215,7 +302,20 @@
     const arcs = [];
     for (let i = 0; i < way.length - 1; i++) arcs.push(arc(way[i][1], way[i][0], way[i + 1][1], way[i + 1][0]));
     const events = way.map((w) => ({ t: w[0], pos: w[1], type: w[2], hit: w[3] }));
-    for (const e of events) if (e.type === 'golpe') { e.who = hits[e.hit].who; e.label = C[hits[e.hit].clip].label; }
+    /* solo se nombran los golpes especiales; una derecha o un saque no llevan cartel */
+    for (const e of events) if (e.type === 'golpe') { e.who = hits[e.hit].who; e.label = hits[e.hit].label || null; }
+    /* marca de pique: solo el primer pique en el lado propio de una pelota que viene del rival */
+    const marks = [];
+    /* marca de objetivo (demostración): a dónde va el golpe propio, mientras se arma */
+    const aims = [];
+    for (let i = 0; i < way.length - 1; i++) {
+      const a = way[i], b = way[i + 1];
+      if (a[2] !== 'golpe' || b[2] !== 'pique') continue;
+      const h = hits[a[3]];
+      if (h.who === 1 && b[1][1] < 0) marks.push({ t0: a[0], t1: b[0], x: b[1][0], y: b[1][1] });
+      if (h.who === 0) aims.push({ t0: h.start + 0.12, t1: a[0], x: b[1][0], y: b[1][1] });
+    }
+    const ownHits = hits.filter((h) => h.who === 0 && h.clip !== 'saque').map((h) => h.t);
 
     /* recorrido de cada jugador: puntos [tiempo, x, y]; entre puntos se mueve con arranque y frenado suaves */
     const paths = [
@@ -286,7 +386,7 @@
         const u = P3.clamp((t - serve.start) / (tRel - serve.start), 0, 1);
         out.x = P3.lerp(hold0[0], hold1[0], u); out.y = P3.lerp(hold0[1], hold1[1], u); out.z = P3.lerp(hold0[2], hold1[2], u);
         out.held = true;
-        out.speed = 0;
+        out.speed = 0; out.vx = out.vy = out.vz = 0;
         return out;
       }
       let a = arcs[arcs.length - 1];
@@ -299,9 +399,23 @@
       return out;
     }
 
+    const within = (list, t, out) => {
+      const m = list.find((e) => t >= e.t0 && t < e.t1);
+      if (!m) return null;
+      out.x = m.x; out.y = m.y; out.k = (t - m.t0) / (m.t1 - m.t0); out.left = m.t1 - t;
+      return out;
+    };
     return {
       duration: DUR, events, hits, arcs, who,
       player: playerAt, ball: ballAt,
+      mark: (t, out) => within(marks, t, out),
+      aim: (t, out) => within(aims, t, out),
+      /* señal de timing: sube en el último instante antes de que el jugador propio le pegue (0 a 1) */
+      timing: (t) => {
+        let k = 0;
+        for (const tc of ownHits) { const d = tc - t; if (d >= 0 && d < 0.18) k = max(k, P3.smooth(1 - d / 0.18)); else if (d < 0 && d > -0.07) k = max(k, 1 + d / 0.07); }
+        return k;
+      },
       /* fundido corto al reiniciar el peloteo */
       fade: (t) => min(1, t / 0.25, (DUR - t) / 0.25),
     };

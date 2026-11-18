@@ -60,7 +60,8 @@
     const players = [mk(), mk()];
     const palettes = ['jugador', 'rival'];
     const ball = { x: 0, y: 0, z: 0, trail: [] };
-    const bt = { x: 0, y: 0, z: 0 };
+    const bt = { x: 0, y: 0, z: 0 }, markP = {}, aimP = {};
+    const showAim = q.get('ayudas') === 'apuntar';     /* demostración de la marca de objetivo */
     let prevT = clock.t, first = true;
     const tmp = {};
 
@@ -98,14 +99,18 @@
         for (let k = 1; k <= 5; k++) { rally.ball(Math.max(0, t - k * 0.014), bt); ball.trail.push([bt.x, bt.y, bt.z]); }
       }
       const moving = ui.state.follow && !ui.state.reduce;
-      if (first || clock.paused) follow.jump(players[0].st, ball, moving); else follow.update(players[0].st, ball, clock.dt, moving);
-      let cam = P3.followCamera(null, follow);
+      const mark = rally.mark(t, markP);
+      const ctx = { player: players[0].st, rival: players[1].st, ball, mark, lay };
+      if (first || clock.paused || clock.wrapped) follow.jump(ctx, moving); else follow.update(ctx, clock.dt, moving);
+      let cam = P3.followCamera(follow);
       if (ui.state.close) cam = P3.closeCamera(players[0].st, cam, follow, clock.dt);
       else follow.close = 0;
       for (const c of chars) { cam.project(c.x, c.y, 1.0, tmp); c.depth = tmp.d; }
 
-      const rings = [];
-      if (!ui.state.reduce) for (const e of rally.events) { const age = t - e.t; if (age >= 0 && age < 0.32 && e.type !== 'suelta') rings.push({ e, age }); }
+      /* efectos de impacto (cortos y chicos); con «reducir movimiento» no se dibujan */
+      const fx = [];
+      if (!ui.state.reduce) for (const e of rally.events) { const age = t - e.t, dur = P3.FX[e.type]; if (dur && age >= 0 && age < dur) fx.push({ e, age }); }
+      ball.timing = rally.timing(t);
       if (!first && !clock.paused) {
         for (const e of P3.crossed(rally.events, prevT, t)) {
           if (e.type !== 'golpe' || !e.label) continue;
@@ -117,7 +122,8 @@
       prevT = t;
       const fade = rally.fade(t);
       veil.style.opacity = clock.paused ? 0 : (1 - fade) * 0.9;
-      R.draw({ skipChars, cam, lay, chars, ball, rings, fade, skyShift: -follow.x * P3.PARALLAX.cielo * 20, nearAlpha: P3.NEAR_WALL_ALPHA });
+      R.draw({ skipChars, cam, lay, chars, ball, fx, mark, aim: showAim ? rally.aim(t, aimP) : null, fade,
+        skyShift: (-P3.REF.f * (follow.aim - follow.x)) / 28, nearAlpha: P3.NEAR_WALL_ALPHA });
       if (first) {
         first = false;
         loading.remove();
@@ -137,7 +143,7 @@
     const base = { pos: cam.pos, pitch: P3.REF.pitch, yaw: (Math.atan2(cam.fwd[0], cam.fwd[1]) * 180) / Math.PI };
     return P3.makeCamera({
       pos: [0, 1, 2].map((i) => P3.lerp(base.pos[i], target.pos[i], u)),
-      pitch: P3.lerp(base.pitch, target.pitch, u), yaw: P3.lerp(base.yaw, target.yaw, u), f: P3.REF.f,
+      pitch: P3.lerp(base.pitch, target.pitch, u), yaw: P3.lerp(base.yaw, target.yaw, u), f: P3.lerp(cam.f, P3.REF.f, u),
     });
   };
 

@@ -18,7 +18,7 @@
       close: q.get('cerca') === '1',
       paused: false,
       fps: q.has('fps') ? q.get('fps') === '1' : store.get('fps', true),
-      open: store.get('open', true),
+      open: store.get('open', false),      /* arranca plegada: pantalla limpia, los ajustes a un toque */
     };
     const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
     const listeners = [];
@@ -63,7 +63,7 @@
       panel.appendChild(row);
       return paint;
     }
-    const paintCam = seg('Cámara', 'camara', [{ label: 'Fija', value: false }, { label: 'Acompaña', value: true }],
+    const paintCam = seg('Cámara', 'camara', [{ label: 'Cancha entera', value: false }, { label: 'Acompaña', value: true }],
       () => state.follow && !state.reduce, (v) => { state.follow = v; if (v) state.reduce = false; store.set('follow', v); store.set('reduce', state.reduce); paintRed(); });
     seg('Escala', 'escala', P3.SCALES.map((s, i) => ({ label: s.label, value: i })), () => state.scale, (v) => { state.scale = v; store.set('scale', v); });
     const paintRed = seg('Reducir movimiento', 'reducir', [{ label: 'No', value: false }, { label: 'Sí', value: true }],

@@ -56,9 +56,8 @@
       cam.rot = rot;
       cam.A = rot - (F * dx * S) / H;
       cam.B = (-dx * C) / H;
-      cam.Z = D0 / (D0 - follow.dolly);
+      cam.Z = follow.zoom;                         /* zoom óptico: escala alrededor del centro del cuadro */
       cam.dx = dx;
-      cam.dolly = follow.dolly;
       cam.zoomK = 1 + closeK * 2.4;                /* «ver de cerca»: zoom 2D sobre el jugador */
       cam.zx = focus ? focus.x : 0;
       cam.zy = focus ? focus.y : 0;
@@ -202,24 +201,66 @@
       ctx.beginPath(); ctx.arc(bp.x - r * 0.26, bp.y - r * 0.3, r * 0.26, 0, 2 * PI); ctx.fill();
     }
     const tmpT = {}, rp = {};
-    function drawRing(e, age) {
-      const kk = age / 0.32, a = (1 - kk) * (1 - kk);
+    const glow = (x, y, rx, ry, rgb, a) => {
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+      g.addColorStop(0, 'rgba(' + rgb + ',' + a + ')');
+      g.addColorStop(1, 'rgba(' + rgb + ',0)');
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(rx, ry);
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, 1, 0, 2 * PI); ctx.fill();
+      ctx.restore();
+    };
+    /* Efectos de impacto: chicos y cortos, sin anillos. Un destello en el golpe, un poco de polvo
+       en el pique y un reflejo en el vidrio. */
+    function drawFx(e, age) {
       place(e.pos[0], e.pos[1], e.pos[2], rp);
       const k = lay.s * dpr;
       ctx.setTransform(k, 0, 0, k, X(0), Y(0));
-      ctx.globalAlpha = a * 0.85;
-      ctx.strokeStyle = '#fff5d6';
-      ctx.beginPath();
-      if (e.type === 'pique') { const r = (0.18 + 0.55 * kk) * rp.ppm; ctx.lineWidth = r * 0.2; ctx.ellipse(rp.x, rp.y, r, r * sin(rp.elev), 0, 0, 2 * PI); } else {
-        const r = (0.2 + 0.65 * kk) * rp.ppm; ctx.lineWidth = r * 0.18;
-        if (e.type === 'vidrio') ctx.ellipse(rp.x, rp.y, r, r * cos(rp.elev), 0, 0, 2 * PI); else ctx.arc(rp.x, rp.y, r, 0, 2 * PI);
+      ctx.globalCompositeOperation = 'lighter';
+      if (e.type === 'golpe') {
+        const u = age / P3.FX.golpe, a = (1 - u) * (1 - u), r = (0.28 + 0.2 * u) * rp.ppm;
+        ctx.fillStyle = 'rgba(255,247,220,' + (0.8 * a) + ')';
+        ctx.beginPath();
+        for (let i = 0; i < 8; i++) { const an = (i * PI) / 4, rr = i % 2 ? r * 0.09 : r; ctx.lineTo(rp.x + Math.cos(an) * rr, rp.y + Math.sin(an) * rr); }
+        ctx.closePath(); ctx.fill();
+      } else if (e.type === 'pique') {
+        const u = age / P3.FX.pique, r = (0.14 + 0.30 * u) * rp.ppm;
+        glow(rp.x, rp.y, r, r * sin(rp.elev), '255,245,214', 0.5 * (1 - u));
+      } else if (e.type === 'vidrio') {
+        const u = age / P3.FX.vidrio;
+        glow(rp.x, rp.y, (0.4 + 0.3 * u) * rp.ppm, (0.55 + 0.3 * u) * rp.ppm * cos(rp.elev), '255,245,214', 0.6 * (1 - u));
       }
-      ctx.stroke();
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    /* Señal de timing: la pelota y la pala se encienden en el último instante antes del golpe propio.
+       Va por encima del personaje, porque en el impacto la pala tapa la pelota. */
+    function drawTiming(ball) {
+      if (!(ball.timing > 0) || !ball.visible) return;
+      place(ball.x, ball.y, ball.z, bp);
+      const k = lay.s * dpr, r = max(0.085 * bp.ppm, 3.3 * cam.zoomK) * (2.0 + 1.2 * ball.timing);
+      ctx.setTransform(k, 0, 0, k, X(0), Y(0));
+      ctx.globalCompositeOperation = 'lighter';
+      glow(bp.x, bp.y, r, r, '255,250,204', 0.6 * ball.timing);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    /* Marca de pique: un anillo fino y chico con un punto, apoyado en el piso. */
+    function drawMark(m, rgb, strong) {
+      place(m.x, m.y, 0, rp);
+      const k = lay.s * dpr;
+      ctx.setTransform(k, 0, 0, k, X(0), Y(0));
+      const r = (0.26 - 0.05 * m.k) * rp.ppm, sq = sin(rp.elev);
+      ctx.globalAlpha = P3.smooth(m.k * 6) * (strong ? 0.9 : 0.8);
+      ctx.strokeStyle = ctx.fillStyle = rgb;
+      ctx.lineWidth = Math.max(1, r * 0.16);
+      ctx.beginPath(); ctx.ellipse(rp.x, rp.y, r * 0.92, r * 0.92 * sq, 0, 0, 2 * PI); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(rp.x, rp.y, r * 0.2, r * 0.2 * sq, 0, 0, 2 * PI); ctx.fill();
       ctx.globalAlpha = 1;
     }
 
     R.draw = function (frame) {
-      const { follow, chars, ball, rings, fade, nearAlpha, closeK, focus } = frame;
+      const { follow, chars, ball, fx, mark, aim, fade, nearAlpha, closeK, focus } = frame;
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       setCamera(follow, 0, null);
@@ -232,12 +273,17 @@
         items.sort((a, b) => b.y - a.y);
         for (const it of items) { if (it.ball) drawBall(ball); else if (fade > 0.02) drawChar(it.c); }
       };
-      for (const r of rings) if (r.e.pos[1] > 0) drawRing(r.e, r.age);
+      if (aim) drawMark(aim, '#ff6a4d', true);
+      for (const r of fx) if (r.e.pos[1] > 0 && r.e.type !== 'golpe') drawFx(r.e, r.age);
       side(far, ball.y > 0);
+      for (const r of fx) if (r.e.pos[1] > 0 && r.e.type === 'golpe') drawFx(r.e, r.age);
       setT(cam.Z, cam.A, cam.B, 0);
       layer('red');
-      for (const r of rings) if (r.e.pos[1] <= 0) drawRing(r.e, r.age);
+      if (mark) drawMark(mark, '#fff5d6', false);
+      for (const r of fx) if (r.e.pos[1] <= 0 && r.e.type !== 'golpe') drawFx(r.e, r.age);
       side(near, ball.y <= 0);
+      for (const r of fx) if (r.e.pos[1] <= 0 && r.e.type === 'golpe') drawFx(r.e, r.age);
+      drawTiming(ball);
       setT(cam.Z, cam.A, cam.B, 0);
       layer('cerca', nearAlpha);
       layer('frente');

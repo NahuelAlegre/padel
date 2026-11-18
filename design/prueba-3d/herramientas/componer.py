@@ -53,7 +53,7 @@ pair(load('c-A-6_9.png'), load('c-B-6_9.png'), '«Ver de cerca», corriendo a la
 pair(load('u-A-5_9.png'), load('u-B-5_9.png'), 'Con los ajustes abiertos', '11-ajustes.jpg')
 
 # detalle a tamaño de juego: recortes ampliados 3x de cada personaje
-boxes = [('2_4', (170, 580, 430, 800), 'rival, derecha'), ('4_42', (120, 990, 380, 1250), 'jugador, revés'), ('7_75', (270, 800, 530, 1060), 'jugador, remate'),
+boxes = [('2_4', (170, 580, 430, 800), 'rival, derecha'), ('4_42', (150, 1080, 410, 1340), 'jugador, salida de pared'), ('7_75', (270, 800, 530, 1060), 'jugador, remate'),
          ('5_96', (480, 560, 740, 780), 'rival, globo')]
 tiles = []
 for t, box, label in boxes:
@@ -76,3 +76,51 @@ for src, out, scale in (('m_cuerpo.png', '13-modelo-cuerpo.jpg', 1.0), ('m_cara.
     im = load(src)
     im.save(os.path.join(DST, out), quality=86)
     print(out, im.size)
+
+
+# cámara: cancha entera (fija) arriba y cámara que acompaña abajo, en cuatro momentos
+def grid(rows, title, out, labels, scale=0.5, quality=86):
+    tiles = [[load(n) for n in row] for row in rows]
+    tw, th = round(tiles[0][0].width * scale), round(tiles[0][0].height * scale)
+    gap, top, left = 10, 40, 0
+    img = Image.new('RGB', (len(rows[0]) * (tw + gap) - gap, top + len(rows) * (th + 30 + gap)), BG)
+    d = ImageDraw.Draw(img)
+    d.text((10, 8), title, fill=CREMA, font=font(20))
+    for r, row in enumerate(tiles):
+        y = top + r * (th + 30 + gap)
+        for c, im in enumerate(row):
+            x = c * (tw + gap)
+            d.text((x + 6, y + 4), labels[r][c], fill=(255, 200, 61), font=font(14))
+            img.paste(im.resize((tw, th), Image.LANCZOS), (x, y + 30))
+    img.save(os.path.join(DST, out), quality=quality)
+    print(out, img.size)
+
+
+cam_t = [('3_2', 'pelota al fondo propio'), ('4_42', 'salida de pared'), ('6_9', 'globo en el aire'), ('9_3', 'juego en la red')]
+if os.path.exists(os.path.join(SRC, 'f-B-3_2.png')):
+    grid([[f'f-B-{t}.png' for t, _ in cam_t], [f'B-{t}.png' for t, _ in cam_t]], 'Cámara: cancha entera (arriba) y cámara que acompaña (abajo), versión B', '21-camara.jpg',
+         [[f'Cancha entera · {n}' for _, n in cam_t], [f'Acompaña · {n}' for _, n in cam_t]])
+    pair(load('A-9_3.png'), load('B-9_3.png'), 'Cámara que acompaña, con el juego en la red', '22-camara-en-la-red.jpg')
+
+# ayudas: recortes ampliados
+if os.path.exists(os.path.join(SRC, 'ap-A-4_3.png')):
+    crops = [('3_2', '', (60, 880, 480, 1300), 'marca de pique'), ('4_36', '', (40, 900, 460, 1320), 'brillo de timing'),
+             ('4_43', '', (40, 900, 460, 1320), 'destello del golpe'), ('4_3', 'ap-', (250, 560, 670, 980), 'marca de objetivo'),
+             ('4_3', 'v-', (0, 760, 420, 1180), 'nombre del golpe especial')]
+    tiles = []
+    for t, pre, box, label in crops:
+        for v in 'AB':
+            name = f'{pre}{v}-{t}.png'
+            if not os.path.exists(os.path.join(SRC, name)):
+                continue
+            im = load(name).crop(box)
+            ImageDraw.Draw(im).text((8, 6), f'{v} · {label}', fill=CREMA, font=font(19))
+            tiles.append((v, im))
+    cols = len(tiles) // 2
+    tw, th = tiles[0][1].size
+    sheet = Image.new('RGB', (cols * (tw + 6) - 6, th * 2 + 6), BG)
+    for row, v in enumerate('AB'):
+        for c, (_, im) in enumerate([x for x in tiles if x[0] == v]):
+            sheet.paste(im, (c * (tw + 6), row * (th + 6)))
+    sheet.save(os.path.join(DST, '23-ayudas.jpg'), quality=88)
+    print('23-ayudas', sheet.size)

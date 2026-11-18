@@ -38,7 +38,8 @@
     });
     const st = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
     const views = ['espalda', 'frente'];
-    const ball = { x: 0, y: 0, z: 0, trail: [] }, bt = {};
+    const ball = { x: 0, y: 0, z: 0, trail: [] }, bt = {}, markP = {}, aimP = {};
+    const showAim = q.get('ayudas') === 'apuntar';     /* demostración de la marca de objetivo */
     let prevT = clock.t, first = true, closeK = 0;
     const tmp = {};
 
@@ -57,13 +58,17 @@
         for (let k = 1; k <= 5; k++) { rally.ball(Math.max(0, t - k * 0.014), bt); ball.trail.push([bt.x, bt.y, bt.z]); }
       }
       const moving = ui.state.follow && !ui.state.reduce;
-      if (first || clock.paused) follow.jump(st[0], ball, moving); else follow.update(st[0], ball, clock.dt, moving);
+      const mark = rally.mark(t, markP);
+      const ctx = { player: st[0], rival: st[1], ball, mark, lay };
+      if (first || clock.paused || clock.wrapped) follow.jump(ctx, moving); else follow.update(ctx, clock.dt, moving);
       closeK = P3.clamp(closeK + (ui.state.close ? 1 : -1) * clock.dt / 0.5, 0, 1);
-      const rings = [];
-      if (!ui.state.reduce) for (const e of rally.events) { const age = t - e.t; if (age >= 0 && age < 0.32 && e.type !== 'suelta') rings.push({ e, age }); }
+      /* efectos de impacto (cortos y chicos); con «reducir movimiento» no se dibujan */
+      const fx = [];
+      if (!ui.state.reduce) for (const e of rally.events) { const age = t - e.t, dur = P3.FX[e.type]; if (dur && age >= 0 && age < dur) fx.push({ e, age }); }
+      ball.timing = rally.timing(t);
       const fade = rally.fade(t);
       veil.style.opacity = clock.paused ? 0 : (1 - fade) * 0.9;
-      R.draw({ follow, chars, ball, rings, fade, nearAlpha: P3.NEAR_WALL_ALPHA, closeK: P3.smooth(closeK), focus: st[0] });
+      R.draw({ follow, chars, ball, fx, mark, aim: showAim ? rally.aim(t, aimP) : null, fade, nearAlpha: P3.NEAR_WALL_ALPHA, closeK: P3.smooth(closeK), focus: st[0] });
       if (!first && !clock.paused) {
         for (const e of P3.crossed(rally.events, prevT, t)) {
           if (e.type !== 'golpe' || !e.label) continue;

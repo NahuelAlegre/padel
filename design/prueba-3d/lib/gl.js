@@ -158,11 +158,20 @@
     } else if (uKind == 1) {          /* sombra elíptica suave (se multiplica) */
       float a = smoothstep(1.0, 0.45, r) * uA;
       o = vec4(mix(vec3(1.0), uCol.rgb, a), 1.0);
-    } else {                          /* anillo que se abre */
-      float w = uB;
-      float a = smoothstep(1.0, 1.0 - 0.12, r) * smoothstep(1.0 - w - 0.14, 1.0 - w, r);
-      if (r > 1.0) a = 0.0;
-      o = vec4(uCol.rgb * a * uA, a * uA);
+    } else if (uKind == 2) {          /* mancha suave de luz, aditiva: polvo, reflejo, brillo de la pelota */
+      float a = smoothstep(1.0, 0.0, r);
+      a *= a * uA;
+      o = vec4(uCol.rgb * a, 0.0);
+    } else if (uKind == 3) {          /* marca: anillo fino con un punto al centro */
+      float ring = smoothstep(1.0, 0.94, r) * smoothstep(1.0 - uB - 0.06, 1.0 - uB, r);
+      if (r > 1.0) ring = 0.0;
+      float a = max(ring, smoothstep(0.26, 0.18, r)) * uA;
+      o = vec4(uCol.rgb * a, a);
+    } else {                          /* destello de cuatro puntas, aditivo */
+      vec2 q = abs(vP);
+      float star = max(0.0, 1.0 - (q.x * 9.0 + q.y * 0.9)) + max(0.0, 1.0 - (q.y * 9.0 + q.x * 0.9));
+      float a = clamp(star, 0.0, 1.0) * smoothstep(1.0, 0.2, r) * uA;
+      o = vec4(uCol.rgb * a, 0.0);
     }
   }`;
 
@@ -494,24 +503,40 @@
       /* estela corta */
       for (let i = ball.trail.length - 1; i >= 0; i--) {
         const p = ball.trail[i], k = 1 - (i + 1) / (ball.trail.length + 1);
-        fx(2, p, [cam.right[0] * r * k, cam.right[1] * r * k, 0], [cam.up[0] * r * k, cam.up[1] * r * k, cam.up[2] * r * k], [0.95, 1.0, 0.6, 1], 0.32 * k, 1.0, false);
+        fx(2, p, [cam.right[0] * r * k, cam.right[1] * r * k, 0], [cam.up[0] * r * k, cam.up[1] * r * k, cam.up[2] * r * k], [0.95, 1.0, 0.6, 1], 0.5 * k, 1.0, false);
       }
+
       fx(0, [ball.x, ball.y, ball.z], [cam.right[0] * r, cam.right[1] * r, 0], [cam.up[0] * r, cam.up[1] * r, cam.up[2] * r], [1, 1, 1, 1], 1, 0, false);
     }
 
-    function drawRing(e, age, cam) {
-      const k = age / 0.32, a = (1 - k) * (1 - k);
+    /* Efectos de impacto: chicos y cortos, sin anillos. Un destello en el golpe, un poco de polvo
+       en el pique y un reflejo en el vidrio. */
+    function drawFx(e, age, cam) {
       const col = [1.0, 0.96, 0.84, 1];
-      if (e.type === 'pique') {
-        const r = 0.18 + 0.55 * k;
-        fx(2, [e.pos[0], e.pos[1], 0.02], [r, 0, 0], [0, r, 0], col, a * 0.8, 0.22, false);
+      if (e.type === 'golpe') {
+        const u = age / P3.FX.golpe, r = 0.30 + 0.22 * u;
+        fx(4, e.pos, [cam.right[0] * r, cam.right[1] * r, 0], [cam.up[0] * r, cam.up[1] * r, cam.up[2] * r], col, 0.95 * (1 - u) * (1 - u), 0, false);
+      } else if (e.type === 'pique') {
+        const u = age / P3.FX.pique, r = 0.14 + 0.30 * u;
+        fx(2, [e.pos[0], e.pos[1], 0.02], [r, 0, 0], [0, r, 0], col, 0.5 * (1 - u), 0, false);
       } else if (e.type === 'vidrio') {
-        const r = 0.22 + 0.75 * k;
-        fx(2, e.pos, [r, 0, 0], [0, 0, r], col, a, 0.18, false);
-      } else if (e.type === 'golpe') {
-        const r = 0.2 + 0.6 * k;
-        fx(2, e.pos, [cam.right[0] * r, cam.right[1] * r, 0], [cam.up[0] * r, cam.up[1] * r, cam.up[2] * r], col, a, 0.2, false);
+        const u = age / P3.FX.vidrio;
+        fx(2, e.pos, [0.4 + 0.3 * u, 0, 0], [0, 0, 0.55 + 0.3 * u], col, 0.6 * (1 - u), 0, false);
       }
+    }
+    /* Señal de timing: la pelota y la pala se encienden en el último instante antes del golpe propio.
+       Va por encima del personaje, porque en el impacto la pala tapa la pelota. */
+    function drawTiming(ball, cam, lay) {
+      if (!(ball.timing > 0) || !ball.visible) return;
+      const tmp = {};
+      cam.project(ball.x, ball.y, ball.z, tmp);
+      const g = max(0.085, 3.3 / ((cam.f * lay.s) / tmp.d)) * (2.0 + 1.2 * ball.timing);
+      fx(2, [ball.x, ball.y, ball.z], [cam.right[0] * g, cam.right[1] * g, 0], [cam.up[0] * g, cam.up[1] * g, cam.up[2] * g], [1.0, 0.98, 0.8, 1], 0.6 * ball.timing, 0, false);
+    }
+    /* Marca de pique: un anillo fino y chico con un punto, apoyado en el piso. */
+    function drawMark(m, col, strong) {
+      const r = 0.26 - 0.05 * m.k;
+      fx(3, [m.x, m.y, 0.02], [r, 0, 0], [0, r, 0], col, P3.smooth(m.k * 6) * (strong ? 0.9 : 0.8), 0.16, false);
     }
 
     /* memoria de video de las texturas (con sus mipmaps) y de la malla */
@@ -550,7 +575,8 @@
 
     /* un cuadro completo */
     R.draw = function (frame) {
-      const { cam, lay, chars, ball, rings, fade, skyShift, nearAlpha } = frame;
+      const { cam, lay, chars, ball, fade, skyShift, nearAlpha, mark, aim } = frame;
+      const fxList = frame.fx;
       if (timer && R.measureGpu) {
         if (pending && gl.getQueryParameter(pending, gl.QUERY_RESULT_AVAILABLE)) {
           if (!gl.getParameter(timer.GPU_DISJOINT_EXT)) { R.gpu.ms += gl.getQueryParameter(pending, gl.QUERY_RESULT) / 1e6; R.gpu.n++; }
@@ -600,11 +626,16 @@
         items.sort((a, b) => b.y - a.y);
         for (const it of items) { if (it.ball) drawBall(ball, cam, lay); else if (fade > 0.02 && !frame.skipChars) drawCharacter(it.c, cam, lay); }
       };
-      for (const r of rings) if (r.e.pos[1] > 0) drawRing(r.e, r.age, cam);
+      if (aim) drawMark(aim, [1.0, 0.416, 0.302, 1], true);
+      for (const r of fxList) if (r.e.pos[1] > 0 && r.e.type !== 'golpe') drawFx(r.e, r.age, cam);
       side(far, ball.y > 0);
+      for (const r of fxList) if (r.e.pos[1] > 0 && r.e.type === 'golpe') drawFx(r.e, r.age, cam);
       drawLayer('red');
-      for (const r of rings) if (r.e.pos[1] <= 0) drawRing(r.e, r.age, cam);
+      if (mark) drawMark(mark, [1.0, 0.96, 0.84, 1], false);
+      for (const r of fxList) if (r.e.pos[1] <= 0 && r.e.type !== 'golpe') drawFx(r.e, r.age, cam);
       side(near, ball.y <= 0);
+      for (const r of fxList) if (r.e.pos[1] <= 0 && r.e.type === 'golpe') drawFx(r.e, r.age, cam);
+      drawTiming(ball, cam, lay);
       drawLayer('cerca', nearAlpha);
       drawLayer('frente');
       if (started) { gl.endQuery(timer.TIME_ELAPSED_EXT); pending = started; started = null; }

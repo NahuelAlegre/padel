@@ -21,15 +21,17 @@ node design/prueba-3d/herramientas/servir.mjs
 
 y abrir `http://127.0.0.1:4330/sprites.html` o `http://127.0.0.1:4330/tiempo-real.html`. Hace falta el servidor porque las páginas cargan archivos con `fetch`.
 
-**Interruptores**, iguales en las dos:
+**Interruptores**, iguales en las dos. Arrancan plegados en una barra chica, abajo; se abren con «Ajustes»:
 
-- **Cámara**: fija, o que acompaña al jugador (se corre, gira apenas y se acerca cuando sube a la red).
+- **Cámara**: cancha entera (fija), o que acompaña al jugador. Las reglas de la segunda están en [La cámara que acompaña](#la-cámara-que-acompaña).
 - **Escala** de los personajes: 1,0 (tamaño real), 1,2 – 1,5 según la profundidad (1,2 el jugador cercano y 1,5 el rival; es la que arranca), o 1,7.
-- **Reducir movimiento**: deja la cámara quieta y saca los anillos de impacto. Arranca activado si el sistema lo pide.
-- **Ver de cerca**: no estaba en el pedido. Sirve para juzgar el modelo y muestra la diferencia más grande entre los dos caminos.
+- **Reducir movimiento**: deja la cámara fija con la cancha entera y saca los destellos de impacto. Arranca activado si el sistema lo pide.
+- **Ver de cerca**: no estaba en el pedido y no es una cámara de juego. Sirve para juzgar el modelo y muestra la diferencia más grande entre los dos caminos.
 - **Pausa** y contador: cuadros por segundo y milisegundos de JavaScript por cuadro.
 
-Parámetros de la URL en local: `?escala=0|1|2`, `?camara=fija`, `?reducir=1`, `?cerca=1`, `?t=4.42` (congela ese instante) y `?panel=0`.
+Parámetros de la URL en local: `?escala=0|1|2`, `?camara=fija`, `?reducir=1`, `?cerca=1`, `?t=4.42` (congela ese instante), `?panel=1` (abre los ajustes) y `?ayudas=apuntar` (muestra la marca de objetivo).
+
+![Las dos versiones con los ajustes abiertos](capturas/11-ajustes.jpg)
 
 ## Qué comparten las dos versiones
 
@@ -78,7 +80,59 @@ Un solo modelo, hecho para esta prueba, con dos variantes de color: el jugador p
 
 `lib/base.js` arma el peloteo a partir de una lista de golpes. El punto de impacto sale de la animación (el centro de la pala en ese cuadro, con la escala del personaje) y la pelota vuela en parábolas entre impactos, piques y vidrios. `herramientas/verificar-impactos.mjs` comprueba que en los cinco golpes la pala y la pelota coincidan; hoy el error es cero en los cinco.
 
-La interfaz usa la tipografía y los colores de la maqueta 2D (Baloo 2, crema, tinta y coral). El nombre del golpe aparece 0,85 s sobre quien pega.
+La interfaz usa la tipografía y los colores de la maqueta 2D (Baloo 2, crema, tinta y coral).
+
+### La cámara que acompaña
+
+El criterio es del usuario. En tenis la cámara puede pegarse al jugador porque, si la pelota lo pasa, el punto terminó. En pádel no: rebota en el vidrio de atrás y el punto sigue. Por eso la cámara queda en un punto medio entre ver toda la cancha y acercarse, y lo que gana al moverse es que la cancha se siente más grande.
+
+Las seis reglas están en `lib/base.js` (`P3.CAMERA` y `P3.makeFollow`) y valen igual para las dos versiones:
+
+| Regla | Cómo se cumple |
+| --- | --- |
+| 1. Siempre a la vista, con margen: el jugador propio, la pelota, su marca de pique y el vidrio del fondo propio | En cada cuadro se calcula qué paneo deja esos puntos adentro de sus márgenes. Si con el zoom actual no entran todos, la cámara se abre hasta que entren. El zoom tiene además un tope para que la base del vidrio propio quede arriba de la barra |
+| 2. El rival y la red, siempre a la vista | El rival entra en la misma cuenta, con un margen más chico. La red queda adentro por el tope de zoom |
+| 3. Paneo lateral y zoom leve, con límites estrictos | El zoom va de 1,00 a 1,30 y no sale de ahí. No hay otro movimiento: la cámara no sube, no baja y no gira más que lo que pide el paneo |
+| 4. Se abre con la pelota al fondo propio o con un globo; se cierra con el juego en la red | Tres planos: abierto (1,04), medio (1,16) y de red (1,28). Abre enseguida y cierra con 0,35 s de espera y más despacio |
+| 5. Zona muerta y suavizado | El destino del paneo solo se mueve si algo toca su margen o si el encuadre ideal se alejó más de 0,5 m. El movimiento pasa por un resorte sin rebote |
+| 6. Con «reducir movimiento», fija con la cancha entera | Es la misma cámara fija del selector |
+
+`herramientas/verificar-camara.mjs` simula tres vueltas del peloteo a 60 cuadros por segundo en cuatro tamaños de pantalla y con las tres escalas, y mide cada regla. En 390 × 844 con la escala del medio:
+
+| Medida | Resultado |
+| --- | --- |
+| Margen mínimo al borde, en px | jugador 117 · pelota 90 · marca de pique 76 · vidrio propio 57 · rival 100 · red 90 |
+| Zoom | de 1,04 a 1,27. Con el globo en el aire, 1,08; con la pelota llegando al vidrio propio, 1,05; con el juego en la red, 1,20 y subiendo |
+| Paneo más rápido | 1,5 m/s, con una aceleración máxima de 1,9 m/s² |
+| Tiempo con la cámara quieta | 47 % |
+
+Las doce combinaciones cumplen. En una pantalla baja (390 × 700) el tope hace que el zoom llegue solo a 1,21, y el vidrio propio queda justo al borde de la barra.
+
+![Cancha entera contra cámara que acompaña](capturas/21-camara.jpg)
+
+**Cómo la hace cada versión.** La B mueve una cámara 3D: la corre de costado, la gira apenas y cambia la distancia focal. La A imita lo mismo con las capas: zoom, corrimiento e inclinación del plano del piso. En las capturas quietas no se distinguen. En movimiento, la B tiene parallax real entre la red, las paredes y el fondo, y la A solo entre la cancha, el fondo y el cielo.
+
+![Cámara que acompaña, con el juego en la red](capturas/22-camara-en-la-red.jpg)
+
+**Lo que falta saber.** Este peloteo está guionado. Las reglas pasan acá, pero falta probarlas con juego real: pelotas que cambian de dirección sin aviso, el jugador pegado a una pared lateral y dobles, donde hay un compañero que también tiene que entrar en cuadro.
+
+### Ayudas en pantalla
+
+Siguen el principio de pantalla limpia: pocas, chicas e integradas en la escena. No hay ningún anillo que marque cuál es el jugador propio, y los anillos de impacto de la primera entrega se sacaron.
+
+| Ayuda | Cuándo aparece | Cómo se ve |
+| --- | --- | --- |
+| Sombra de la pelota | Siempre | Una mancha oscura justo debajo. Marca la altura: se achica y se aclara cuando la pelota sube |
+| Marca de pique | Solo para el primer pique en el lado propio de una pelota que viene del rival | Un anillo fino de medio metro, con un punto, apoyado en el piso |
+| Señal de timing | En los últimos 0,18 s antes del golpe propio | La pelota y la pala se encienden con un brillo suave, sin anillos |
+| Marca de objetivo | Solo mientras se apunta. Acá no hay control, así que se ve con `?ayudas=apuntar` | El mismo anillo fino, en coral, en el lado del rival |
+| Nombre del golpe | Solo en los golpes especiales: «Salida de pared», «Globo» y «¡Remate!». Una derecha o un saque no llevan cartel | Una píldora crema durante 0,85 s sobre quien pega |
+
+Los impactos dejan además un efecto mínimo que no es una ayuda: un destello de cuatro puntas en el golpe, un poco de polvo en el pique y un reflejo en el vidrio. Duran dos décimas y se apagan con «reducir movimiento».
+
+Arriba la versión A y abajo la B. Son la misma lógica dibujada con cada técnica: trazos de Canvas 2D en la A y un shader en la B.
+
+![Las ayudas en las dos versiones](capturas/23-ayudas.jpg)
 
 ## Cómo está hecha cada versión
 
@@ -94,7 +148,7 @@ La interfaz usa la tipografía y los colores de la maqueta 2D (Baloo 2, crema, t
 
 ### B. Toon en tiempo real
 
-- **Renderer propio en WebGL2**, sin librerías: `lib/gl.js` y `lib/vida.js` pesan 11,7 KB comprimidos.
+- **Renderer propio en WebGL2**, sin librerías: `lib/gl.js` y `lib/vida.js` pesan 12,2 KB comprimidos.
 - **Personaje**: malla de 7.309 vértices y 10.370 triángulos con esqueleto. Sombreado toon de tres tonos con la sombra virada al violeta y filo cálido del lado del sol. **Contorno de tinta** por casco invertido, con el mismo ancho que en los sprites. **Sombra proyectada** en el piso con la forma real de la pose.
 - Modelo, esqueleto y los diez clips viajan en un solo archivo de 133 KB comprimido.
 - **Cancha**: las mismas capas, proyectadas desde la cámara de referencia sobre planos del mundo (piso, paredes, red). Con la cámara quieta se ve idéntica al render. Si la cámara se mueve, cada plano se desplaza con la perspectiva que le corresponde.
@@ -143,16 +197,16 @@ Recortes ampliados al doble, para comparar a los personajes a tamaño de juego:
 | **Belleza en un cuadro quieto** | Prácticamente igual a la B a tamaño de juego. Tiene sombra propia y bordes suavizados por el render | Prácticamente igual a la A. Le falta la sombra propia (el brazo no oscurece el torso) |
 | **Belleza en movimiento** | Golpes a 15 cuadros por segundo y cortes secos entre clips. Nada reacciona a lo que pasa | Movimiento continuo a la tasa de la pantalla, transiciones fundidas, la cabeza mira la pelota y la trenza se mueve |
 | **De cerca** | Se ve el píxel: el sprite tiene una resolución fija | Nítido a cualquier distancia |
-| **Peso descargado** | 952 KB (619 KB son sprites) | 474 KB (133 KB son modelo y animaciones) |
+| **Peso descargado** | 955 KB (619 KB son sprites) | 478 KB (133 KB son modelo y animaciones) |
 | **Tiempo hasta el primer cuadro** | 2,1 s con 4G rápido · 8,5 s con 4G lento | 1,4 s con 4G rápido · 4,8 s con 4G lento |
-| **JavaScript por cuadro, con CPU 4×** | 0,4 ms | 0,6 ms |
+| **JavaScript por cuadro, con CPU 4×** | 0,5 ms | 0,8 ms |
 | **GPU** | Sin medir; ver [Mediciones](#mediciones) | 1,2 ms por cuadro en una GPU integrada de PC |
 | **Memoria de imágenes** | 24 MB (capas, hojas y siluetas de sombra) | 16 MB (capas con mipmaps y malla) |
 | **Otro personaje** | Otra hoja por vista: entre 180 y 430 KB, y memoria en proporción | Si cambia solo el color, 0 KB. Con cuerpo o accesorios propios, unas decenas de KB |
 | **Otra animación** | Hay que renderizarla para cada personaje y cada vista. Un golpe de 1 s son 15 cuadros por hoja | Se agrega una vez (2 a 4 KB) y la tienen todos |
 | **Golpe a una altura distinta** | Otro juego de cuadros por altura | El mismo clip, corregido con cinemática inversa en vivo (no está hecho en esta prueba) |
-| **Cámara móvil** | Paneo, zoom y parallax por capas. Convence mientras el movimiento sea sutil. No cambia el punto de vista | Cualquier cámara. Con la cancha proyectada, hasta un movimiento moderado; para una cámara libre la cancha tendría que ser geometría con luz horneada |
-| **Dobles** | Cuatro sprites, pero cada personaje necesita las dos vistas: compañero de espaldas y rival de frente | Cuatro mallas con el mismo archivo. Suma unos 0,4 ms de GPU en la PC de prueba |
+| **Cámara móvil** | Paneo, zoom y parallax por capas. Alcanza para la cámara que acompaña tal como está definida (paneo lateral y zoom de hasta 1,30). No cambia el punto de vista | Cualquier cámara. Con la cancha proyectada, hasta un movimiento moderado; para una cámara libre la cancha tendría que ser geometría con luz horneada |
+| **Dobles** | Cuatro sprites, pero cada personaje necesita las dos vistas: compañero de espaldas y rival de frente | Cuatro mallas con el mismo archivo. Suma unos 0,5 ms de GPU en la PC de prueba |
 | **Compatibilidad** | Canvas 2D: anda en todos lados | WebGL2: 97 % de los navegadores. Necesita un respaldo y manejar la pérdida de contexto |
 | **Riesgo** | Bajo en lo técnico. El contenido es rígido y pesa | Medio: drivers y GPU de gama baja sin medir |
 
@@ -174,10 +228,10 @@ Medido con `herramientas/medir.mjs` en Chrome sin ventana, con pantalla de 390 �
 
 | | A | B |
 | --- | --- | --- |
-| Página y código | 17,9 KB | 26,5 KB |
+| Página y código | 21,4 KB | 30,1 KB |
 | Cancha (7 capas WebP y su JSON) | 315,2 KB | 315,2 KB |
 | Personajes | 618,8 KB (2 hojas de sprites) | 132,6 KB (malla, esqueleto y 10 clips) |
-| **Total** | **952 KB** | **474 KB** |
+| **Total** | **955 KB** | **478 KB** |
 
 - No incluye la tipografía de la interfaz (34 KB, de Google Fonts).
 - El código y el binario del modelo viajan con gzip, que es lo que haría GitHub Pages. El número depende del compresor: los 132,6 KB del modelo son con el gzip de Node; con brotli serían 88 KB.
@@ -190,8 +244,8 @@ Desde que empieza la navegación hasta que se dibuja el primer cuadro completo.
 
 | | A | B |
 | --- | --- | --- |
-| Sin límites (red local) | 85 ms | 108 ms |
-| CPU 4× | 306 ms | 285 ms |
+| Sin límites (red local) | 86 ms | 111 ms |
+| CPU 4× | 268 ms | 293 ms |
 | CPU 4× y 4G rápido (9 Mbit/s, 165 ms) | 2,1 s | 1,4 s |
 | CPU 4× y 4G lento (1,6 Mbit/s, 562 ms) | 8,5 s | 4,8 s |
 
@@ -201,12 +255,12 @@ La diferencia es casi toda descarga. La B compila cuatro shaders chicos y eso no
 
 | | A · media | A · p95 | A · máx. | B · media | B · p95 | B · máx. |
 | --- | --- | --- | --- | --- | --- | --- |
-| Cámara fija, CPU 1× | 0,11 ms | 0,2 | 0,4 | 0,14 ms | 0,2 | 0,4 |
-| Cámara fija, CPU 4× | 0,43 ms | 0,7 | 1,5 | 0,61 ms | 1,1 | 2,3 |
-| Cámara que acompaña, CPU 1× | 0,10 ms | 0,2 | 0,4 | 0,14 ms | 0,2 | 0,4 |
-| Cámara que acompaña, CPU 4× | 0,39 ms | 0,7 | 1,4 | 0,56 ms | 0,8 | 2,0 |
+| Cancha entera, CPU 1× | 0,13 ms | 0,2 | 0,4 | 0,16 ms | 0,3 | 0,5 |
+| Cancha entera, CPU 4× | 0,61 ms | 1,0 | 1,9 | 0,54 ms | 0,8 | 3,7 |
+| Cámara que acompaña, CPU 1× | 0,15 ms | 0,3 | 0,5 | 0,16 ms | 0,3 | 0,4 |
+| Cámara que acompaña, CPU 4× | 0,49 ms | 0,8 | 1,5 | 0,80 ms | 1,4 | 3,1 |
 
-Las dos usan menos del 10 % del presupuesto de 8 ms por cuadro. El JavaScript no decide entre una y otra.
+Las dos usan alrededor del 10 % del presupuesto de 8 ms por cuadro, o menos. El JavaScript no decide entre una y otra. Entre corridas estos números varían una o dos décimas.
 
 ### GPU: lo único que se pudo medir
 
@@ -214,13 +268,13 @@ WebGL2 deja medir cuánto tarda la GPU en un cuadro. Canvas 2D no. Por eso hay n
 
 | Versión B, Radeon 780M integrada | DPR 2 | DPR 3 |
 | --- | --- | --- |
-| Cámara que acompaña, cuadro completo | 1,16 ms | 2,08 ms |
-| Lo mismo sin personajes (solo las capas de la cancha) | 0,72 ms | 1,70 ms |
-| Cámara fija (el fondo se dibuja una vez y se copia) | 0,98 ms | 1,84 ms |
+| Cámara que acompaña, cuadro completo | 1,19 ms | 2,01 ms |
+| Lo mismo sin personajes (solo las capas de la cancha) | 0,69 ms | 1,56 ms |
+| Cancha entera (el fondo se dibuja una vez y se copia) | 0,98 ms | 1,79 ms |
 
-- **Más de la mitad del costo son las capas de la cancha**, que las dos versiones dibujan igual. Los dos personajes de malla, con contorno y sombra, suman unos 0,4 ms.
+- **Más de la mitad del costo son las capas de la cancha**, que las dos versiones dibujan igual. Los dos personajes de malla, con contorno y sombra, suman unos 0,5 ms.
 - La A hace el mismo trabajo de relleno con las capas y casi nada más. Su costo de GPU tiene que estar cerca de la fila «solo las capas». Es una estimación.
-- **En un teléfono**: `docs/graficos-livianos.md` estimó, a partir de un solo dato, que un teléfono de gama media es entre 6 y 20 veces más lento que esta GPU. Con ese factor la B quedaría entre 7 y 23 ms por cuadro y las capas solas entre 4 y 14 ms. El extremo malo no entra en los 16,7 ms de 60 fps. **Por eso hace falta medir en un teléfono real antes de comprometerse**, y por eso la cancha en capas es lo primero a optimizar en cualquiera de los dos caminos.
+- **En un teléfono**: `docs/graficos-livianos.md` estimó, a partir de un solo dato, que un teléfono de gama media es entre 6 y 20 veces más lento que esta GPU. Con ese factor la B quedaría entre 7 y 24 ms por cuadro y las capas solas entre 4 y 14 ms. El extremo malo no entra en los 16,7 ms de 60 fps. **Por eso hace falta medir en un teléfono real antes de comprometerse**, y por eso la cancha en capas es lo primero a optimizar en cualquiera de los dos caminos.
 
 ### Memoria
 
@@ -288,9 +342,12 @@ Mirando piernas, pies, manos, caras y escala contra los favoritos del usuario.
 
 **Contra los favoritos.** Esto quedó cerca de Racket Club y de Messenger: humanoide simple, toon limpio, club con luz cálida. Está lejos de Rollerdrome o de Bomb Rush Cyberfunk, que tienen una línea con carácter y un diseño de autor. El riesgo de «AI slop» bajó, porque ya no son primitivas y hay luz de verdad, pero no desapareció: el personaje es prolijo y genérico. Le falta una decisión gráfica fuerte y siluetas distintas por personaje. Las dos variantes de hoy solo cambian de color.
 
+**Cámara y ayudas.** Cumplen las reglas en este peloteo, que es siempre el mismo. No es prueba de que funcionen jugando. La marca de pique es tan chica que en un celular puede pasar inadvertida: es lo pedido, pero hay que verlo en la mano. El brillo de timing dura 0,18 s y nadie lo probó como señal para pegar, porque acá no se juega.
+
 **Lo que no se probó.**
 
 - Ningún teléfono real.
+- La cámara que acompaña y las ayudas con juego real.
 - Safari y Firefox.
 - La versión B sin suavizado de bordes.
 - Dobles.
@@ -315,6 +372,7 @@ Antes de pulir más el modelo conviene resolver la escala y la altura de la cám
 ## Pendientes
 
 - **Medir en un teléfono real** (Android de gama media y un iPhone viejo) con el contador de las páginas.
+- **Probar la cámara que acompaña con el motor**: pelotas impredecibles, el jugador contra una pared lateral y dobles. Los límites están juntos en `P3.CAMERA` para ajustarlos.
 - **Bajar el peso de la cancha**: probar AVIF, guardar a media resolución las capas blandas (entorno, pared cercana) y fundir piso y paredes cuando la cámara no se mueve.
 - **Aligerar el modelo**: la malla tiene vértices de sobra en zapatillas, dedos y agujeros de la pala.
 - **Sombra propia en la B**, con un mapa de sombras chico.
@@ -349,6 +407,7 @@ blender -b --factory-startup --python vista_anim.py -- clip.png remate espalda 7
 ```bash
 cd design/prueba-3d
 node herramientas/verificar-impactos.mjs      # la pala llega a la pelota en cada golpe
+node herramientas/verificar-camara.mjs        # las reglas de la cámara que acompaña, cuadro por cuadro
 node herramientas/medir.mjs                   # escribe medidas.json
 node herramientas/capturar.mjs /tmp/cap       # capturas sueltas de las dos versiones
 python herramientas/componer.py /tmp/cap capturas   # las arma lado a lado (necesita Pillow)

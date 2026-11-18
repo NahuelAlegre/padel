@@ -1,16 +1,21 @@
-import { clamp, smoothstep } from '../../core/math';
 import type { MannerismClip, TellCue, TellPose } from '../../characters/types';
+import { clamp, smoothstep } from '../../core/math';
 import type { ScenePlayer } from '../scene';
 import {
   blendPose,
   boneToCharacter,
   createSkeleton,
+  multiplyQuaternions,
   samplePose,
   skinMatrices,
   solveSkeleton,
+  stand,
+  twistHips,
+  widen,
   type Character,
   type Clip,
   type Skeleton,
+  type Style,
 } from './character';
 import { bendLimb, worldRotations, type Limb } from './reach';
 
@@ -22,36 +27,53 @@ import { bendLimb, worldRotations, type Limb } from './reach';
  * meets the ball. The clips know what a run or a forehand looks like. This is
  * what goes in between:
  *
- *   - Legs follow the ground: a run cycle advances with the metres really
- *     covered, so the feet do not skate, whatever the speed.
+ *   - Legs follow the ground. A cycle advances with the metres really
+ *     covered, so the feet do not skate at any speed. Which cycle depends on
+ *     where the body is going next to where it faces (forward, backward or
+ *     sideways), and the pelvis turns for what is left of the difference.
  *   - A stroke is stretched in time so that the frame of the clip in which
  *     the racket meets the ball falls on the instant the simulation hits it.
- *     Armed early, the body takes the racket back and waits there.
+ *     What is stretched is the windup: armed early, the body takes the racket
+ *     back and waits there; the swing itself keeps its own pace.
  *   - The upper body can be in a stroke while the legs keep running: a player
  *     may be moved while it aims.
  *   - The ball is where the simulation says, not where the clip expects it.
  *     Around the contact the body takes a step toward it, sinks for a low
  *     one with its feet still on the floor, and the arm takes the racket
  *     the rest of the way.
- *   - A character adds its own on top: the windup that gives its shot away
- *     and a short tic between points, as a few places for its hands, its
- *     hips and its feet to be.
+ *   - Just before the rival hits, somebody standing takes a little hop.
+ *   - A character adds its own on top: how it stands and how wide it
+ *     gestures, the windup that gives its shot away, a short tic between
+ *     points and what it does when a point is won or lost.
  *   - Changes are cross-faded, never cut.
  *   - The head follows the ball and the braid swings behind the movement.
  *
- * Clips may carry what is needed for this (metres per cycle, moment of
- * contact, where the racket is then). When a clip does not, a reasonable
- * value is used.
+ * Everything the clips say about themselves comes from the file (see
+ * design/prueba-3d): metres per cycle, moment of contact, where the racket is
+ * then, which part is the windup. A clip that does not say gets something
+ * reasonable.
  */
 
 /** Metres one cycle of each way of moving covers at life size, for clips that do not say. */
-const DEFAULT_STRIDE: Record<string, number> = { correr: 1.45, lateral_izq: 1.05, lateral_der: 1.05 };
+const DEFAULT_STRIDE: Record<string, number> = { correr: 1.8, correr_atras: 1.3, lateral_izq: 1.35, lateral_der: 1.35 };
+/** Which way each cycle goes, in the character's axes, for clips that do not say. */
+const DEFAULT_DIR: Record<string, [number, number]> = {
+  correr: [0, -1],
+  correr_atras: [0, 1],
+  lateral_izq: [1, 0],
+  lateral_der: [-1, 0],
+};
 /** Below this speed, in metres per second, the player is standing. */
 const STANDING_SPEED = 0.45;
+/** Up to this far from straight ahead it runs forward; from this far on, backward; in between, sideways. Radians. */
+const FORWARD_UNTIL = (60 * Math.PI) / 180;
+const BACKWARD_FROM = (125 * Math.PI) / 180;
+/** A cycle is not changed for another until the direction is this far past the line between them. */
+const GAIT_STICK = (8 * Math.PI) / 180;
+/** The pelvis turns no further than this for a cycle that does not go quite where the body goes. */
+const MOST_TWIST = (50 * Math.PI) / 180;
 /** Seconds a change of clip takes to fade in. */
 const FADE = 0.14;
-/** The last stretch before the contact is always played in step with it; before that the body waits. */
-const SYNCED_LEAD = 0.24;
 /** Seconds a stroke takes to take over the upper body, and to give it back. */
 const STROKE_IN = 0.12;
 const STROKE_OUT = 0.2;
@@ -84,6 +106,128 @@ const GESTURE_OUT = 0.12;
  */
 const TELL_RACKET_UNTIL = 0.3;
 const TELL_BODY_UNTIL = 0.16;
+/** Heights of the ball next to the body, in metres at life size, that decide which stroke the body plays. */
+const HEIGHTS = {
+  /** From here up a smash is the jumping one; below, the one with the feet on the floor. */
+  smash: 1.9,
+  /** From here up a shot meant to come from above does; below, it is a high volley. */
+  above: 1.5,
+  /** From here up any ball is played from above, whatever the shot is called. */
+  aboveAnyway: 2.0,
+  /** From here up a volley is the one at the shoulder; below, a low one with the stroke of a drive. */
+  volley: 1.05,
+  /** From here up a ball that has bounced is taken like a volley. */
+  shoulder: 1.25,
+  /** Up to here a ball far to the side is reached for at full stretch. */
+  stretch: 1.2,
+};
+/** How far to the side of the body a ball has to be for the stroke at full stretch, in metres at life size. */
+const STRETCH_FROM = 1.0;
+
+/** Bones that belong to the legs: they follow the ground when the player moves. */
+const LEG_BONES = ['thigh.L', 'shin.L', 'foot.L', 'toe.L', 'thigh.R', 'shin.R', 'foot.R', 'toe.R'];
+/** Strokes in which the body does not sink for a lower ball: over the head and in the serve, the arm bends instead. */
+const NO_CROUCH: ReadonlySet<string> = new Set(['remate', 'bandeja', 'saque']);
+/** Tics that have a clip of their own. The rest are a few places for the hands to be. */
+const MANIA_CLIPS: Partial<Record<MannerismClip, string>> = {
+  cap: 'mania_gorra',
+  glasses: 'mania_gorra',
+  shoeTap: 'mania_zapatilla',
+  wave: 'mania_saludo',
+};
+
+export interface AnimatedFigure {
+  /** Where the body is drawn, on the court: a step away from the player while it lunges. */
+  x: number;
+  y: number;
+  /** The matrix of every bone. */
+  bones: Float32Array;
+}
+
+/** What is going on around a player that the simulation does not say about the player itself. */
+export interface Moment {
+  /** Seconds until a rival hits the ball, when one is about to. Infinity otherwise. */
+  rivalHitIn: number;
+  /** This player is about to serve and has the ball in its hand. */
+  holding: boolean;
+  /** Between points: nobody is playing. */
+  resting: boolean;
+}
+
+const PLAYING: Moment = { rivalHitIn: Infinity, holding: false, resting: false };
+
+/** What a clip says about its own stroke, with something sensible where it says nothing. */
+export function contactOf(clip: Clip): number {
+  return clip.contact ?? clip.dur * 0.52;
+}
+
+/** Where the windup of a stroke ends: up to there the clip can be held; from there on it is in step with the ball. */
+export function holdOf(clip: Clip): number {
+  const contact = contactOf(clip);
+  return clip.armado ? Math.min(clip.armado[1], contact) : Math.max(0, contact - Math.min(0.24, contact * 0.6));
+}
+
+export function strideOf(clip: Clip): number {
+  return clip.zancada ?? DEFAULT_STRIDE[clip.name] ?? 1.3;
+}
+
+/**
+ * Which clip plays a stroke of the simulation. `k` is how much bigger than
+ * life the player is drawn: a ball two metres up is over the head of somebody
+ * life-sized and at the chest of somebody drawn half as big again, and it is
+ * the body that has to look right. `has` says which clips there are: one that
+ * is missing is replaced by the nearest one.
+ */
+export function strokeClipName(player: ScenePlayer, k = 1, has: (name: string) => boolean = () => true): string {
+  if (player.anim === 'serve') return 'saque';
+  // Forehand: the ball is on the side the racket hand is on.
+  const forehand = player.animSide === player.restSide;
+  const side = (name: string): string => (forehand ? name : `${name}_reves`);
+  const plain = forehand ? 'derecha' : 'reves';
+  const pick = (name: string, otherwise: string): string => (has(name) ? name : otherwise);
+  const height = player.reachZ / k;
+  const fromAbove = player.shot === 'smash' || player.shot === 'bandeja' || player.shot === 'vibora';
+  if (fromAbove) {
+    if (player.shot === 'smash' && height >= HEIGHTS.smash) return 'remate';
+    if (height >= HEIGHTS.above) return pick('bandeja', 'remate');
+    return pick(side('volea'), plain);
+  }
+  if (height >= HEIGHTS.aboveAnyway) return pick('bandeja', 'remate');
+  // A ball far to the side and not high: the body throws itself after the racket.
+  const aside = Math.abs(player.reachX) / k;
+  if (aside >= STRETCH_FROM && height <= HEIGHTS.stretch) return pick(side('estirada'), plain);
+  switch (player.shot) {
+    case 'lob':
+      return forehand ? 'globo' : 'reves';
+    case 'volley':
+    case 'drop':
+      return height >= HEIGHTS.volley ? pick(side('volea'), plain) : plain;
+    default:
+      return height >= HEIGHTS.shoulder ? pick(side('volea'), plain) : plain;
+  }
+}
+
+/**
+ * Which moment of a stroke clip to show `eta` seconds before the contact
+ * (negative after it), given the moment that was shown `dt` seconds ago.
+ *
+ * From the end of the windup on, the clip is in step with the simulation: the
+ * contact frame falls on the contact, and the swing keeps its own pace.
+ * Before that the body goes through its windup, faster if there is little
+ * time, and then holds the racket back for as long as it takes.
+ */
+export function strokeTime(clip: Clip, eta: number, previous: number, dt: number): number {
+  const contact = contactOf(clip);
+  const hold = holdOf(clip);
+  const inStep = contact - eta;
+  if (inStep >= hold) return Math.min(inStep, clip.dur);
+  const at = Math.max(previous, 0);
+  // Seconds of windup left to show, and real seconds left to show them in.
+  const left = hold - at;
+  const time = eta - (contact - hold);
+  const rate = Number.isFinite(time) && time > 1e-3 ? Math.max(1, left / time) : 1;
+  return Math.min(at + dt * rate, hold);
+}
 
 /**
  * What a character does with its body on top of whatever it is doing: a few
@@ -136,7 +280,7 @@ function tellGesture(pose: TellPose, kind: TellCue, across: number, out: Gesture
   }
 }
 
-/** A tic between points, `t` seconds into it. */
+/** A tic between points that has no clip of its own, `t` seconds into it. */
 function actGesture(clip: MannerismClip, t: number, duration: number, out: Gesture): void {
   const beat = Math.sin(t * 16);
   switch (clip) {
@@ -169,68 +313,7 @@ function actGesture(clip: MannerismClip, t: number, duration: number, out: Gestu
   }
 }
 
-/** Strokes in which the body does not sink for a lower ball: over the head and in the serve, the arm bends instead. */
-const NO_CROUCH: ReadonlySet<string> = new Set(['remate', 'saque']);
-
-/** Bones that belong to the legs: they follow the ground when the player moves. */
-const LEG_BONES = ['thigh.L', 'shin.L', 'foot.L', 'toe.L', 'thigh.R', 'shin.R', 'foot.R', 'toe.R'];
-
-export interface AnimatedFigure {
-  /** Where the body is drawn, on the court: a step away from the player while it lunges. */
-  x: number;
-  y: number;
-  /** The matrix of every bone. */
-  bones: Float32Array;
-}
-
-/** What a clip says about its own stroke, with something sensible where it says nothing. */
-export function contactOf(clip: Clip): number {
-  return clip.contact ?? clip.dur * 0.52;
-}
-
-export function strideOf(clip: Clip): number {
-  return clip.stride ?? DEFAULT_STRIDE[clip.name] ?? 1.2;
-}
-
-/**
- * A ball is "over the head" from this height up, in metres at life size.
- * Lower for the shots that are meant to be played from above.
- */
-const OVERHEAD_FROM = 1.5;
-const OVERHEAD_ANYWAY = 1.95;
-
-/**
- * Which clip plays a stroke of the simulation. `k` is how much bigger than
- * life the player is drawn: a ball two metres up is over the head of somebody
- * life-sized and at the chest of somebody drawn half as big again, and it is
- * the body that has to look right.
- */
-export function strokeClipName(player: ScenePlayer, k = 1): string {
-  if (player.anim === 'serve') return 'saque';
-  // Forehand: the ball is on the side the racket hand is on.
-  const forehand = player.animSide === player.restSide;
-  const height = player.reachZ / k;
-  const fromAbove = player.shot === 'smash' || player.shot === 'bandeja' || player.shot === 'vibora';
-  if (height >= (fromAbove ? OVERHEAD_FROM : OVERHEAD_ANYWAY)) return 'remate';
-  if (player.shot === 'lob') return forehand ? 'globo' : 'reves';
-  return forehand ? 'derecha' : 'reves';
-}
-
-/**
- * Which moment of a stroke clip to show `eta` seconds before the contact
- * (negative after it), given the moment that was shown `dt` seconds ago.
- *
- * Close to the contact the clip is in step with the simulation: the contact
- * frame falls on the contact. Further away than that, the body goes through
- * its preparation in real time and then holds the racket back.
- */
-export function strokeTime(clip: Clip, eta: number, previous: number, dt: number): number {
-  const contact = contactOf(clip);
-  const hold = Math.max(0, contact - Math.min(SYNCED_LEAD, contact * 0.6));
-  const inStep = contact - eta;
-  if (inStep >= hold) return Math.min(inStep, clip.dur);
-  return Math.min(Math.max(previous, 0) + dt, hold);
-}
+type Gait = 'stand' | 'correr' | 'correr_atras' | 'lateral_izq' | 'lateral_der' | 'hop';
 
 export class FigureAnimator implements AnimatedFigure {
   x = 0;
@@ -238,17 +321,30 @@ export class FigureAnimator implements AnimatedFigure {
   readonly bones: Float32Array;
   /** Where every bone is, in the character's own axes, after the last update. */
   readonly skeleton: Skeleton;
+  /** What is this character's own: its pieces, its size, how it stands. */
+  readonly style: Style | null;
 
   private readonly pose: Float32Array;
   private readonly ground: Float32Array;
   private readonly groundFrom: Float32Array;
   private readonly groundNext: Float32Array;
   private readonly stroke: Float32Array;
+  private readonly strokeFrom: Float32Array;
+  private readonly extra: Float32Array;
   private readonly legs: boolean[];
-  private groundClip = '';
+
+  // The ground: standing, a cycle or the little hop.
+  private gait: Gait = 'stand';
+  private groundKey = '';
   private groundMix = 1;
   private idleTime = 0;
-  private readonly strokeFrom: Float32Array;
+  private phase = 0;
+  private lastStride = 0;
+  private twist = 0;
+  private hopAt = -1;
+  private lastRivalHit = Infinity;
+
+  // The stroke.
   private strokeClip: Clip | null = null;
   private strokeAt = 0;
   private strokeWeight = 0;
@@ -262,6 +358,7 @@ export class FigureAnimator implements AnimatedFigure {
   private lungeX = 0;
   private lungeY = 0;
   private started = false;
+  private readonly hits = new Map<string, [number, number, number]>();
 
   // The head and the braid.
   private readonly head: number;
@@ -281,26 +378,32 @@ export class FigureAnimator implements AnimatedFigure {
 
   private readonly racket: number;
   private readonly at: [number, number, number] = [0, 0, 0];
-  /** The racket arm and both legs, for bending them to where they have to be. */
+  /** The racket arm, the free arm and both legs, for bending them to where they have to be. */
   private readonly arm: Limb;
-  private readonly bothLegs: Limb[];
   private readonly freeArm: Limb;
+  private readonly bothLegs: Limb[];
   private readonly world: Float32Array;
   private readonly ankles = new Float32Array(6);
   /** The gesture on show, or the last one while it goes away, and how much of it there is. */
   private gesture = noGesture();
   private gestureWeight = 0;
   private gestureRacket = 0;
-  /** The little celebration of a point won: whether it is on, how far into it, and how much of it shows. */
-  private cheering = false;
-  private cheerTime = 0;
-  private cheerWeight = 0;
-  private readonly cheerPose: Float32Array;
+  /** What it does when a point ends, or its tic: a clip over whatever else, how far into it and how much of it shows. */
+  private reaction: Clip | null = null;
+  private reacting = false;
+  private reactionTime = 0;
+  private reactionWeight = 0;
   private seenX = 0;
   private seenY = 0;
+  /** Where the ball is in the free hand, in the axes of that hand: worked out once from the serve. */
+  private readonly inHand: [number, number, number] | null;
 
-  constructor(private readonly character: Character) {
+  constructor(
+    private readonly character: Character,
+    style: Style | null = null,
+  ) {
     const size = character.poseSize;
+    this.style = style;
     this.bones = new Float32Array(26 * 16);
     this.skeleton = createSkeleton(character);
     this.pose = new Float32Array(size);
@@ -309,6 +412,7 @@ export class FigureAnimator implements AnimatedFigure {
     this.groundNext = new Float32Array(size);
     this.stroke = new Float32Array(size);
     this.strokeFrom = new Float32Array(size);
+    this.extra = new Float32Array(size);
     this.legs = character.meta.bones.names.map((name) => LEG_BONES.includes(name));
     this.head = character.bone('head');
     this.neck = character.bone('neck');
@@ -325,14 +429,15 @@ export class FigureAnimator implements AnimatedFigure {
       end: character.bone(`foot.${side}`),
     }));
     this.world = new Float32Array(character.bones * 4);
-    this.cheerPose = new Float32Array(size);
+    this.inHand = this.measureHand();
   }
 
   /** Forgets everything: the next update starts from scratch, with no fade (a new point, a new match). */
   reset(): void {
     this.started = false;
-    this.cheering = false;
-    this.cheerWeight = 0;
+    this.reacting = false;
+    this.reactionWeight = 0;
+    this.hopAt = -1;
   }
 
   /**
@@ -340,9 +445,20 @@ export class FigureAnimator implements AnimatedFigure {
    * every point anyway. It never delays anything: the next serve cuts it.
    */
   cheer(): void {
-    if (!this.character.clips.festejo) return;
-    this.cheering = true;
-    this.cheerTime = 0;
+    this.react('festejo');
+  }
+
+  /** The point was lost: it sags for a moment. As short as the celebration, and cut the same way. */
+  lament(): void {
+    this.react('lamento');
+  }
+
+  private react(name: string): void {
+    const clip = this.character.clips[name];
+    if (!clip) return;
+    this.reaction = clip;
+    this.reacting = true;
+    this.reactionTime = 0;
   }
 
   /**
@@ -356,9 +472,12 @@ export class FigureAnimator implements AnimatedFigure {
     facing: 1 | -1,
     ball: { x: number; y: number; z: number; visible: boolean },
     dt: number,
+    moment: Moment = PLAYING,
   ): void {
     const character = this.character;
     const clips = character.clips;
+    const style = this.style;
+    const tempo = style?.tempo ?? 1;
     // Put somewhere else between two frames (a new point): nothing is carried over.
     const moved = Math.hypot(player.x - this.seenX, player.y - this.seenY);
     this.seenX = player.x;
@@ -367,33 +486,82 @@ export class FigureAnimator implements AnimatedFigure {
     this.started = true;
     // The character faces -y in its own axes. `s` takes the court's x and y to them.
     const s = facing > 0 ? -1 : 1;
+    const busy = player.anim !== 'idle' && player.animPhase < 1;
+    const eta = player.contactIn;
 
     // ------------------------------------------------------------ the ground
     const speed = Math.hypot(player.vx, player.vy);
-    const sideways = s * player.vx;
-    const along = s * player.vy;
-    let name = 'listo';
-    let time = 0;
-    if (speed < STANDING_SPEED) {
-      this.idleTime += dt;
-      time = this.idleTime;
-    } else if (Math.abs(sideways) > Math.abs(along) * 0.75) {
-      name = sideways > 0 ? 'lateral_izq' : 'lateral_der';
-      const clip = clips[name]!;
-      time = cycle(player.stride / (strideOf(clip) * k)) * clip.dur;
-    } else {
-      name = 'correr';
-      const clip = clips[name]!;
-      const phase = cycle(player.stride / (strideOf(clip) * k));
-      // Backwards is the same run, played the other way.
-      time = (along < 0 ? phase : 1 - phase) * clip.dur;
+    // Metres covered since the last frame: what moves a cycle on.
+    const covered = player.stride >= this.lastStride && player.stride - this.lastStride < 1 ? player.stride - this.lastStride : 0;
+    this.lastStride = player.stride;
+    let twist = 0;
+    let clip: Clip;
+    let time: number;
+    let key: string;
+
+    // The little hop just before a rival hits, for whoever is standing and waiting for the ball.
+    const hop = clips.split_step;
+    if (hop && this.hopAt < 0 && !busy && !moment.resting && !moment.holding && speed < 1.2) {
+      const lands = (hop.aterrizaje ?? 0.33) / tempo;
+      if (this.lastRivalHit > lands && moment.rivalHitIn <= lands && moment.rivalHitIn > lands - 0.12) this.hopAt = 0;
     }
-    const groundClip = clips[name] ?? clips.listo!;
-    samplePose(character, groundClip, time, this.groundNext);
-    if (name !== this.groundClip) {
+    this.lastRivalHit = moment.rivalHitIn;
+    if (hop && this.hopAt >= 0) {
+      this.hopAt += dt * tempo;
+      // It can be cut short to go after the ball, and a stroke cuts it at once.
+      const cut = hop.corte ?? hop.dur * 0.55;
+      if (this.hopAt >= hop.dur || busy || (speed > STANDING_SPEED && this.hopAt >= cut) || speed > 2.4) this.hopAt = -1;
+    }
+
+    if (hop && this.hopAt >= 0) {
+      this.gait = 'hop';
+      clip = hop;
+      time = this.hopAt;
+      key = 'split_step';
+    } else if (speed < STANDING_SPEED) {
+      this.gait = 'stand';
+      this.idleTime += dt;
+      if (moment.holding && clips.saque) {
+        // The ball is in its hand: the very start of the serve, held.
+        clip = clips.saque;
+        time = 0;
+        key = 'hold';
+      } else {
+        clip = (moment.resting ? clips.espera : null) ?? clips.listo!;
+        time = this.idleTime;
+        key = clip.name;
+      }
+    } else {
+      // Where it is going next to where it faces, in its own axes: forward is -y, and x is its left.
+      const mx = (s * player.vx) / speed;
+      const my = (s * player.vy) / speed;
+      const angle = Math.atan2(mx, -my);
+      const wide = Math.abs(angle);
+      const was = this.gait;
+      let gait: Gait;
+      if (wide <= FORWARD_UNTIL + (was === 'correr' ? GAIT_STICK : -GAIT_STICK)) gait = 'correr';
+      else if (wide >= BACKWARD_FROM + (was === 'correr_atras' ? -GAIT_STICK : GAIT_STICK)) gait = 'correr_atras';
+      else if (was === 'correr' && wide <= FORWARD_UNTIL + GAIT_STICK) gait = 'correr';
+      else if (was === 'correr_atras' && wide >= BACKWARD_FROM - GAIT_STICK) gait = 'correr_atras';
+      else gait = angle > 0 ? 'lateral_izq' : 'lateral_der';
+      // An older file has no run of its own for going backward: the forward one, played the other way.
+      const reversed = gait === 'correr_atras' && !clips.correr_atras;
+      clip = clips[gait] ?? clips.correr ?? clips.listo!;
+      if (gait !== was) this.phase = clip.entrada ?? 0;
+      this.gait = gait;
+      this.phase += covered / (strideOf(clip) * k);
+      this.phase -= Math.floor(this.phase);
+      time = (reversed ? 1 - this.phase : this.phase) * clip.dur;
+      key = gait;
+      // What the cycle does not cover of the direction, the pelvis turns.
+      const dir = reversed ? DEFAULT_DIR.correr_atras! : (clip.dir ?? DEFAULT_DIR[gait] ?? DEFAULT_DIR.correr!);
+      twist = clamp(Math.atan2(dir[0] * my - dir[1] * mx, dir[0] * mx + dir[1] * my), -MOST_TWIST, MOST_TWIST);
+    }
+    samplePose(character, clip, time, this.groundNext);
+    if (key !== this.groundKey) {
       this.groundFrom.set(this.ground);
-      this.groundMix = snap || this.groundClip === '' ? 1 : 0;
-      this.groundClip = name;
+      this.groundMix = snap || this.groundKey === '' ? 1 : 0;
+      this.groundKey = key;
     }
     if (this.groundMix < 1) {
       this.groundMix = Math.min(1, this.groundMix + dt / FADE);
@@ -401,43 +569,45 @@ export class FigureAnimator implements AnimatedFigure {
     } else {
       this.ground.set(this.groundNext);
     }
+    this.twist = snap ? twist : this.twist + (twist - this.twist) * Math.min(1, dt * 12);
 
-    // A point just won. Between points everybody walks to their place for
-    // the next one, so the legs keep walking and the rest celebrates; standing
-    // still, the whole body does. A stroke in progress is finished first.
-    const festejo = clips.festejo;
-    if (festejo && (this.cheering || this.cheerWeight > 0)) {
-      const busy = player.anim !== 'idle' && player.animPhase < 1;
-      // The clip keeps playing while it fades, so the way out is not a still pose.
-      if (!busy || !this.cheering) this.cheerTime = Math.min(this.cheerTime + dt, festejo.dur);
-      if (this.cheerTime >= festejo.dur - FADE) this.cheering = false;
-      const on = this.cheering && !busy;
-      this.cheerWeight = snap ? 0 : clamp(this.cheerWeight + dt / (on ? FADE : -FADE), 0, 1);
-      if (this.cheerWeight > 0) {
-        samplePose(character, festejo, this.cheerTime, this.cheerPose);
-        const upper = smoothstep(0, 1, this.cheerWeight);
-        const lower = upper * (1 - smoothstep(0.5, 1.8, speed));
-        const ground = this.ground;
-        const cheer = this.cheerPose;
-        const bones = character.bones;
-        for (let i = 0; i < bones; i++) {
-          const w = this.legs[i] || i === 0 ? lower : upper;
-          if (w <= 0) continue;
-          const o = i * 4;
-          const dot = ground[o]! * cheer[o]! + ground[o + 1]! * cheer[o + 1]! + ground[o + 2]! * cheer[o + 2]! + ground[o + 3]! * cheer[o + 3]!;
-          const sign = dot < 0 ? -1 : 1;
-          for (let c = 0; c < 4; c++) ground[o + c] = ground[o + c]! * (1 - w) + cheer[o + c]! * sign * w;
-        }
-        const p = bones * 4;
-        for (let c = 0; c < 3; c++) ground[p + c] = ground[p + c]! * (1 - lower) + cheer[p + c]! * lower;
+    // ------------------------------------------------------------ reactions and tics
+    // Between points everybody walks to their place for the next one, so the
+    // legs keep walking and the rest reacts; standing still, the whole body
+    // does. A stroke in progress is finished first.
+    const tic = player.act && !busy && player.act.t < player.act.duration ? player.act : null;
+    const mania = tic ? clips[MANIA_CLIPS[tic.clip] ?? ''] : undefined;
+    if (tic && mania) {
+      // A tic with a clip of its own: it lasts what the tic lasts.
+      this.reaction = mania;
+      this.reacting = true;
+      this.reactionTime = (tic.t / tic.duration) * mania.dur;
+    } else if (this.reaction && this.reaction.grupo === 'mania') {
+      this.reacting = false;
+    }
+    const reaction = this.reaction;
+    if (reaction && (this.reacting || this.reactionWeight > 0)) {
+      if (!mania) {
+        // The clip keeps playing while it fades, so the way out is not a still pose.
+        if (!busy || !this.reacting) this.reactionTime = Math.min(this.reactionTime + dt * tempo, reaction.dur);
+        if (this.reactionTime >= reaction.dur - FADE) this.reacting = false;
+      }
+      const on = this.reacting && !busy;
+      this.reactionWeight = snap ? 0 : clamp(this.reactionWeight + dt / (on ? FADE : -FADE), 0, 1);
+      if (this.reactionWeight > 0) {
+        samplePose(character, reaction, this.reactionTime, this.extra);
+        const upper = smoothstep(0, 1, this.reactionWeight);
+        this.layer(this.ground, this.extra, upper, upper * (1 - smoothstep(0.5, 1.8, speed)));
+      } else if (!this.reacting) {
+        this.reaction = null;
       }
     }
+    // The same gesture is wider on one of the cast and smaller on another. Not a stroke: that has a ball to meet.
+    if (style) widen(character, this.ground, style.amplitude);
 
     // ------------------------------------------------------------ the stroke
-    const wanted = player.anim !== 'idle' && player.animPhase < 1;
-    const eta = player.contactIn;
-    if (wanted) {
-      const next = clips[strokeClipName(player, k)] ?? null;
+    if (busy) {
+      const next = clips[strokeClipName(player, k, (name) => name in clips)] ?? null;
       // A stroke that is past its contact cannot be before it again: that is another stroke.
       const another = this.strokePhase !== 'before' && eta > 0.02;
       if (next && (next !== this.strokeClip || another)) {
@@ -466,18 +636,18 @@ export class FigureAnimator implements AnimatedFigure {
         this.strokePhase = 'off';
       }
     }
-    const clip = this.strokeClip;
+    const swing = this.strokeClip;
     const active =
-      clip !== null && this.strokePhase !== 'off' && !(this.strokePhase === 'after' && this.strokeAt >= clip.dur - STROKE_OUT);
+      swing !== null && this.strokePhase !== 'off' && !(this.strokePhase === 'after' && this.strokeAt >= swing.dur - STROKE_OUT);
     const target = active ? 1 : 0;
     // What is left until the contact, for a stroke on its way to it; nothing, for one that is past it.
     const left = this.strokePhase === 'before' ? eta : 0;
     const rate = dt / (target > this.strokeWeight ? clamp(left, QUICKEST, STROKE_IN) : STROKE_OUT);
     // The ball is being hit right now and the stroke has only just been asked for: the racket is on it in this
     // very frame. With the sparkle and the short freeze of a good hit, it is the frame that gets looked at.
-    const struck = active && this.strokePhase === 'after' && this.strokeAt <= contactOf(clip) + 0.03;
+    const struck = active && this.strokePhase === 'after' && this.strokeAt <= contactOf(swing) + 0.03;
     this.strokeWeight = snap || struck ? target : clamp(this.strokeWeight + clamp(target - this.strokeWeight, -rate, rate), 0, 1);
-    if (clip && !active && this.strokeWeight <= 0) {
+    if (swing && !active && this.strokeWeight <= 0) {
       this.strokeClip = null;
       this.strokePhase = 'off';
     }
@@ -488,30 +658,21 @@ export class FigureAnimator implements AnimatedFigure {
     let lungeX = 0;
     let lungeY = 0;
     let reach = 0;
-    if (clip && this.strokeWeight > 0) {
-      samplePose(character, clip, Math.min(this.strokeAt, clip.dur), this.stroke);
+    let lower = 0;
+    if (swing && this.strokeWeight > 0) {
+      samplePose(character, swing, Math.min(this.strokeAt, swing.dur), this.stroke);
       if (this.strokeMix < 1) {
         this.strokeMix = Math.min(1, this.strokeMix + dt / clamp(left, QUICKEST, FADE));
         blendPose(character.bones, this.strokeFrom, this.stroke, smoothstep(0, 1, this.strokeMix), this.stroke);
       }
       const upper = smoothstep(0, 1, this.strokeWeight);
       // Standing, the whole body plays the stroke. Moving, the legs stay with the ground.
-      const lower = upper * (1 - smoothstep(0.5, 1.8, speed));
-      const bones = character.bones;
-      for (let i = 0; i < bones; i++) {
-        const w = this.legs[i] || i === 0 ? lower : upper;
-        if (w <= 0) continue;
-        const o = i * 4;
-        const dot = pose[o]! * this.stroke[o]! + pose[o + 1]! * this.stroke[o + 1]! + pose[o + 2]! * this.stroke[o + 2]! + pose[o + 3]! * this.stroke[o + 3]!;
-        const sign = dot < 0 ? -1 : 1;
-        for (let c = 0; c < 4; c++) pose[o + c] = pose[o + c]! * (1 - w) + this.stroke[o + c]! * sign * w;
-      }
-      const p = bones * 4;
-      for (let c = 0; c < 3; c++) pose[p + c] = pose[p + c]! * (1 - lower) + this.stroke[p + c]! * lower;
+      lower = upper * (1 - smoothstep(0.5, 1.8, speed));
+      this.layer(pose, this.stroke, upper, lower);
 
       // The ball is where the simulation says, not where the clip expects it:
       // around the contact the body takes a step toward it.
-      const hit = clip.hit;
+      const hit = this.hitOf(swing);
       if (hit && player.anim !== 'whiff' && this.strokePhase !== 'off' && Number.isFinite(player.contactIn)) {
         const near = lungeWeight(player.contactIn);
         if (near > 0) {
@@ -527,12 +688,16 @@ export class FigureAnimator implements AnimatedFigure {
         }
       }
     }
+    // How it stands, and the turn of the pelvis for the legs that follow the ground.
+    if (style) stand(pose, style);
+    if (this.twist !== 0) twistHips(character, pose, this.twist * (1 - lower));
+
     // The step eases in and out by itself, so nothing jumps if the plan changes. Right at the contact it hurries.
     const ease = snap ? 1 : 1 - Math.exp(-dt * (Math.abs(eta) < 0.06 ? 40 : 18));
     this.lungeX += (lungeX - this.lungeX) * ease;
     this.lungeY += (lungeY - this.lungeY) * ease;
     // What the character adds: its tell while the racket is back, a tic while it rests.
-    const made = this.readGesture(player, s);
+    const made = this.readGesture(player, s, mania !== undefined);
     const windup = player.tell !== null;
     const showing = made && !(windup && player.contactIn < TELL_BODY_UNTIL);
     const holding = made && !(windup && player.contactIn < TELL_RACKET_UNTIL);
@@ -543,12 +708,83 @@ export class FigureAnimator implements AnimatedFigure {
     this.y = player.y + this.lungeY + facing * this.gesture.step * gesture;
 
     // ------------------------------------------------------------ life
-    solveSkeleton(character, pose, this.skeleton);
-    if (clip && reach > 0.001) this.reach(player, clip, s, k, reach);
+    solveSkeleton(character, pose, this.skeleton, style);
+    if (swing && reach > 0.001) this.reach(player, swing, s, k, reach);
     if (gesture > 0.001) this.gesticulate(gesture, Math.min(gesture, smoothstep(0, 1, this.gestureRacket)));
     this.look(pose, s, k, ball, dt, this.strokeWeight > 0.5 ? 0.4 : 0.8, snap);
-    solveSkeleton(character, pose, this.skeleton);
-    skinMatrices(character, this.skeleton, this.bones);
+    solveSkeleton(character, pose, this.skeleton, style);
+    skinMatrices(character, this.skeleton, this.bones, style);
+  }
+
+  /** Lays one pose over another: `upper` of it on the trunk and the arms, `lower` on the legs and the pelvis. */
+  private layer(pose: Float32Array, over: Float32Array, upper: number, lower: number): void {
+    const bones = this.character.bones;
+    for (let i = 0; i < bones; i++) {
+      const w = this.legs[i] || i === 0 ? lower : upper;
+      if (w <= 0) continue;
+      const o = i * 4;
+      const dot = pose[o]! * over[o]! + pose[o + 1]! * over[o + 1]! + pose[o + 2]! * over[o + 2]! + pose[o + 3]! * over[o + 3]!;
+      const sign = dot < 0 ? -1 : 1;
+      for (let c = 0; c < 4; c++) pose[o + c] = pose[o + c]! * (1 - w) + over[o + c]! * sign * w;
+    }
+    const p = bones * 4;
+    for (let c = 0; c < 3; c++) pose[p + c] = pose[p + c]! * (1 - lower) + over[p + c]! * lower;
+  }
+
+  /**
+   * Where the middle of the racket is at the contact of a clip, for this
+   * character: its bones are scaled and it stands its own way, so it is not
+   * quite where the clip says for everybody. Null for a clip with no contact.
+   */
+  hitOf(clip: Clip): [number, number, number] | null {
+    if (!clip.hit) return null;
+    const style = this.style;
+    if (!style || (!style.scale && style.posture.length === 0) || this.racket < 0) return clip.hit;
+    let hit = this.hits.get(clip.name);
+    if (!hit) {
+      const pose = samplePose(this.character, clip, contactOf(clip), new Float32Array(this.character.poseSize));
+      stand(pose, style);
+      const skeleton = solveSkeleton(this.character, pose, createSkeleton(this.character), style);
+      hit = boneToCharacter(skeleton, this.racket, this.character.meta.racketCenter, [0, 0, 0]);
+      this.hits.set(clip.name, hit);
+    }
+    return hit;
+  }
+
+  /** Where the ball sits in the free hand, in the axes of the hand, from what the serve says about its start. */
+  private measureHand(): [number, number, number] | null {
+    const serve = this.character.clips.saque;
+    const hand = this.freeArm.end;
+    if (!serve?.ballHold || hand < 0) return null;
+    const pose = samplePose(this.character, serve, 0, new Float32Array(this.character.poseSize));
+    const skeleton = solveSkeleton(this.character, pose, createSkeleton(this.character));
+    const { rot, pos } = skeleton;
+    const at = serve.ballHold[0];
+    const dx = at[0] - pos[hand * 3]!;
+    const dy = at[1] - pos[hand * 3 + 1]!;
+    const dz = at[2] - pos[hand * 3 + 2]!;
+    const o = hand * 9;
+    // The rotation is by rows: its transpose takes the character's axes back to the hand's.
+    return [
+      rot[o]! * dx + rot[o + 3]! * dy + rot[o + 6]! * dz,
+      rot[o + 1]! * dx + rot[o + 4]! * dy + rot[o + 7]! * dz,
+      rot[o + 2]! * dx + rot[o + 5]! * dy + rot[o + 8]! * dz,
+    ];
+  }
+
+  /**
+   * Where the ball is while the free hand has it, on the court, with the pose
+   * of the last update. False when this character cannot say (an older file).
+   */
+  ballInHand(k: number, facing: 1 | -1, out: [number, number, number]): boolean {
+    const hand = this.freeArm.end;
+    if (!this.inHand || hand < 0) return false;
+    const s = facing > 0 ? -1 : 1;
+    boneToCharacter(this.skeleton, hand, this.inHand, this.at);
+    out[0] = this.x + s * this.at[0] * k;
+    out[1] = this.y + s * this.at[1] * k;
+    out[2] = this.at[2] * k;
+    return true;
   }
 
   /**
@@ -558,11 +794,12 @@ export class FigureAnimator implements AnimatedFigure {
    * racket jumping to it. The skeleton has to be the one of the pose.
    */
   private reach(player: ScenePlayer, clip: Clip, s: number, k: number, weight: number): void {
-    const hit = clip.hit;
+    const hit = this.hitOf(clip);
     if (!hit || this.arm.upper < 0) return;
     const character = this.character;
     const pose = this.pose;
     const skeleton = this.skeleton;
+    const style = this.style;
     const pos = skeleton.pos;
     // What separates the ball from where this clip meets it, in the character's own axes at life size.
     // The ball of a serve drops from the server's own hand: it is as much bigger than life as the server.
@@ -580,13 +817,13 @@ export class FigureAnimator implements AnimatedFigure {
       }
       const pelvis = character.bones * 4 + 2;
       pose[pelvis] = pose[pelvis]! - sink * weight;
-      solveSkeleton(character, pose, skeleton);
+      solveSkeleton(character, pose, skeleton, style);
       worldRotations(character, pose, this.world);
       // Knees go forward: the character looks along its own -y.
       for (let i = 0; i < 2; i++) {
         bendLimb(character, pose, skeleton, this.world, this.bothLegs[i]!, this.ankles[i * 3]!, this.ankles[i * 3 + 1]!, this.ankles[i * 3 + 2]!, 0, -0.6, 0);
       }
-      solveSkeleton(character, pose, skeleton);
+      solveSkeleton(character, pose, skeleton, style);
       dz += sink;
     }
 
@@ -596,15 +833,16 @@ export class FigureAnimator implements AnimatedFigure {
     worldRotations(character, pose, this.world);
     const hand = this.arm.end * 3;
     bendLimb(character, pose, skeleton, this.world, this.arm, pos[hand]! + dx * scale, pos[hand + 1]! + dy * scale, pos[hand + 2]! + dz * scale);
-    solveSkeleton(character, pose, skeleton);
+    solveSkeleton(character, pose, skeleton, style);
   }
 
   /**
    * Works out which gesture the character is making, if any. While there is
    * one it is kept in `this.gesture`; when it ends, the last one stays there
-   * to fade away. Returns whether one is on show.
+   * to fade away. Returns whether one is on show. A tic that has a clip of
+   * its own is not a gesture: the clip does it.
    */
-  private readGesture(player: ScenePlayer, s: number): boolean {
+  private readGesture(player: ScenePlayer, s: number, clipped: boolean): boolean {
     const tell = player.tell;
     if (tell && tell.pose) {
       this.gesture = noGesture();
@@ -614,7 +852,7 @@ export class FigureAnimator implements AnimatedFigure {
     }
     const act = player.act;
     const resting = player.anim === 'idle' || player.animPhase >= 1;
-    if (act && resting && act.t < act.duration) {
+    if (act && resting && !clipped && act.t < act.duration) {
       this.gesture = noGesture();
       actGesture(act.clip, act.t, act.duration, this.gesture);
       return true;
@@ -631,6 +869,7 @@ export class FigureAnimator implements AnimatedFigure {
     const character = this.character;
     const pose = this.pose;
     const skeleton = this.skeleton;
+    const style = this.style;
     const pos = skeleton.pos;
     const g = this.gesture;
 
@@ -641,14 +880,14 @@ export class FigureAnimator implements AnimatedFigure {
       }
       const pelvis = character.bones * 4 + 2;
       pose[pelvis] = pose[pelvis]! - g.crouch * weight;
-      solveSkeleton(character, pose, skeleton);
+      solveSkeleton(character, pose, skeleton, style);
       worldRotations(character, pose, this.world);
       for (let i = 0; i < 2; i++) {
         // The left foot goes further left and the right one further right.
         const out = (i === 0 ? 1 : -1) * g.stance * weight;
         bendLimb(character, pose, skeleton, this.world, this.bothLegs[i]!, this.ankles[i * 3]! + out, this.ankles[i * 3 + 1]!, this.ankles[i * 3 + 2]!, 0, -0.6, 0);
       }
-      solveSkeleton(character, pose, skeleton);
+      solveSkeleton(character, pose, skeleton, style);
     }
 
     if (g.free || g.racket) {
@@ -684,9 +923,9 @@ export class FigureAnimator implements AnimatedFigure {
       this.q[1] = Math.sin(half);
       this.q[2] = 0;
       this.q[3] = Math.cos(half);
-      multiplyInto(pose, this.neck * 4, this.q);
+      multiplyQuaternions(pose, this.neck * 4, this.q, 0, pose, this.neck * 4);
     }
-    solveSkeleton(character, pose, skeleton);
+    solveSkeleton(character, pose, skeleton, style);
   }
 
   /** Where the middle of the racket is, on the court, with the pose of the last update. */
@@ -772,14 +1011,9 @@ export class FigureAnimator implements AnimatedFigure {
     const gains = [0.35, 0.8, 1.15];
     for (let i = 0; i < this.braid.length; i++) {
       tilt(this.swayX * gains[i]! * amount, this.swayY * gains[i]! * amount, q);
-      multiplyInto(pose, this.braid[i]! * 4, q);
+      multiplyQuaternions(pose, this.braid[i]! * 4, q, 0, pose, this.braid[i]! * 4);
     }
   }
-}
-
-/** Fraction of a cycle, always from 0 to 1. */
-function cycle(turns: number): number {
-  return turns - Math.floor(turns);
 }
 
 /** How much of the step toward the ball is taken `eta` seconds before the contact (negative after it). */
@@ -812,20 +1046,4 @@ function tilt(rx: number, ry: number, out: Float32Array): Float32Array {
   out[2] = sx * sy;
   out[3] = cx * cy;
   return out;
-}
-
-/** pose[at..at+4] = pose[at..at+4] * q. */
-function multiplyInto(pose: Float32Array, at: number, q: Float32Array): void {
-  const ax = pose[at]!;
-  const ay = pose[at + 1]!;
-  const az = pose[at + 2]!;
-  const aw = pose[at + 3]!;
-  const bx = q[0]!;
-  const by = q[1]!;
-  const bz = q[2]!;
-  const bw = q[3]!;
-  pose[at] = aw * bx + ax * bw + ay * bz - az * by;
-  pose[at + 1] = aw * by - ax * bz + ay * bw + az * bx;
-  pose[at + 2] = aw * bz + ax * by - ay * bx + az * bw;
-  pose[at + 3] = aw * bw - ax * bx - ay * by - az * bz;
 }

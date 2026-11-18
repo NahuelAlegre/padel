@@ -44,7 +44,10 @@ export interface Scene {
   aim: SceneAim | null;
   /** Advice on where to stand, when the aid is on. */
   guide: { x: number; y: number } | null;
-  /** First visit: a ghost hand shows the gesture until the first good hit. */
+  /**
+   * A ghost hand showing a gesture, with no words: the first visit, a lesson
+   * of the tutorial, or a shot worth trying that the person has not found yet.
+   */
   tutorial: SceneTutorial | null;
   /** Rally pace above the base: 0 at the start, up to 1 in a long rally. */
   heat: number;
@@ -157,8 +160,16 @@ export interface SceneAim {
 export interface SceneTutorial {
   scheme: 'two' | 'one';
   stickSide: 'left' | 'right';
-  /** What to show: how to serve, or how to move and hit. */
-  step: 'serve' | 'play';
+  /** What to show: how to serve, how to move and hit, or only the thumb that aims. */
+  step: 'serve' | 'play' | 'aim';
+  /**
+   * Where the aiming thumb goes from where it went down, in CSS pixels of the
+   * screen (x to the right, y down). Null for the plain gesture. It is what
+   * tells a lob (far up) from a chiquita (down) without a word.
+   */
+  drag: { x: number; y: number } | null;
+  /** Where the thumb on the stick pushes, each -1..1 on the screen. Null when it is up to the person. */
+  push: { x: number; y: number } | null;
 }
 
 /** What the pointers are doing, so the renderer can draw the thumbs. */

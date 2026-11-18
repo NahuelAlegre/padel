@@ -1,7 +1,7 @@
 import { describe, it } from 'vitest';
 import type { RivalId } from '../../src/config';
 import { Match, type PlayerEntry } from '../../src/sim/match';
-import { aiEntry, humanEntry, playMatch, SKILLS, testConfig, type MatchSummary } from '../helpers';
+import { aiEntry, humanEntry, playMatch, SKILLS, testConfig, withTactics, type MatchSummary } from '../helpers';
 
 /**
  * Balance report: `npm run sim`.
@@ -99,6 +99,11 @@ describe('balance', () => {
         report(`Persona ${name} (a mano) vs ${rival}`, (seed) => {
           const config = testConfig();
           return [[humanEntry(seed, skill)], [aiEntry(config, rival, seed + 1)]];
+        });
+        // The same hands playing padel: see tests/sim/depth.sim.ts for what the difference is made of.
+        report(`Persona ${name} (a mano, con táctica) vs ${rival}`, (seed) => {
+          const config = testConfig();
+          return [[humanEntry(seed, withTactics(skill))], [aiEntry(config, rival, seed + 1)]];
         });
       });
     }

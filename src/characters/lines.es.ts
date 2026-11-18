@@ -8,7 +8,7 @@ import type { CharacterId, CharacterText } from './types';
  */
 export const CHARACTER_TEXT: Record<CharacterId, CharacterText> = {
   beto: {
-    style: 'El profe: pelotas cómodas, al medio y hacia vos. Le cuestan los ángulos.',
+    style: 'El profe: pelotas cómodas, al medio y hacia vos. Te deja subir a la red.',
     lines: {
       winPoint: [
         'Tranqui, se aprende.',
@@ -48,7 +48,7 @@ export const CHARACTER_TEXT: Record<CharacterId, CharacterText> = {
   },
 
   romina: {
-    style: 'Pega plano y fuerte desde donde esté. Si el punto se alarga, se apura.',
+    style: 'Pega fuerte y castiga la pelota floja. Si el punto se alarga, se apura.',
     lines: {
       winPoint: [
         '¡TOMÁ!',
@@ -88,7 +88,7 @@ export const CHARACTER_TEXT: Record<CharacterId, CharacterText> = {
   },
 
   chela: {
-    style: 'Globos altísimos, pared y paciencia. Casi no erra: hay que atacarla.',
+    style: 'Globos, chiquitas y paciencia desde el fondo. Hay que ganarle la red.',
     lines: {
       winPoint: [
         'Arriba, corazón.',

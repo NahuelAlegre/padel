@@ -124,7 +124,8 @@ export class ToonGL {
   private readonly screenData = new Float32Array(24);
   private readonly markVao: WebGLVertexArrayObject;
   private readonly meshVao: WebGLVertexArrayObject;
-  private readonly indexCount: number;
+  /** What is drawn of the mesh for somebody with nothing of their own: the body and the braid. */
+  private readonly plain: ReadonlyArray<readonly [number, number]>;
   private readonly reference: StageCamera = makeCamera(REFERENCE);
   private readonly vp = new Float32Array(16);
   /** The background, kept as a picture while the camera does not move. */
@@ -224,7 +225,7 @@ export class ToonGL {
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.must(gl.createBuffer()));
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, character.idx, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
-    this.indexCount = character.meta.mesh.ni;
+    this.plain = [[0, character.meta.mesh.ni]];
 
     const texture = this.must(gl.createTexture());
     const frame = this.must(gl.createFramebuffer());
@@ -388,7 +389,7 @@ export class ToonGL {
     gl.stencilFunc(gl.NOTEQUAL, SHADOW_BIT, SHADOW_BIT);
     gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
     gl.blendFunc(gl.DST_COLOR, gl.ZERO);
-    gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_SHORT, 0);
+    this.drawParts(figure);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     // 2) The body and 3) its outline, with a depth of their own. On the near
@@ -405,19 +406,28 @@ export class ToonGL {
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.BACK);
     gl.uniform1i(u.uMode!, 0);
-    gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_SHORT, 0);
+    this.drawParts(figure);
     gl.cullFace(gl.FRONT);
     gl.uniform1i(u.uMode!, 1);
     // Ink of 1.9 cm of the character, never thinner than about 0.6 CSS pixels.
     const ratio = canvas.width / frame.view.lay.vw;
     const pixelsPerMetre = (cam.f * frame.view.lay.s * ratio) / figure.depth;
     gl.uniform1f(u.uOutlinePx!, clamp(0.019 * figure.k * pixelsPerMetre, 0.62 * ratio, 2.3 * ratio));
-    gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_SHORT, 0);
+    this.drawParts(figure);
     gl.cullFace(gl.BACK);
     gl.disable(gl.CULL_FACE);
     gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.STENCIL_TEST);
     gl.stencilMask(0xff);
+  }
+
+  /** The body, and the pieces that are this character's: a braid, a cap, a moustache. */
+  private drawParts(figure: FigureFrame): void {
+    const { gl } = this;
+    for (const [first, count] of figure.parts ?? this.plain) {
+      // Indices are 16 bits each: the offset is in bytes.
+      gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, first * 2);
+    }
   }
 
   /** A square in the world with one of the shapes of the mark shader. */

@@ -5,6 +5,7 @@ import type { InputState } from '../input/state';
 import { teamDir } from '../sim/court';
 import type { Match } from '../sim/match';
 import type { Player } from '../sim/player';
+import { backpedalOf } from '../sim/pressure';
 import { resolveShot, serveTarget, type ShotContext } from '../sim/shots';
 import { pointAt } from '../sim/trajectory';
 import type { ShotIntent } from '../sim/types';
@@ -30,6 +31,10 @@ export interface SceneOptions {
   /** How much earlier than the real contact the timing signal peaks, in seconds. */
   cueLead: number;
   tutorial: SceneTutorial | null;
+  /** Show where to stand, whatever the level of help: a lesson, or a ball worth letting go to the glass. */
+  guide?: boolean;
+  /** Keep marking where the ball lands after its first bounce, whatever the level of help. */
+  follow?: boolean;
   /** Who each player of the match is, by position in `match.players`. Null for nobody in particular. */
   cast: Array<Character | null>;
   /** The tic each of them is in the middle of, if any. */
@@ -73,6 +78,8 @@ const context: ShotContext = {
   ballZ: 0,
   bounces: 1,
   walls: 0,
+  pressure: 0,
+  backpedal: 0,
 };
 
 /**
@@ -107,7 +114,7 @@ export function fillScene(
   scene.aidStrength = level === 'minimal' ? options.aidStrength : 1;
   scene.heat = match.config.rules.heatMax > 0 ? match.heat / match.config.rules.heatMax : 0;
 
-  const held = match.phase === 'serve';
+  const held = match.phase === 'serve' || match.ballHeld;
   scene.ball.x = lerp(match.ballPrev.x, match.ball.x, alpha);
   scene.ball.y = lerp(match.ballPrev.y, match.ball.y, alpha);
   scene.ball.z = lerp(match.ballPrev.z, match.ball.z, alpha);
@@ -208,7 +215,7 @@ export function fillScene(
     for (let i = 0; i < trajectory.bounces.length; i++) {
       const next = trajectory.bounces[i]!;
       if (next.t <= time) continue;
-      if (level === 'minimal') {
+      if (level === 'minimal' && !(options.follow && coming)) {
         const mine = human !== null && next.y * teamDir(human.team) < 0;
         if (!coming || i !== 0 || !mine) break;
       }
@@ -238,7 +245,7 @@ export function fillScene(
 
   // Where it would be best to stand. Shown only while it is some way off.
   const advice = human.guide;
-  if (level === 'full' && human.manual && advice) {
+  if ((level === 'full' || (options.guide && level !== 'none')) && human.manual && advice) {
     const away = Math.hypot(advice.stanceX - human.x, advice.stanceY - human.y);
     if (away > 0.45) {
       guide.x = advice.stanceX;
@@ -293,12 +300,17 @@ export function fillScene(
     context.ballZ = plan.z;
     context.bounces = point.bounces;
     context.walls = point.walls;
+    // What the ball that is coming allows: a difficult one cannot be aimed as wide or as deep.
+    context.pressure = match.expectedPressure(human);
+    context.backpedal = backpedalOf(-human.vy * dir, plan.z, match.config);
   } else {
     context.ballX = human.x + human.hand * dir * 0.6;
     context.ballY = human.y + dir * 0.2;
     context.ballZ = 0.9;
     context.bounces = 1;
     context.walls = 0;
+    context.pressure = 0;
+    context.backpedal = 0;
   }
   const shot = resolveShot(context, asked, match.config);
   if (marked) {

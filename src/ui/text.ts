@@ -1,5 +1,6 @@
 import type { FaultReason, PointReason } from '../sim/rules';
 import type { Quality, ShotKind } from '../sim/types';
+import type { LessonId } from '../app/drill';
 
 /**
  * Name of a shot as it is called on court. The player never picks it from a
@@ -96,8 +97,26 @@ export const TEXT = {
   win: '¡Ganaste!',
   lose: 'Perdiste',
   games: 'juegos',
-  demo: 'Ver una demo',
+  demo: 'Demo',
   rival: 'Rival',
+
+  /** The tutorial: a name and a few words for each lesson. Everything else is shown, not said. */
+  tutorial: 'Tutorial',
+  lessons: 'Lecciones',
+  lessonsNote: 'Cortas y jugando. Se pueden repetir o saltear.',
+  lessonDone: 'Hecha',
+  lessonJustDone: (name: string): string => `¡${name}: hecha!`,
+  coach: 'Beto',
+  lesson: {
+    move: { name: 'Moverse y pegar', cue: 'Andá a la pelota y pegale' },
+    aim: { name: 'Apuntar', cue: 'Al lado vacío' },
+    lob: { name: 'Globo', cue: 'Por arriba del que está en la red' },
+    drop: { name: 'Chiquita', cue: 'Cortita, cuando está lejos' },
+    wall: { name: 'La pared', cue: 'Dejala picar y salir del vidrio' },
+    bandeja: { name: 'Bandeja', cue: 'Dos pasos atrás y por arriba' },
+    smash: { name: 'Remate', cue: 'Corta y alta: ¡rematá!' },
+    read: { name: 'Leer el gesto', cue: 'Mirá a dónde señala' },
+  } satisfies Record<LessonId, { name: string; cue: string }>,
 
   /** How the history with a rival reads on the start screen. */
   record: {

@@ -172,6 +172,47 @@ body {
   display: none;
 }
 
+.score[hidden] {
+  display: none;
+}
+
+/* A lesson of the tutorial, where the scoreboard goes: a name, a few words and its pips. */
+#lesson {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  left: calc(10px + env(safe-area-inset-left, 0px));
+  display: grid;
+  row-gap: 2px;
+  max-width: min(240px, calc(100% - 84px));
+  padding: 8px 12px 9px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(34, 24, 42, 0.78);
+}
+
+#lesson[hidden] {
+  display: none;
+}
+
+#lesson b {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+#lesson small {
+  font-size: 13px;
+  line-height: 1.25;
+  color: var(--muted);
+}
+
+#lesson .pips {
+  margin-top: 2px;
+  font-size: 13px;
+  letter-spacing: 0.3em;
+  color: var(--accent);
+}
+
 #pause {
   pointer-events: auto;
   position: absolute;
@@ -433,6 +474,26 @@ body {
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
   gap: 8px;
+}
+
+/* The lessons of the tutorial: two columns of buttons, each with its number and whether it is done. */
+.panel .lessons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.panel .lessons .btn {
+  min-height: 60px;
+  padding: 8px 10px;
+  font-size: 15px;
+  text-align: left;
+}
+
+.panel .lessons .btn small {
+  margin-top: 4px;
+  font-size: 12px;
 }
 
 /* Pinned to the bottom of a panel that scrolls. */

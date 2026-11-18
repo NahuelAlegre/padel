@@ -35,6 +35,11 @@ export interface ShotIntent {
   power: number;
   /** How careless this swing is: multiplies the scatter. Left out, it is 1. */
   scatter?: number;
+  /**
+   * Strain the player brings to this swing on top of what the rally has done
+   * to it: somebody impatient, deep into a point. Left out, it is 0.
+   */
+  tension?: number;
 }
 
 export function createShotIntent(aim = 0, depth = 0.6, lob = false, power = 1): ShotIntent {

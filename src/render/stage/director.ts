@@ -29,6 +29,9 @@ const TRAIL_STEP = 0.014;
 /** The timing signal lights up this long before the contact. */
 const GLOW_LEAD = 0.18;
 const GLOW_TAIL = 0.07;
+/** How much the aim mark swells, and for how long, when the thumb crosses into another shot. */
+const AIM_POP = 0.45;
+const AIM_POP_SECONDS = 0.22;
 /** Seconds the ball of a serve takes to get from where it was shown in the hand to where it really is. */
 const SERVE_BLEND = 0.12;
 
@@ -72,6 +75,8 @@ export class Director {
   private readonly figures: FigureFrame[] = [];
   private readonly bounce: MarkFrame = mark('cream');
   private readonly aim: MarkFrame = mark('coral');
+  private aimShape: 'plain' | 'lob' | 'drop' = 'plain';
+  private aimPop = 1;
   private readonly guide = { x: 0, y: 0, alpha: 1 };
   private readonly ring = { x: 0, y: 0, k: 1 };
   private readonly timing = { x: 0, y: 0, z: 0, eta: 0, perfect: 0, good: 0 };
@@ -193,7 +198,7 @@ export class Director {
       const player = scene.players[i]!;
       let figure = figures[i];
       if (!figure) {
-        figure = { player, x: 0, y: 0, k: 1, facing: 1, depth: 30, palette: this.paletteFor(player), bones: null };
+        figure = { player, x: 0, y: 0, k: 1, facing: 1, depth: 30, palette: this.paletteFor(player), parts: null, bones: null };
         figures[i] = figure;
       }
       figure.player = player;
@@ -333,13 +338,22 @@ export class Director {
       const m = this.aim;
       m.x = target.x;
       m.y = target.y;
-      const small = target.kind === 'drop';
-      m.radius = full ? (small ? 0.38 : 0.55) : small ? 0.24 : 0.34;
-      m.alpha = (target.armed ? 1 : 0.9) * smoothstep(0, 0.08, this.aimAge);
+      // The mark says which shot the thumb is asking for by its shape: a
+      // second ring for a lob (it comes down from above), a small one for a
+      // chiquita. When the thumb crosses from one to another the mark pops,
+      // which is how somebody finds the other shots without reading.
+      const shape = target.kind === 'lob' ? 'lob' : target.kind === 'drop' ? 'drop' : 'plain';
+      if (shape !== this.aimShape) {
+        if (this.aimAge > dt) this.aimPop = 0;
+        this.aimShape = shape;
+      }
+      this.aimPop += dt;
+      const pop = 1 + AIM_POP * (1 - smoothstep(0, AIM_POP_SECONDS, this.aimPop));
+      const small = shape === 'drop';
+      m.radius = (full ? (small ? 0.38 : 0.55) : small ? 0.28 : 0.42) * pop;
+      m.alpha = smoothstep(0, 0.08, this.aimAge);
       m.progress = 0;
-      // A lob comes down from above: a second ring. It is how the mark says
-      // the thumb has gone far enough, without a word.
-      m.double = target.kind === 'lob';
+      m.double = shape === 'lob';
       m.halo = full ? target.risk : 0;
       frame.aim = m;
     } else {

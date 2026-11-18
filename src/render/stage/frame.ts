@@ -39,6 +39,8 @@ export interface FigureFrame {
   depth: number;
   /** Its colours: one for every material of the character. */
   palette: Float32Array;
+  /** What of the mesh is this character: [first index, how many]. Null draws the plain body. */
+  parts: ReadonlyArray<readonly [number, number]> | null;
   /** The matrix of every bone, when there is a skeleton to pose. */
   bones: Float32Array | null;
 }

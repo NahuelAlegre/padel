@@ -24,7 +24,7 @@ Lo que distingue a este juego es que es accesible y respetuoso con el jugador:
 
 ## Decisiones tomadas
 
-- **Cámara**: desde atrás del jugador, con profundidad simulada (2D con proyección en perspectiva). La sombra de la pelota en el piso es lo que muestra a qué altura va.
+- **Punto de vista**: desde atrás del jugador, en 3D. La sombra de la pelota en el piso es lo que muestra a qué altura va.
 - **Estilo visual (decidido el 2026-11-18)**: **3D toon en tiempo real** (WebGL2, sombreado toon con contorno de tinta) sobre una **cancha con luz horneada en capas**, con ambiente de club cálido al atardecer. Es el camino B de `design/prueba-3d/`.
   - Se eligió frente a sprites prerrenderizados (camino A) por fluidez, peso, carga y escalabilidad del elenco.
   - El camino A queda como respaldo para equipos sin WebGL2.
@@ -32,13 +32,14 @@ Lo que distingue a este juego es que es accesible y respetuoso con el jugador:
   - Lo buscado es "interesante y estético", no realista. El pixel art y el 2D vectorial se descartaron.
   - Los favoritos del usuario en el tablero de referencias son 3D toon y cel shading (Bomb Rush Cyberfunk, Rollerdrome, OlliOlli World, Racket Club, Messenger) y ambientes cálidos.
 - **Escala de personajes**: la variante media, con exageración que varía con la profundidad (≈1,2× el cercano, ≈1,5× el rival). La cancha tiene que sentirse grande, "todo chico en un espacio grande".
-- **Cámara**: acompaña al jugador de forma sutil, con estas reglas:
+- **Cámara**: el jugador elige en Opciones entre **"Acompaña"** y **"Fija"** (cancha entera), porque a cada uno le puede gustar una u otra. La que acompaña lo hace de forma sutil, con estas reglas:
   - El vidrio de fondo propio, con 2 o 3 m de margen, siempre a la vista.
   - Paneo lateral y zoom leve con límites.
   - Se abre un poco con globos y pelotas al fondo.
   - Zona muerta y suavizado.
   - Con "reducir movimiento", cámara fija de cancha entera.
 - **Calidad del arte**: la primera maqueta se rechazó porque los personajes "parecen palitos y círculos que intentan ser un humano". Los personajes necesitan proporciones estilizadas pero creíbles, volumen y animación con carácter.
+- **Prioridad en personajes: la animación.** Las siluetas propias de cada personaje se hacen solo si no suman peso, por ejemplo con escala de huesos o piezas chicas.
 - **Orientación**: vertical primero. En escritorio se muestra como una columna vertical centrada.
 - **Jugadores**: 1 contra 1 al principio, pero la arquitectura tiene que soportar dobles (2 contra 2) sin reescribir. Equipos con N jugadores e IA o control por jugador; nada de 1 contra 1 fijo en el código.
 - **Controles**: simples y fluidos.

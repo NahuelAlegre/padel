@@ -19,7 +19,7 @@ import bpy
 import numpy as np
 from mathutils import Vector
 
-import animaciones
+import animaciones_a as animaciones   # clips de la ronda 1: la versión de sprites quedó congelada
 import comun
 import personaje
 import rig

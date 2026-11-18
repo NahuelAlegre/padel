@@ -2,36 +2,14 @@
    - Cancha: las capas horneadas se proyectan desde la cámara de referencia sobre planos del mundo
      (piso, paredes, red...). Con la cámara quieta se ve idéntica al render; si la cámara se mueve
      un poco, cada plano se desplaza con la perspectiva que le toca.
-   - Personajes: malla con esqueleto, sombreado toon de tres tonos, contorno de tinta por casco
-     invertido y sombra proyectada en el piso con la forma de la pose. */
+   - Personajes: los dibuja lib/personaje.js (malla con esqueleto, toon de tres tonos, contorno de
+     tinta y sombra proyectada en el piso con la forma de la pose). */
 (function (g) {
   'use strict';
   const P3 = (g.P3 = g.P3 || {});
   const { sin, cos, PI, min, max, sqrt, floor } = Math;
 
-  /* ---------- utilidades GL ---------- */
-  function program(gl, vs, fs) {
-    const mk = (type, src) => {
-      const s = gl.createShader(type);
-      gl.shaderSource(s, src);
-      gl.compileShader(s);
-      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) + '\n' + src);
-      return s;
-    };
-    const p = gl.createProgram();
-    gl.attachShader(p, mk(gl.VERTEX_SHADER, vs));
-    gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs));
-    gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-    const u = {};
-    const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
-    for (let i = 0; i < n; i++) {
-      const info = gl.getActiveUniform(p, i);
-      const name = info.name.replace(/\[0\]$/, '');
-      u[name] = gl.getUniformLocation(p, name);
-    }
-    return { p, u };
-  }
+  const program = P3.program;
 
   /* matriz vista-proyección (por columnas) de una cámara de P3 y un encuadre de P3.layout */
   P3.viewProj = function (cam, lay, out) {
@@ -77,66 +55,6 @@
   in vec2 vUV; out vec4 o; uniform sampler2D uTex;
   void main() { o = texture(uTex, vUV); }`;
 
-  /* Personaje: el mismo vértice sirve para el color, el contorno y la sombra (uMode). */
-  const CHAR_VS = `#version 300 es
-  precision highp float; precision highp int;
-  in vec3 aPos; in vec3 aNrm; in float aMat; in float aOut; in vec3 aJoints; in vec2 aWeights;
-  uniform mat4 uVP; uniform mat4 uBones[26]; uniform vec3 uCenter, uHalf;
-  uniform vec4 uRoot;            /* x, y, giro, escala */
-  uniform vec4 uPal[26];
-  uniform int uMode;             /* 0 color, 1 contorno, 2 sombra */
-  uniform vec3 uSun; uniform vec2 uViewport; uniform float uOutlinePx;
-  out vec3 vN; out vec3 vW; flat out vec4 vBase;
-  void main() {
-    vec4 p = vec4(uCenter + uHalf * aPos, 1.0);
-    float w2 = 1.0 - aWeights.x - aWeights.y;
-    mat4 B = uBones[int(aJoints.x)] * aWeights.x + uBones[int(aJoints.y)] * aWeights.y + uBones[int(aJoints.z)] * w2;
-    vec3 lp = (B * p).xyz;
-    vec3 ln = mat3(B) * aNrm;
-    float c = cos(uRoot.z), s = sin(uRoot.z);
-    vec3 wp = vec3(c * lp.x - s * lp.y, s * lp.x + c * lp.y, lp.z) * uRoot.w + vec3(uRoot.xy, 0.0);
-    vec3 wn = normalize(vec3(c * ln.x - s * ln.y, s * ln.x + c * ln.y, ln.z));
-    vBase = uPal[int(aMat + 0.5)];
-    vN = wn; vW = wp;
-    if (uMode == 2) {
-      wp = vec3(wp.xy - uSun.xy * (wp.z / uSun.z), 0.012);     /* aplastada contra el piso, lejos del sol */
-      gl_Position = uVP * vec4(wp, 1.0);
-      return;
-    }
-    vec4 clip = uVP * vec4(wp, 1.0);
-    if (uMode == 1) {
-      vec4 cn = uVP * vec4(wp + wn * 0.02, 1.0);
-      vec2 d = cn.xy / cn.w - clip.xy / clip.w;
-      float l = length(d * uViewport);
-      if (l > 1e-5) clip.xy += (d * uViewport / l) * (uOutlinePx * aOut * 2.0) / uViewport * clip.w;
-      clip.z += 0.0006 * clip.w;
-    }
-    gl_Position = clip;
-  }`;
-  const CHAR_FS = `#version 300 es
-  precision highp float; precision highp int;
-  in vec3 vN; in vec3 vW; flat in vec4 vBase; out vec4 o;
-  uniform int uMode; uniform vec3 uKey, uSun, uEye, uInk, uShadowTint, uLightGain, uRim, uShadowCol;
-  void main() {
-    if (uMode == 1) { o = vec4(uInk, 1.0); return; }
-    if (uMode == 2) { o = vec4(uShadowCol, 1.0); return; }
-    vec3 n = normalize(vN);
-    vec3 base = vBase.rgb;
-    float ndl = dot(n, uKey);
-    float mid = step(0.22, ndl), hi = step(0.80, ndl);
-    vec3 col;
-    if (vBase.a > 0.5) {                       /* materiales planos: ojos, cejas, boca */
-      col = mix(base * (0.5 + 0.5 * uShadowTint), base, mid);
-    } else {
-      col = mix(base * uShadowTint, base, mid);
-      col = mix(col, min(base * uLightGain + 0.03, vec3(1.0)), hi);
-      float facing = 1.0 - abs(dot(n, normalize(uEye - vW)));
-      float rim = step(0.56, facing) * step(0.18, dot(n, uSun)) * 0.9;
-      col = mix(col, min(base * 0.45 + uRim * 0.62, vec3(1.0)), rim);
-    }
-    o = vec4(col, 1.0);
-  }`;
-
   /* Pelota, su sombra y los anillos de efecto: un cuadrado con forma dada por el fragment shader. */
   const FX_VS = `#version 300 es
   precision highp float;
@@ -175,107 +93,6 @@
     }
   }`;
 
-  /* ---------- personaje: lectura del binario ---------- */
-  P3.parseCharacter = function (buf) {
-    const dv = new DataView(buf);
-    const magic = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3));
-    if (magic !== 'PAD1') throw new Error('Formato de personaje desconocido');
-    const jl = dv.getUint32(4, true);
-    const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, jl)));
-    const base = 8 + jl;
-    const m = meta.mesh;
-    const view = (T, off, n) => new T(buf, base + off, n);
-    const data = {
-      meta,
-      pos: view(Int16Array, m.pos, m.nv * 3), nrm: view(Int8Array, m.nrm, m.nv * 3), mat: view(Uint8Array, m.mat, m.nv),
-      out: view(Uint8Array, m.out, m.nv), joints: view(Uint8Array, m.joints, m.nv * 3), weights: view(Uint8Array, m.weights, m.nv * 2),
-      idx: view(Uint16Array, m.idx, m.ni), clips: {},
-    };
-    const nb = meta.bones.names.length, ch = nb * 4 + 3;
-    for (const c of meta.clips) {
-      const d = view(Int16Array, c.data, ch * c.frames);
-      const out = new Float32Array(ch * c.frames);          /* por cuadro: nb cuaterniones + pelvis */
-      for (let k = 0; k < ch; k++) {
-        let acc = 0;
-        const sc = k < nb * 4 ? 1 / 32767 : 1 / 10000;
-        /* las diferencias se guardaron en 16 bits con desborde: se acumulan igual, módulo 65536 */
-        for (let f = 0; f < c.frames; f++) { acc = ((acc + d[k * c.frames + f] + 32768) & 0xffff) - 32768; out[f * ch + k] = acc * sc; }
-      }
-      data.clips[c.name] = Object.assign({}, c, { samples: out });
-    }
-    return data;
-  };
-
-  /* Pose de un clip en un instante: cuaterniones locales + pelvis, interpolados entre cuadros. */
-  P3.samplePose = function (ch, clip, time, out) {
-    const nb = ch.meta.bones.names.length, n = nb * 4 + 3, fps = ch.meta.fps;
-    let f = (time - (clip.t0 || 0)) * fps, f0, f1;      /* t0: desfase para que un cuadro caiga justo en el impacto */
-    if (clip.loop) { f = ((f % clip.frames) + clip.frames) % clip.frames; f0 = floor(f); f1 = (f0 + 1) % clip.frames; } else {
-      f = P3.clamp(f, 0, clip.frames - 1); f0 = floor(f); f1 = min(clip.frames - 1, f0 + 1);
-    }
-    const u = f - f0, s = clip.samples, a = f0 * n, b = f1 * n;
-    for (let i = 0; i < nb; i++) {
-      const k = i * 4;
-      let d = s[a + k] * s[b + k] + s[a + k + 1] * s[b + k + 1] + s[a + k + 2] * s[b + k + 2] + s[a + k + 3] * s[b + k + 3];
-      const sg = d < 0 ? -1 : 1;
-      for (let c = 0; c < 4; c++) out[k + c] = s[a + k + c] * (1 - u) + s[b + k + c] * u * sg;
-    }
-    for (let c = 0; c < 3; c++) out[nb * 4 + c] = s[a + nb * 4 + c] * (1 - u) + s[b + nb * 4 + c] * u;
-    return out;
-  };
-  P3.blendPose = function (nb, a, b, w, out) {
-    for (let i = 0; i < nb; i++) {
-      const k = i * 4;
-      const d = a[k] * b[k] + a[k + 1] * b[k + 1] + a[k + 2] * b[k + 2] + a[k + 3] * b[k + 3];
-      const sg = d < 0 ? -1 : 1;
-      for (let c = 0; c < 4; c++) out[k + c] = a[k + c] * (1 - w) + b[k + c] * w * sg;
-    }
-    for (let c = 0; c < 3; c++) out[nb * 4 + c] = a[nb * 4 + c] * (1 - w) + b[nb * 4 + c] * w;
-    return out;
-  };
-
-  /* De la pose a las matrices de cada hueso (por columnas): M = T(P) · R · T(-reposo). */
-  P3.poseToMatrices = function (ch, pose, mats, work) {
-    const B = ch.meta.bones, nb = B.names.length;
-    const rot = work.rot, pos = work.pos;      /* rotación (9) y posición (3) del mundo por hueso */
-    for (let i = 0; i < nb; i++) {
-      const k = i * 4;
-      let x = pose[k], y = pose[k + 1], z = pose[k + 2], w = pose[k + 3];
-      const l = 1 / (sqrt(x * x + y * y + z * z + w * w) || 1);
-      x *= l; y *= l; z *= l; w *= l;
-      /* matriz local por filas */
-      const r0 = 1 - 2 * (y * y + z * z), r1 = 2 * (x * y - z * w), r2 = 2 * (x * z + y * w);
-      const r3 = 2 * (x * y + z * w), r4 = 1 - 2 * (x * x + z * z), r5 = 2 * (y * z - x * w);
-      const r6 = 2 * (x * z - y * w), r7 = 2 * (y * z + x * w), r8 = 1 - 2 * (x * x + y * y);
-      const par = B.parents[i], o = i * 9, rest = B.rest[i];
-      if (par < 0) {
-        rot[o] = r0; rot[o + 1] = r1; rot[o + 2] = r2; rot[o + 3] = r3; rot[o + 4] = r4; rot[o + 5] = r5; rot[o + 6] = r6; rot[o + 7] = r7; rot[o + 8] = r8;
-        pos[i * 3] = pose[nb * 4]; pos[i * 3 + 1] = pose[nb * 4 + 1]; pos[i * 3 + 2] = pose[nb * 4 + 2];
-      } else {
-        const p = par * 9, pr = B.rest[par];
-        for (let r = 0; r < 3; r++) {
-          const a = rot[p + r * 3], b = rot[p + r * 3 + 1], c = rot[p + r * 3 + 2];
-          rot[o + r * 3] = a * r0 + b * r3 + c * r6;
-          rot[o + r * 3 + 1] = a * r1 + b * r4 + c * r7;
-          rot[o + r * 3 + 2] = a * r2 + b * r5 + c * r8;
-        }
-        const dx = rest[0] - pr[0], dy = rest[1] - pr[1], dz = rest[2] - pr[2];
-        pos[i * 3] = pos[par * 3] + rot[p] * dx + rot[p + 1] * dy + rot[p + 2] * dz;
-        pos[i * 3 + 1] = pos[par * 3 + 1] + rot[p + 3] * dx + rot[p + 4] * dy + rot[p + 5] * dz;
-        pos[i * 3 + 2] = pos[par * 3 + 2] + rot[p + 6] * dx + rot[p + 7] * dy + rot[p + 8] * dz;
-      }
-      const m = i * 16;
-      mats[m] = rot[o]; mats[m + 1] = rot[o + 3]; mats[m + 2] = rot[o + 6]; mats[m + 3] = 0;
-      mats[m + 4] = rot[o + 1]; mats[m + 5] = rot[o + 4]; mats[m + 6] = rot[o + 7]; mats[m + 7] = 0;
-      mats[m + 8] = rot[o + 2]; mats[m + 9] = rot[o + 5]; mats[m + 10] = rot[o + 8]; mats[m + 11] = 0;
-      mats[m + 12] = pos[i * 3] - (rot[o] * rest[0] + rot[o + 1] * rest[1] + rot[o + 2] * rest[2]);
-      mats[m + 13] = pos[i * 3 + 1] - (rot[o + 3] * rest[0] + rot[o + 4] * rest[1] + rot[o + 5] * rest[2]);
-      mats[m + 14] = pos[i * 3 + 2] - (rot[o + 6] * rest[0] + rot[o + 7] * rest[1] + rot[o + 8] * rest[2]);
-      mats[m + 15] = 1;
-    }
-    return mats;
-  };
-
   /* ---------- renderer ---------- */
   P3.makeRenderer = function (canvas, court, chData) {
     const gl = canvas.getContext('webgl2', { antialias: true, alpha: false, stencil: true, depth: true, powerPreference: 'high-performance' });
@@ -285,7 +102,8 @@
     canvas.addEventListener('webglcontextrestored', () => { g.location.reload(); });
 
     const pLayer = program(gl, LAYER_VS, LAYER_FS), pScreen = program(gl, SCREEN_VS, SCREEN_FS);
-    const pChar = program(gl, CHAR_VS, CHAR_FS), pFx = program(gl, FX_VS, FX_FS);
+    const pFx = program(gl, FX_VS, FX_FS);
+    const charGL = P3.makeCharacterGL(gl, chData);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
 
     /* texturas de las capas */
@@ -350,41 +168,12 @@
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]), gl.STATIC_DRAW);
     { const loc = gl.getAttribLocation(pFx.p, 'aPos'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0); }
 
-    /* malla del personaje */
-    const M = chData.meta.mesh, nb = chData.meta.bones.names.length;
-    const chVao = gl.createVertexArray();
-    gl.bindVertexArray(chVao);
-    const attr = (name, data, size, type, norm) => {
-      const b = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, b);
-      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-      const loc = gl.getAttribLocation(pChar.p, name);
-      if (loc < 0) return;
-      gl.enableVertexAttribArray(loc);
-      gl.vertexAttribPointer(loc, size, type, norm, 0, 0);
-    };
-    attr('aPos', chData.pos, 3, gl.SHORT, true);
-    attr('aNrm', chData.nrm, 3, gl.BYTE, true);
-    attr('aMat', chData.mat, 1, gl.UNSIGNED_BYTE, false);
-    attr('aOut', chData.out, 1, gl.UNSIGNED_BYTE, true);
-    attr('aJoints', chData.joints, 3, gl.UNSIGNED_BYTE, false);
-    attr('aWeights', chData.weights, 2, gl.UNSIGNED_BYTE, true);
-    const ib = gl.createBuffer();
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, chData.idx, gl.STATIC_DRAW);
-    gl.bindVertexArray(null);
-
-    const palettes = {};
-    for (const name in chData.meta.palettes) {
-      const a = new Float32Array(26 * 4);
-      chData.meta.palettes[name].forEach((c, i) => { a[i * 4] = c[0]; a[i * 4 + 1] = c[1]; a[i * 4 + 2] = c[2]; a[i * 4 + 3] = chData.meta.flat[i] ? 1 : 0; });
-      palettes[name] = a;
-    }
-    const key = (() => { const v = [-0.5, -0.6, 0.62]; const l = Math.hypot(...v); return v.map((c) => c / l); })();
     const vp = new Float32Array(16);
     const ref = P3.makeCamera(P3.REF);
-    R.triangles = (M.ni / 3) | 0;
+    const M = chData.meta.mesh;
+    R.triangles = charGL.triangles() | 0;
     R.vertices = M.nv;
+    R.character = charGL;
 
     R.resize = function (lay, dpr) {
       const w = Math.round(lay.colW * dpr), h = Math.round(lay.vh * dpr);
@@ -425,53 +214,14 @@
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
 
+    const env = { vp, eye: null, viewport: [1, 1], outlinePx: 1, shadow: P3.SHADOW_RGB };
     function drawCharacter(c, cam, lay) {
-      const u = pChar.u;
-      gl.useProgram(pChar.p);
-      gl.bindVertexArray(chVao);
-      gl.uniformMatrix4fv(u.uVP, false, vp);
-      gl.uniformMatrix4fv(u.uBones, false, c.mats);
-      gl.uniform3fv(u.uCenter, M.center);
-      gl.uniform3fv(u.uHalf, M.half);
-      gl.uniform4f(u.uRoot, c.x, c.y, (c.yaw * PI) / 180, c.k);
-      gl.uniform4fv(u.uPal, palettes[c.palette]);
-      gl.uniform3fv(u.uSun, P3.SUN);
-      gl.uniform3fv(u.uKey, key);
-      gl.uniform3fv(u.uEye, cam.pos);
-      gl.uniform3fv(u.uInk, chData.meta.ink);
-      gl.uniform3fv(u.uShadowTint, chData.meta.shadowTint);
-      gl.uniform3fv(u.uLightGain, chData.meta.lightGain);
-      gl.uniform3fv(u.uRim, chData.meta.rimColor);
-      gl.uniform3fv(u.uShadowCol, P3.SHADOW_RGB);
-      gl.uniform2f(u.uViewport, canvas.width, canvas.height);
-      /* 1) sombra en el piso: se multiplica una sola vez por píxel, gracias al stencil */
-      gl.uniform1i(u.uMode, 2);
-      gl.disable(gl.DEPTH_TEST);
-      gl.disable(gl.CULL_FACE);
-      gl.enable(gl.STENCIL_TEST);
-      gl.clear(gl.STENCIL_BUFFER_BIT);
-      gl.stencilFunc(gl.NOTEQUAL, 1, 0xff);
-      gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
-      gl.blendFunc(gl.DST_COLOR, gl.ZERO);
-      gl.drawElements(gl.TRIANGLES, M.ni, gl.UNSIGNED_SHORT, 0);
-      gl.disable(gl.STENCIL_TEST);
-      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      /* 2) cuerpo y 3) contorno, con profundidad propia */
-      gl.enable(gl.DEPTH_TEST);
-      gl.clear(gl.DEPTH_BUFFER_BIT);
-      gl.enable(gl.CULL_FACE);
-      gl.cullFace(gl.BACK);
-      gl.uniform1i(u.uMode, 0);
-      gl.drawElements(gl.TRIANGLES, M.ni, gl.UNSIGNED_SHORT, 0);
-      gl.cullFace(gl.FRONT);
-      gl.uniform1i(u.uMode, 1);
       const ppm = (cam.f * lay.s * R.dpr) / c.depth;        /* px del dispositivo por metro */
+      env.eye = cam.pos;
+      env.viewport[0] = canvas.width; env.viewport[1] = canvas.height;
       /* tinta de 1,9 cm del personaje, igual que en los sprites, pero nunca más fina que ~0,6 px CSS */
-      gl.uniform1f(u.uOutlinePx, P3.clamp(0.019 * c.k * ppm, 0.62 * R.dpr, 2.3 * R.dpr));
-      gl.drawElements(gl.TRIANGLES, M.ni, gl.UNSIGNED_SHORT, 0);
-      gl.cullFace(gl.BACK);
-      gl.disable(gl.CULL_FACE);
-      gl.disable(gl.DEPTH_TEST);
+      env.outlinePx = P3.clamp(0.019 * c.k * ppm, 0.62 * R.dpr, 2.3 * R.dpr);
+      charGL.draw(c, env);
     }
 
     function fx(kind, c, ax, ay, col, a, b, multiply) {
@@ -543,7 +293,7 @@
     R.memory = () => {
       let b = 0;
       for (const l of court.layers) b += l.image.naturalWidth * l.image.naturalHeight * 4 * 1.333;
-      return b + M.nv * 16 + M.ni * 2;
+      return b + M.nv * 16 + (M.nt || M.ni) * 2;
     };
     /* tiempo de GPU por cuadro, si el navegador lo deja medir (solo con ?gpu=1) */
     const timer = gl.getExtension('EXT_disjoint_timer_query_webgl2');

@@ -89,8 +89,22 @@ def solve(pose):
     child('spine', 'hips', rot(*p['spine']))
     child('chest', 'spine', rot(*p['chest']))
     l, t, s = p['head']
-    child('neck', 'chest', rot(l * 0.4, t * 0.4, s * 0.4))
-    child('head', 'neck', rot(l * 0.6, t * 0.6, s * 0.6))
+    look = p.get('look')
+    if look is None:
+        child('neck', 'chest', rot(l * 0.4, t * 0.4, s * 0.4))
+        child('head', 'neck', rot(l * 0.6, t * 0.6, s * 0.6))
+    else:
+        # la cara apunta a un punto del espacio del personaje; `head` queda como retoque encima.
+        # El giro respecto del pecho tiene tope, para que el cuello no se retuerza.
+        Pc0, Rc0 = out['chest']
+        eye = Pc0 + Rc0 @ (REST['head'] - REST['chest']) + Vector((0, 0, 0.12))
+        d = Rc0.transposed() @ (Vector(look) - eye).normalized()
+        yaw = max(-82.0, min(82.0, math.degrees(math.atan2(d.x, -d.y))))
+        pitch = max(-50.0, min(62.0, math.degrees(math.asin(max(-1.0, min(1.0, d.z))))))
+        full = rot(-pitch + l, yaw + t, s).to_quaternion()
+        qn = Quaternion().slerp(full, 0.4)
+        child('neck', 'chest', qn.to_matrix())
+        child('head', 'neck', (qn.inverted() @ full).to_matrix())
 
     # trenza: tiende a colgar; sigue un poco a la cabeza y se apoya en la espalda
     Rh = out['head'][1]

@@ -7,9 +7,11 @@
 //
 //   qué:  todo (por defecto) | cancha | personaje | sprites | revision
 //         cancha     capas de la cancha: Cycles (HIP) y después el revelado a WebP
-//         personaje  malla, esqueleto y clips para la versión en tiempo real
-//         sprites    hojas de sprites para la versión de sprites (EEVEE)
-//         revision   hojas para mirar el modelo y las animaciones; no toca los assets
+//         personaje  malla, esqueleto, caras y clips para la versión en tiempo real; después verifica,
+//                    sobre el archivo exportado, que los pies no patinen
+//         sprites    hojas de sprites para la versión de sprites (EEVEE). Esa versión quedó congelada
+//                    con los clips de la ronda 1; «todo» no la regenera
+//         revision   hojas para mirar el modelo, los personajes, las caras y todos los clips; no toca los assets
 //
 //   --blender <ruta>   ejecutable de Blender. Si falta: variable BLENDER, la instalación
 //                      habitual de Windows o «blender» en el PATH
@@ -49,9 +51,9 @@ function correr(titulo, script, args, extra = []) {
   const cmd = ['-b', '--factory-startup', ...extra, '--python', join(aqui, script), '--', ...args];
   console.log('\n== ' + titulo + '\n   blender ' + cmd.map((a) => (/\s/.test(a) ? '"' + a + '"' : a)).join(' '));
   const t0 = Date.now();
-  const r = spawnSync(blender, cmd, { encoding: 'utf8', env: { ...process.env, CYCLES_GPU: cycles }, maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync(blender, cmd, { encoding: 'utf8', env: { ...process.env, CYCLES_GPU: cycles }, maxBuffer: 64 * 1024 * 1024 });      // HOJA y PX llegan a revisar.py por el entorno
   const salida = (r.stdout || '') + (r.stderr || '');
-  for (const linea of salida.split(/\r?\n/)) if (/^(GPU|CAPA|HOJA|CLIP|VERTS|WROTE|OK|RES)\b|Traceback|Error/.test(linea)) console.log('   ' + linea.trim());
+  for (const linea of salida.split(/\r?\n/)) if (/^(GPU|CAPA|HOJA|CLIP|VERTS|WROTE|PESO|OK|RES)\b|Traceback|Error/.test(linea)) console.log('   ' + linea.trim());
   if (r.status !== 0 || /Traceback \(most recent call last\)/.test(salida)) {
     console.error('   Falló (código ' + r.status + '). Últimas líneas:\n' + salida.split(/\r?\n/).slice(-15).join('\n'));
     process.exit(1);
@@ -68,19 +70,35 @@ try {
     console.log('   ' + pesos(join(assets, 'cancha')));
   }
   if (que === 'todo' || que === 'personaje') {
-    correr('Personaje: malla, esqueleto y clips', 'exportar.py', [join(assets, 'personaje.bin')]);
+    correr('Personaje: malla, esqueleto, caras y clips', 'exportar.py', [join(assets, 'personaje.bin')]);
+    console.log('\n== Personaje: los pies no patinan (sobre el archivo exportado)');
+    const v = spawnSync(process.execPath, [join(aqui, '..', 'herramientas', 'verificar-pasos.mjs')], { encoding: 'utf8' });
+    console.log((v.stdout || '').split(/\r?\n/).filter((l) => /^(Empalmes|Contacto|Peor|  \S)/.test(l)).map((l) => '   ' + l).join('\n'));
+    if (v.status !== 0) { console.error(v.stderr || 'La verificación de pasos falló.'); process.exit(1); }
   }
-  if (que === 'todo' || que === 'sprites') {
+  if (que === 'sprites') {
     correr('Sprites: render de las dos vistas con EEVEE', 'render_sprites.py', [join(tmp, 'sprites'), join(assets, 'sprites')], gpuEevee);
     console.log('   ' + pesos(join(assets, 'sprites')));
   }
   if (que === 'revision') {
     const out = join(tmp, 'revision');
-    for (const [nombre, ...a] of [['modelo-cuerpo.png', 'rival', '2', 'todo', '20,200'], ['modelo-cara.png', 'rival', '2', 'cara', '0,35'],
-      ['modelo-pies.png', 'jugador', '2', 'pies', '0,40,180'], ['modelo-manos.png', 'rival', '2', 'manos', '0,90']]) correr('Revisión: ' + nombre, 'vista.py', [join(out, nombre), ...a], gpuEevee);
-    for (const [clip, vista, variante] of [['derecha', 'frente', 'rival'], ['reves', 'espalda', 'jugador'], ['remate', 'espalda', 'jugador'], ['saque', 'espalda', 'jugador'], ['globo', 'frente', 'rival']]) {
-      correr('Revisión: clip ' + clip, 'vista_anim.py', [join(out, 'clip-' + clip + '.png'), clip, vista, '7', variante], gpuEevee);
+    for (const [nombre, ...a] of [['modelo-cuerpo.png', 'rival', '1', 'todo', '0,35,90,180,215'], ['modelo-pies.png', 'jugador', '1', 'pies', '0,40,180'],
+      ['modelo-manos.png', 'rival', '1', 'manos', '0,90'], ['beto.png', 'beto', '1', 'todo', '0,35,90,180'], ['chela.png', 'chela', '1', 'todo', '0,35,90,180'],
+      ['cara-normal.png', 'rival', '1', 'cara', '0,30', 'normal'], ['cara-esfuerzo.png', 'rival', '1', 'cara', '0,30', 'esfuerzo'],
+      ['cara-alegria.png', 'rival', '1', 'cara', '0,30', 'alegria'], ['cara-fastidio.png', 'rival', '1', 'cara', '0,30', 'fastidio'],
+      ['cara-parpadeo.png', 'rival', '1', 'cara', '0,30', 'parpadeo']]) correr('Revisión: ' + nombre, 'vista.py', [join(out, nombre), ...a], gpuEevee);
+    // todos los clips, en tiras: una hoja por tema
+    const hojas = {
+      'clips-locomocion.png': ['listo:juego:4', 'correr:lado:8', 'correr_atras:lado:8', 'lateral_izq:frente:8', 'split_step:tres:9', 'arranque:lado:8', 'frenada:lado:9'],
+      'clips-golpes-1.png': ['saque:espalda:9', 'derecha:juego:9', 'reves:juego:9', 'volea:juego:8', 'volea_reves:juego:8'],
+      'clips-golpes-2.png': ['bandeja:juego:9', 'remate:lado:9', 'globo:juego:9', 'estirada:juego:8', 'estirada_reves:juego:8'],
+      'clips-gestos.png': ['espera:juego:4', 'festejo:juego:8', 'lamento:juego:8', 'mania_gorra:juego:8', 'mania_zapatilla:tres:8', 'mania_saludo:juego:8'],
+    };
+    for (const [hoja, trabajos] of Object.entries(hojas)) {
+      process.env.HOJA = hoja;
+      correr('Revisión: ' + hoja, 'revisar.py', [out, ...trabajos], gpuEevee);
     }
+    delete process.env.HOJA;
     console.log('\nHojas de revisión en ' + out + ' (no se borran).');
   }
 } finally {

@@ -44,6 +44,7 @@ class Part:
         self.meta = []     # dict por vértice: s (índice de sección), a (ángulo), u (0..1)
         self.weights = []  # dict hueso -> peso, por vértice
         self.outline = []  # 0..1 por vértice: cuánto contorno lleva
+        self.piece = None  # pieza opcional a la que pertenece (trenza, gorra...); None = cuerpo base
 
     def add_vert(self, co, **meta):
         self.verts.append(Vector(co))
@@ -96,6 +97,7 @@ class Part:
         p.meta = [dict(m) for m in self.meta]
         p.weights = [{swap(k): v for k, v in w.items()} for w in self.weights]
         p.outline = list(self.outline)
+        p.piece = self.piece
         return p
 
     def extend(self, other):
@@ -246,6 +248,8 @@ def sweep(part, secs, n=10, steps=2, cap0='round', cap1='round', closed=False, m
                         part.add_face((cur[k2], cur[k], new[k], new[k2]), mat_of(sval, ang))
                 cur = new
             pole_off = ravg * capk
+        elif kind == 'point':
+            pole_off = ravg * capk          # punta sin anillos intermedios: alcanza para dedos y piezas chicas
         else:
             pole_off = 0.0
         pole = part.add_vert(s['p'] + tan * (sign * pole_off), s=sval, a=0.0, u=0.0 if sign < 0 else 1.0)

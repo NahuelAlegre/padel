@@ -1,0 +1,92 @@
+/* Prueba 3D · página de revisión de personajes. Pensada para el celular en vertical. */
+:root {
+  color-scheme: dark;            /* un solo aspecto, oscuro: es un escenario de juego */
+  --noche: #1b162c;
+  --noche-2: #262040;
+  --tinta: #27304a;
+  --crema: #fff6e6;
+  --coral: #ff6a4d;
+  --mostaza: #ffc83d;
+  --linea: rgba(255, 246, 230, 0.16);
+  --suave: rgba(255, 246, 230, 0.66);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--noche); color: var(--crema); overscroll-behavior: none; }
+body { font-family: 'Baloo 2', system-ui, -apple-system, 'Segoe UI', sans-serif; font-weight: 600; -webkit-tap-highlight-color: transparent; }
+button { font: inherit; color: inherit; }
+
+#rev {
+  position: fixed; inset: 0; margin: 0 auto; width: min(100vw, 62vh); min-width: min(100vw, 320px);
+  display: flex; flex-direction: column; background: var(--noche);
+}
+#escenario { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: #2b2247; }
+#lienzo { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#celdas { position: absolute; inset: 0; display: none; }
+#celdas.on { display: block; }
+#celdas button {
+  position: absolute; background: none; border: 0; padding: 0 2px 3px; display: flex; align-items: flex-end; justify-content: center;
+  font-size: 10.5px; line-height: 1.05; letter-spacing: 0.01em; text-align: center; color: var(--crema);
+  text-shadow: 0 1px 2px rgba(20, 14, 36, 0.9), 0 0 6px rgba(20, 14, 36, 0.7); cursor: pointer;
+}
+#celdas button:focus-visible { outline: 2px solid var(--mostaza); outline-offset: -2px; border-radius: 10px; }
+
+#ficha { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); top: calc(10px + env(safe-area-inset-top, 0px)); pointer-events: none; text-shadow: 0 1px 3px rgba(20, 14, 36, 0.75); }
+#ficha-nombre { font-size: 24px; font-weight: 800; line-height: 1; letter-spacing: 0.01em; }
+#ficha-datos { margin-top: 4px; font-size: 12.5px; line-height: 1.25; color: var(--suave); font-weight: 600; max-width: 250px; }
+#medidor {
+  position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); font-size: 11.5px; padding: 3px 9px; border-radius: 999px;
+  background: rgba(27, 22, 44, 0.62); color: var(--suave); font-variant-numeric: tabular-nums;
+}
+#pausa {
+  position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: 12px; border: 0; border-radius: 999px; padding: 6px 14px 5px; font-size: 13px; font-weight: 700;
+  background: rgba(27, 22, 44, 0.66); color: var(--crema); cursor: pointer;
+}
+#pausa[aria-pressed="true"] { background: var(--mostaza); color: var(--noche); }
+#enlace {
+  position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); bottom: 12px; border-radius: 999px; padding: 6px 13px 5px; font-size: 13px; font-weight: 700; text-decoration: none;
+  background: rgba(27, 22, 44, 0.66); color: var(--crema);
+}
+#carga { position: absolute; inset: 0; display: grid; place-items: center; font-size: 16px; color: var(--suave); background: #2b2247; }
+#carga.error { color: var(--mostaza); padding: 24px; text-align: center; }
+
+#tablero {
+  flex: 0 0 auto; padding-block: 9px calc(9px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); background: var(--noche);
+  border-top: 1px solid var(--linea); display: flex; flex-direction: column; gap: 7px;
+}
+.rv-fila { display: flex; gap: 6px; }
+.rv-fila button, .rv-clips button, .rv-seg button {
+  border: 1px solid var(--linea); background: var(--noche-2); border-radius: 999px; cursor: pointer; white-space: nowrap;
+  transition: background-color 0.12s, color 0.12s, border-color 0.12s;
+}
+#elenco button { flex: 1 1 0; padding: 6px 4px 5px; font-size: 14.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
+#elenco i { width: 11px; height: 11px; border-radius: 50%; flex: none; box-shadow: 0 0 0 2px rgba(255, 246, 230, 0.2); }
+#elenco button.on { background: var(--crema); color: var(--noche); border-color: var(--crema); }
+
+.rv-solapas { border-bottom: 1px solid var(--linea); gap: 2px; }
+.rv-solapas button { flex: 1 1 0; border: 0; border-radius: 10px 10px 0 0; background: none; padding: 5px 2px 4px; font-size: 14px; color: var(--suave); border-bottom: 3px solid transparent; }
+.rv-solapas button.on { color: var(--crema); border-bottom-color: var(--coral); }
+
+.rv-clips { display: flex; flex-wrap: wrap; gap: 5px 6px; min-height: 62px; align-content: flex-start; }
+.rv-clips button { padding: 3px 10px 2px; font-size: 13.5px; }
+.rv-clips button.on { background: var(--coral); border-color: var(--coral); color: #2a0f08; font-weight: 700; }
+.rv-clips button b { font-weight: 700; color: var(--mostaza); margin-left: 3px; }
+.rv-clips button.on b { color: #2a0f08; }
+.rv-clips p { margin: 2px 2px 0; font-size: 12.5px; line-height: 1.3; color: var(--suave); font-weight: 600; }
+
+.rv-ajustes { display: grid; grid-template-columns: 1.15fr 1fr; gap: 5px 10px; }
+.rv-ajuste.rv-ancho { grid-column: 1 / -1; }
+.rv-ajuste { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.rv-ajuste > span { font-size: 11.5px; color: var(--suave); flex: none; width: 52px; }
+.rv-ajuste.off { opacity: 0.38; }
+.rv-seg { display: flex; flex: 1 1 auto; min-width: 0; border-radius: 999px; background: var(--noche-2); border: 1px solid var(--linea); padding: 2px; }
+.rv-seg button { flex: 1 1 0; min-width: 0; border: 0; background: none; padding: 3px 2px 2px; font-size: 12px; overflow: hidden; text-overflow: clip; }
+.rv-seg button.on { background: var(--crema); color: var(--noche); font-weight: 700; }
+button:focus-visible { outline: 2px solid var(--mostaza); outline-offset: 1px; }
+
+@media (max-height: 640px) {
+  #ficha-nombre { font-size: 20px; }
+  .rv-clips { min-height: 58px; }
+  #tablero { gap: 6px; padding-top: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

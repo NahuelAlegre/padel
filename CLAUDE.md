@@ -4,6 +4,8 @@
 
 Juego de pádel para navegador, **mobile first y en vertical**. Está pensado para partidas cortas, por ejemplo en el transporte público, y deja lugar para un modo más competitivo más adelante.
 
+**Público principal: la gente que juega al pádel.** Un jugador de pádel, incluso uno profesional, tiene que poder decir "esto es como en el pádel" aunque las mecánicas sean sencillas. **Fácil de aprender, difícil de dominar**: la profundidad sale de la táctica real del pádel, no de que el rival llegue a todo.
+
 Tiene que ser muy simple de jugar y accesible para todos. Además tiene que verse lindo: **la parte visual importa tanto como las mecánicas**. Si se ve soso, la gente lo abandona antes de probarlo en serio.
 
 ## Principios de producto

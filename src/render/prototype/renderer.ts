@@ -1,8 +1,9 @@
-import type { CourtConfig } from '../../config';
-import { clamp, easeOutCubic, TAU } from '../../core/math';
+import { CONTROLS, type CourtConfig } from '../../config';
+import { clamp, easeOutCubic, lerp, TAU } from '../../core/math';
 import type { SimEvent } from '../../sim/match';
-import { TEXT } from '../../ui/text';
+import { shotName, TEXT } from '../../ui/text';
 import { Camera, type Projected } from '../camera';
+import type { Insets } from '../../core/layout';
 import type { Renderer, Scene, ScenePlayer } from '../scene';
 import { VIEW, type CameraName } from '../view';
 import { drawCourtBack, drawCourtFront, drawNet } from './court';
@@ -19,10 +20,6 @@ interface Effect {
   size: number;
 }
 
-/** Size of the cached message bitmap, in CSS pixels. */
-const LABEL_WIDTH = 220;
-const LABEL_HEIGHT = 56;
-
 interface DrawItem {
   /** 0 = player, 1 = ball, 2 = net. */
   kind: number;
@@ -30,9 +27,18 @@ interface DrawItem {
   y: number;
 }
 
+/** A piece of text painted once into its own small bitmap. Sizes are in CSS pixels. */
+interface Label {
+  canvas: HTMLCanvasElement;
+  width: number;
+  height: number;
+}
+
 const TRAIL_LENGTH = 7;
 /** Seconds before the contact at which the timing ring starts closing. */
 const RING_LEAD = 0.9;
+/** Seconds one loop of the first-time ghost hand lasts. */
+const GHOST_LOOP = 2;
 
 /**
  * Grey-box renderer: simple shapes, readable at phone size, cheap to draw.
@@ -41,6 +47,9 @@ const RING_LEAD = 0.9;
  * each frame starts by copying it. On top go, back to front: marks on the
  * floor, shadows, the far players, the net, the near players, the edges of the
  * near wall and finally the aids and messages.
+ *
+ * Text is slow to draw on a canvas, so every label is painted once into a
+ * small bitmap and copied from there.
  */
 export class PrototypeRenderer implements Renderer {
   private readonly ctx: CanvasRenderingContext2D;
@@ -50,7 +59,9 @@ export class PrototypeRenderer implements Renderer {
   private width = 1;
   private height = 1;
   private ratio = 1;
+  private safe: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
   private cameraName: CameraName = 'mid';
+  private clock = 0;
 
   private readonly effects: Effect[] = [];
   private readonly items: DrawItem[] = [];
@@ -59,13 +70,17 @@ export class PrototypeRenderer implements Renderer {
   private readonly p: Projected = { x: 0, y: 0, scale: 0 };
   private readonly q: Projected = { x: 0, y: 0, scale: 0 };
 
-  /**
-   * The message over the player ("¡Perfecto!"). Text is slow to draw on a
-   * canvas, so it is painted once into this bitmap and then just copied.
-   */
-  private readonly label: HTMLCanvasElement;
-  private readonly labelCtx: CanvasRenderingContext2D;
-  private readonly message = { active: false, x: 0, y: 0, age: 0, life: 0.9 };
+  private readonly labels = new Map<string, Label>();
+  /** The message over the player: how the shot was timed, and its name. */
+  private readonly message = {
+    active: false,
+    x: 0,
+    y: 0,
+    age: 0,
+    life: 0.9,
+    title: null as Label | null,
+    detail: null as Label | null,
+  };
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -74,12 +89,9 @@ export class PrototypeRenderer implements Renderer {
     const ctx = canvas.getContext('2d', { alpha: false });
     this.back = document.createElement('canvas');
     const backCtx = this.back.getContext('2d', { alpha: false });
-    this.label = document.createElement('canvas');
-    const labelCtx = this.label.getContext('2d');
-    if (!ctx || !backCtx || !labelCtx) throw new Error('Canvas 2D is not available');
+    if (!ctx || !backCtx) throw new Error('Canvas 2D is not available');
     this.ctx = ctx;
     this.backCtx = backCtx;
-    this.labelCtx = labelCtx;
   }
 
   setCamera(name: CameraName): void {
@@ -88,10 +100,11 @@ export class PrototypeRenderer implements Renderer {
     this.rebuild();
   }
 
-  resize(width: number, height: number, pixelRatio: number): void {
+  resize(width: number, height: number, pixelRatio: number, safeArea: Insets): void {
     this.width = width;
     this.height = height;
     this.ratio = pixelRatio;
+    this.safe = { ...safeArea };
     this.rebuild();
   }
 
@@ -103,10 +116,12 @@ export class PrototypeRenderer implements Renderer {
 
   /** Fits the camera to the viewport and repaints the cached court. */
   private rebuild(): void {
+    // The court keeps clear of the scoreboard on top, of the thumbs at the
+    // bottom and of whatever the device reserves around the screen.
     this.camera.fit(VIEW.cameras[this.cameraName], this.court, this.width, this.height, {
-      top: VIEW.insetTop,
-      bottom: this.height * VIEW.insetBottomFraction,
-      side: VIEW.insetSide,
+      top: VIEW.insetTop + this.safe.top,
+      bottom: this.height * VIEW.insetBottomFraction + this.safe.bottom,
+      side: VIEW.insetSide + Math.max(this.safe.left, this.safe.right),
       align: VIEW.align,
     });
     this.back.width = Math.max(1, Math.round(this.width * this.ratio));
@@ -114,6 +129,9 @@ export class PrototypeRenderer implements Renderer {
     this.backCtx.setTransform(this.ratio, 0, 0, this.ratio, 0, 0);
     drawCourtBack(this.backCtx, this.camera, this.court, this.width, this.height);
     this.trailCount = 0;
+    // Labels were painted for the old pixel density.
+    this.labels.clear();
+    this.message.active = false;
   }
 
   // ---------------------------------------------------------------- events
@@ -133,10 +151,13 @@ export class PrototypeRenderer implements Renderer {
         this.spawn('burst', event.x, event.y, event.z, 0.2, event.quality === 'perfect' ? 0.7 : 0.4);
         const player = scene.players[event.player];
         if (player?.isHuman && event.kind !== 'serve') {
-          // How well it was timed, and which shot came out of the gesture.
-          // With the debug display on, also by how many milliseconds it was off.
-          const ms = Math.round(event.error * 1000);
-          const detail = scene.debug ? `${TEXT.shot[event.kind]} · ${ms > 0 ? '+' : ''}${ms} ms` : TEXT.shot[event.kind];
+          // How well it was timed, and which shot came out of it. With the
+          // debug display on, also by how many milliseconds it was off.
+          let detail = shotName(event.kind, event.forehand, event.volley);
+          if (scene.debug) {
+            const ms = Math.round(event.error * 1000);
+            detail += ` · ${ms > 0 ? '+' : ''}${ms} ms`;
+          }
           this.say(TEXT.quality[event.quality], detail, player.x, player.y, event.quality === 'perfect');
         }
         break;
@@ -157,44 +178,59 @@ export class PrototypeRenderer implements Renderer {
 
   /** Shows a message over a player. One at a time: a new one replaces the old. */
   private say(title: string, detail: string, x: number, y: number, strong: boolean): void {
-    const ratio = this.ratio;
-    const label = this.label;
-    const width = Math.round(LABEL_WIDTH * ratio);
-    const height = Math.round(LABEL_HEIGHT * ratio);
-    if (label.width !== width || label.height !== height) {
-      label.width = width;
-      label.height = height;
-    }
-    const ctx = this.labelCtx;
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    ctx.clearRect(0, 0, LABEL_WIDTH, LABEL_HEIGHT);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = PAL.textEdge;
-    ctx.fillStyle = PAL.text;
-
-    ctx.font = `800 ${strong ? 22 : 18}px ${FONT}`;
-    ctx.lineWidth = 5;
-    ctx.strokeText(title, LABEL_WIDTH / 2, 30);
-    ctx.fillText(title, LABEL_WIDTH / 2, 30);
-    if (detail) {
-      ctx.font = `700 13px ${FONT}`;
-      ctx.lineWidth = 4;
-      ctx.strokeText(detail, LABEL_WIDTH / 2, 48);
-      ctx.fillText(detail, LABEL_WIDTH / 2, 48);
-    }
-
     const message = this.message;
     message.active = true;
     message.x = x;
     message.y = y;
     message.age = 0;
+    message.title = this.label(title, strong ? 22 : 18, 800);
+    message.detail = detail ? this.label(detail, 13, 700) : null;
+  }
+
+  /** The bitmap of a piece of text, painted the first time it is asked for. */
+  private label(text: string, size: number, weight: number): Label {
+    const key = `${weight} ${size} ${text}`;
+    const cached = this.labels.get(key);
+    if (cached) return cached;
+    // Numbers in debug labels would otherwise pile up without limit.
+    if (this.labels.size > 48) this.labels.clear();
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas 2D is not available');
+    const font = `${weight} ${size}px ${FONT}`;
+    ctx.font = font;
+    const pad = 5;
+    const width = Math.ceil(ctx.measureText(text).width) + pad * 2;
+    const height = Math.ceil(size * 1.3) + pad * 2;
+    canvas.width = Math.ceil(width * this.ratio);
+    canvas.height = Math.ceil(height * this.ratio);
+    ctx.setTransform(this.ratio, 0, 0, this.ratio, 0, 0);
+    ctx.font = font;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = Math.max(3, size * 0.24);
+    ctx.strokeStyle = PAL.textEdge;
+    ctx.strokeText(text, width / 2, height / 2);
+    ctx.fillStyle = PAL.text;
+    ctx.fillText(text, width / 2, height / 2);
+
+    const label: Label = { canvas, width, height };
+    this.labels.set(key, label);
+    return label;
+  }
+
+  /** Copies a label centred on (x, y), kept inside the screen. */
+  private stamp(label: Label, x: number, y: number): void {
+    const left = clamp(x - label.width / 2, 2, this.width - label.width - 2);
+    this.ctx.drawImage(label.canvas, left, y - label.height / 2, label.width, label.height);
   }
 
   // ---------------------------------------------------------------- frame
 
   render(scene: Scene, dt: number): void {
+    this.clock += dt;
     const ctx = this.ctx;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(this.back, 0, 0);
@@ -214,8 +250,9 @@ export class PrototypeRenderer implements Renderer {
     this.drawEntities(scene);
     drawCourtFront(ctx, this.camera, this.court);
     this.drawContact(scene);
-    this.drawAirEffects(scene);
+    this.drawOverlays(scene);
     this.drawPointer(scene);
+    this.drawTutorial(scene);
   }
 
   /** Marks painted on the floor: aids, bounce rings and every shadow. */
@@ -249,6 +286,54 @@ export class PrototypeRenderer implements Renderer {
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
+    }
+
+    // Where to stand: a pair of footprints.
+    const guide = scene.guide;
+    if (guide) {
+      camera.project(guide.x, guide.y, 0, p);
+      const foot = Math.max(3, 0.13 * p.scale);
+      ctx.fillStyle = PAL.aid;
+      ctx.globalAlpha = 0.5;
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(p.x + side * foot * 1.25, p.y, foot * 0.8, foot * 1.5 * squash, 0, 0, TAU);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Where the ball is being sent: a ring, and around it the room it may scatter in.
+    const aim = scene.aim;
+    if (aim) {
+      camera.project(aim.x, aim.y, 0, p);
+      const small = aim.kind === 'drop';
+      const radius = Math.max(8, (small ? 0.38 : 0.55) * p.scale);
+      const spread = radius * (1.5 + aim.risk * 1.7);
+      ctx.fillStyle = PAL.aid;
+      ctx.globalAlpha = 0.13;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, spread, spread * squash, 0, 0, TAU);
+      ctx.fill();
+
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = PAL.aid;
+      ctx.lineWidth = aim.armed ? 3.5 : 2.5;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, radius, radius * squash, 0, 0, TAU);
+      ctx.stroke();
+      if (aim.kind === 'lob') {
+        // A lob comes down from above: a second ring.
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, radius * 1.45, radius * 1.45 * squash, 0, 0, TAU);
+        ctx.stroke();
+      }
+      // Armed: the shot is committed, the centre is filled.
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, radius * 0.3, radius * 0.3 * squash, 0, 0, TAU);
+      if (aim.armed) ctx.fill();
+      else ctx.stroke();
     }
 
     for (const effect of this.effects) {
@@ -337,8 +422,26 @@ export class PrototypeRenderer implements Renderer {
 
   private drawPlayer(player: ScenePlayer): void {
     const p = this.camera.project(player.x, player.y, 0, this.p);
+    const scale = p.scale * VIEW.figureScale;
+    // Where the ball of this stroke is met, in the metres of the drawn figure.
+    const ball = this.camera.project(
+      player.x + player.reachX,
+      player.y + player.reachY,
+      player.reachZ,
+      this.q,
+    );
     const colors = player.team === 0 ? PAL.near : PAL.far;
-    drawFigure(this.ctx, p.x, p.y, p.scale * VIEW.figureScale, player, colors.body, colors.edge);
+    drawFigure(
+      this.ctx,
+      p.x,
+      p.y,
+      scale,
+      player,
+      (ball.x - p.x) / scale,
+      (p.y - ball.y) / scale,
+      colors.body,
+      colors.edge,
+    );
   }
 
   private drawBall(scene: Scene): void {
@@ -444,7 +547,8 @@ export class PrototypeRenderer implements Renderer {
     ctx.globalAlpha = 1;
   }
 
-  private drawAirEffects(scene: Scene): void {
+  /** Everything drawn over the players: impacts, the name on the aim mark, the message. */
+  private drawOverlays(scene: Scene): void {
     const ctx = this.ctx;
     const camera = this.camera;
     const p = this.p;
@@ -475,48 +579,69 @@ export class PrototypeRenderer implements Renderer {
         ctx.stroke();
       }
     }
+    ctx.globalAlpha = 1;
+
+    // The shot that would come out, named on the mark it is aimed at.
+    const aim = scene.aim;
+    if (aim && aim.kind !== 'serve') {
+      camera.project(aim.x, aim.y, 0, p);
+      const radius = Math.max(8, 0.55 * p.scale);
+      ctx.globalAlpha = 0.95;
+      this.stamp(this.label(shotName(aim.kind, aim.forehand), 13, 700), p.x, p.y - radius - 12);
+      ctx.globalAlpha = 1;
+    }
 
     const message = this.message;
-    if (message.active) {
+    if (message.active && message.title) {
       const t = message.age / message.life;
       camera.project(message.x, message.y, 2.3 * VIEW.figureScale, p);
       const rise = scene.reduceMotion ? 0 : easeOutCubic(t) * 14;
-      const x = clamp(p.x, LABEL_WIDTH / 2, this.width - LABEL_WIDTH / 2);
       ctx.globalAlpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
-      ctx.drawImage(this.label, x - LABEL_WIDTH / 2, p.y - LABEL_HEIGHT - rise, LABEL_WIDTH, LABEL_HEIGHT);
+      const y = p.y - rise - (message.detail ? 34 : 14);
+      this.stamp(message.title, p.x, y);
+      if (message.detail) this.stamp(message.detail, p.x, y + 21);
+      ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
   }
 
-  /** The swipe being drawn by the thumb, and the stick when it is in use. */
+  /** The thumbs: the stroke of the one that aims or flicks, and the stick. */
   private drawPointer(scene: Scene): void {
     const ctx = this.ctx;
-    const { swipe, stick } = scene.pointer;
+    const { stroke, stick } = scene.pointer;
 
-    const sinceRelease = swipe.releasedAt > 0 ? (performance.now() - swipe.releasedAt) / 220 : 0;
-    if (swipe.active || (swipe.releasedAt > 0 && sinceRelease < 1)) {
-      const dx = swipe.x1 - swipe.x0;
-      const dy = swipe.y1 - swipe.y0;
+    const sinceRelease = stroke.releasedAt > 0 ? (performance.now() - stroke.releasedAt) / 220 : 0;
+    if (stroke.active || (stroke.releasedAt > 0 && sinceRelease < 1)) {
+      const dx = stroke.x1 - stroke.x0;
+      const dy = stroke.y1 - stroke.y0;
       const length = Math.hypot(dx, dy);
-      ctx.globalAlpha = swipe.active ? 0.5 : 0.5 * (1 - sinceRelease);
+      const alpha = stroke.active ? 0.5 : 0.5 * (1 - sinceRelease);
       ctx.strokeStyle = PAL.aid;
       ctx.fillStyle = PAL.aid;
       ctx.lineCap = 'round';
+      if (stroke.active) {
+        // The pad the thumb is aiming on.
+        ctx.globalAlpha = 0.16;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(stroke.x0, stroke.y0, CONTROLS.aimRadius, 0, TAU);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = alpha;
       ctx.lineWidth = 5;
       ctx.beginPath();
-      ctx.arc(swipe.x0, swipe.y0, 7, 0, TAU);
+      ctx.arc(stroke.x0, stroke.y0, 7, 0, TAU);
       ctx.fill();
       if (length > 6) {
         ctx.beginPath();
-        ctx.moveTo(swipe.x0, swipe.y0);
-        ctx.lineTo(swipe.x1, swipe.y1);
+        ctx.moveTo(stroke.x0, stroke.y0);
+        ctx.lineTo(stroke.x1, stroke.y1);
         ctx.stroke();
         const ux = dx / length;
         const uy = dy / length;
         ctx.beginPath();
-        ctx.moveTo(swipe.x1 + ux * 12, swipe.y1 + uy * 12);
-        ctx.lineTo(swipe.x1 - uy * 9, swipe.y1 + ux * 9);
-        ctx.lineTo(swipe.x1 + uy * 9, swipe.y1 - ux * 9);
+        ctx.moveTo(stroke.x1 + ux * 12, stroke.y1 + uy * 12);
+        ctx.lineTo(stroke.x1 - uy * 9, stroke.y1 + ux * 9);
+        ctx.lineTo(stroke.x1 + uy * 9, stroke.y1 - ux * 9);
         ctx.closePath();
         ctx.fill();
       }
@@ -535,5 +660,110 @@ export class PrototypeRenderer implements Renderer {
       ctx.fill();
       ctx.globalAlpha = 1;
     }
+  }
+
+  /**
+   * First visit: ghost thumbs show the gestures, with no words. They go away
+   * for good after the first hit that comes off.
+   */
+  private drawTutorial(scene: Scene): void {
+    const tutorial = scene.tutorial;
+    if (!tutorial) return;
+    const { stroke, stick } = scene.pointer;
+    // A real thumb is already there: do not draw over it.
+    const y = this.height - this.safe.bottom - this.height * 0.13;
+    const t = scene.reduceMotion ? 0.55 : (this.clock % GHOST_LOOP) / GHOST_LOOP;
+    const stickX = this.width * (tutorial.stickSide === 'left' ? 0.26 : 0.74);
+    const aimX = this.width * (tutorial.stickSide === 'left' ? 0.74 : 0.26);
+
+    if (tutorial.scheme === 'two') {
+      if (tutorial.step === 'play' && !stick.active) {
+        // The stick thumb: pressed, circling around its centre.
+        const angle = t * TAU;
+        this.ghostStick(stickX, y, Math.cos(angle) * 20, Math.sin(angle) * 20);
+      }
+      if (!stroke.active) {
+        // The aiming thumb: press, drag, hold, let go.
+        const drag = easeOutCubic(clamp((t - 0.15) / 0.3, 0, 1));
+        const pressed = t > 0.08 && t < 0.72;
+        const x = aimX + drag * 16;
+        const fingerY = y - drag * 44;
+        this.ghostPath(aimX, y, x, fingerY);
+        this.ghostFinger(x, fingerY, pressed, t >= 0.72 ? (t - 0.72) / 0.28 : -1);
+      }
+      return;
+    }
+
+    // One hand.
+    if (stroke.active || stick.active) return;
+    const x = this.width * 0.5;
+    if (tutorial.step === 'play' && t < 0.5) {
+      // A slow drag is the stick...
+      const k = t / 0.5;
+      const dx = Math.sin(k * Math.PI) * 26;
+      const dy = -k * 18;
+      this.ghostStick(x, y, dx, dy);
+      return;
+    }
+    // ...and a quick stroke is the shot.
+    const start = tutorial.step === 'play' ? 0.6 : 0.2;
+    const k = clamp((t - start) / 0.12, 0, 1);
+    const fingerY = y - easeOutCubic(k) * 78;
+    if (t >= start - 0.1) {
+      this.ghostPath(x, y, x, fingerY);
+      this.ghostFinger(x, fingerY, k < 1, k >= 1 ? clamp((t - start - 0.12) / 0.2, 0, 1) : -1);
+    }
+  }
+
+  private ghostFinger(x: number, y: number, pressed: boolean, released: number): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = PAL.aid;
+    ctx.strokeStyle = PAL.aid;
+    if (released >= 0) {
+      // Letting go: a ring opens up where the thumb was.
+      if (released >= 1) return;
+      ctx.globalAlpha = (1 - released) * 0.7;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(x, y, lerp(16, 34, released), 0, TAU);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      return;
+    }
+    ctx.globalAlpha = pressed ? 0.42 : 0.2;
+    ctx.beginPath();
+    ctx.arc(x, y, pressed ? 15 : 19, 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = 0.8;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, pressed ? 15 : 19, 0, TAU);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  private ghostPath(x0: number, y0: number, x1: number, y1: number): void {
+    const ctx = this.ctx;
+    ctx.globalAlpha = 0.3;
+    ctx.strokeStyle = PAL.aid;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  private ghostStick(x: number, y: number, dx: number, dy: number): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = PAL.aid;
+    ctx.strokeStyle = PAL.aid;
+    ctx.globalAlpha = 0.14;
+    ctx.beginPath();
+    ctx.arc(x, y, CONTROLS.stickRadius, 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    this.ghostFinger(x + dx, y + dy, true, -1);
   }
 }

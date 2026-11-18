@@ -1,15 +1,15 @@
 import { describe, it } from 'vitest';
-import type { AILevelName } from '../../src/config';
+import type { RivalId } from '../../src/config';
 import { Match, type PlayerEntry } from '../../src/sim/match';
-import { aiEntry, humanEntry, playMatch, testConfig, type MatchSummary } from '../helpers';
+import { aiEntry, humanEntry, playMatch, SKILLS, testConfig, type MatchSummary } from '../helpers';
 
 /**
  * Balance report: `npm run sim`.
  * Plays many headless matches and prints how the points are won and lost.
  * Nothing is asserted; it is here to tune the numbers in src/config.ts.
+ *
+ * SIM_MATCHES=10 npm run sim  -> quicker, noisier report.
  */
-
-// SIM_MATCHES=10 npm run sim  -> quicker, noisier report.
 const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env;
 const MATCHES = Number(env?.SIM_MATCHES ?? 40);
 
@@ -70,7 +70,7 @@ function report(title: string, makeTeams: (seed: number) => [PlayerEntry[], Play
     [
       `\n=== ${title} (${MATCHES} partidos) ===`,
       `partidos ganados  A ${wins[0]} - B ${wins[1]}   puntos  A ${pointsWon[0]} - B ${pointsWon[1]}`,
-      `duración media    ${(seconds / MATCHES).toFixed(0)} s de juego, ${(lengths.length / MATCHES).toFixed(1)} puntos`,
+      `duración media    ${(seconds / MATCHES).toFixed(0)} s de juego, ${(lengths.length / MATCHES).toFixed(1)} puntos, ${(seconds / (lengths.length || 1)).toFixed(1)} s por punto`,
       `golpes por punto  media ${mean.toFixed(1)}, mediana ${median}, p90 ${p90}, máx ${lengths[lengths.length - 1] ?? 0}`,
       `cómo terminan     ${share(reasons)}`,
       `golpes            ${share(kinds)}`,
@@ -82,34 +82,41 @@ function report(title: string, makeTeams: (seed: number) => [PlayerEntry[], Play
 }
 
 describe('balance', () => {
-  const levels: AILevelName[] = ['easy', 'normal', 'hard'];
+  const rivals: RivalId[] = ['lola', 'tincho', 'mora'];
 
-  for (const level of levels) {
-    it(`IA ${level} contra sí misma`, () => {
-      report(`IA ${level} vs IA ${level}`, (seed) => {
+  for (const rival of rivals) {
+    it(`${rival} contra sí misma`, () => {
+      report(`${rival} vs ${rival}`, (seed) => {
         const config = testConfig();
-        return [[aiEntry(config, level, seed)], [aiEntry(config, level, seed + 1)]];
+        return [[aiEntry(config, rival, seed)], [aiEntry(config, rival, seed + 1)]];
       });
     });
   }
 
-  for (const level of levels) {
-    for (const sigma of [0.05, 0.1, 0.16]) {
-      it(`jugador (timing ±${sigma * 1000} ms) contra IA ${level}`, () => {
-        report(`Jugador σ=${sigma * 1000} ms vs IA ${level}`, (seed) => {
+  for (const rival of rivals) {
+    for (const [name, skill] of Object.entries(SKILLS)) {
+      it(`persona ${name} contra ${rival}`, () => {
+        report(`Persona ${name} (a mano) vs ${rival}`, (seed) => {
           const config = testConfig();
-          return [[humanEntry(seed, sigma)], [aiEntry(config, level, seed + 1)]];
+          return [[humanEntry(seed, skill)], [aiEntry(config, rival, seed + 1)]];
         });
       });
     }
   }
 
+  it('persona con movimiento asistido', () => {
+    report('Persona promedio (movimiento asistido) vs tincho', (seed) => {
+      const config = testConfig();
+      return [[humanEntry(seed, SKILLS.average, { manual: false, reaction: 0.12 })], [aiEntry(config, 'tincho', seed + 1)]];
+    });
+  });
+
   it('dobles: cuatro IA', () => {
-    report('Dobles IA normal', (seed) => {
+    report('Dobles tincho', (seed) => {
       const config = testConfig();
       return [
-        [aiEntry(config, 'normal', seed), aiEntry(config, 'normal', seed + 1)],
-        [aiEntry(config, 'normal', seed + 2), aiEntry(config, 'normal', seed + 3)],
+        [aiEntry(config, 'tincho', seed), aiEntry(config, 'tincho', seed + 1)],
+        [aiEntry(config, 'tincho', seed + 2), aiEntry(config, 'tincho', seed + 3)],
       ];
     });
   });

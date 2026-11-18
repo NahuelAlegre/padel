@@ -1,11 +1,22 @@
 import type { ShotIntent } from '../sim/types';
 
+/** What the aiming thumb is asking for right now, before it is released. */
+export interface AimPreview {
+  active: boolean;
+  aim: number;
+  depth: number;
+  lob: boolean;
+}
+
 /**
  * What the player wants, independent of the device it came from.
  * Touch, mouse and keyboard all write here; the human controller reads it
  * once per simulation step.
  */
 export class InputState {
+  /** Shown as the mark on the rival's court while the thumb is down. */
+  readonly aim: AimPreview = { active: false, aim: 0, depth: 0.6, lob: false };
+
   private readonly moves = new Map<string, { x: number; y: number }>();
   private pending: ShotIntent | null = null;
 
@@ -44,5 +55,6 @@ export class InputState {
   clear(): void {
     this.moves.clear();
     this.pending = null;
+    this.aim.active = false;
   }
 }

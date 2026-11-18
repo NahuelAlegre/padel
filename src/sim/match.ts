@@ -1,11 +1,12 @@
 import { SIM_DT, createConfig, type GameConfig, type QualityEffect } from '../config';
-import { clamp } from '../core/math';
+import { clamp, lerp } from '../core/math';
 import { Rng } from '../core/rng';
 import { createBall, stepBall, type BallEvent, type Surface, type WallId } from './ball';
 import { teamDir } from './court';
 import { receiverIndex, serveBoxSign, serveSpot } from './formation';
 import { contactNear, planIntercept } from './intercept';
-import { createPlayer, movePlayer, type Player, type PlayerSetup } from './player';
+import { createPlayer, movePlayer, playerReach, type Player, type PlayerSetup } from './player';
+import { InputRecorder, type Recording } from './replay';
 import {
   applyBallEvent,
   canHit,
@@ -15,8 +16,16 @@ import {
   type PointReason,
   type RallyResult,
 } from './rules';
-import { awardPoint, createScore, serveSide, type MatchFormat, type ScoreState } from './score';
-import { qualityFromError, solveShot, type Launch } from './shots';
+import { awardPoint, cloneScore, createScore, serveSide, type MatchFormat, type ScoreState } from './score';
+import {
+  qualityFromError,
+  resolveShot,
+  serveTarget,
+  solveBackWall,
+  solveShot,
+  type Launch,
+  type ShotContext,
+} from './shots';
 import { predictTrajectory, type Trajectory } from './trajectory';
 import {
   createIntent,
@@ -46,7 +55,12 @@ export type SimEvent =
       type: 'hit';
       player: number;
       team: TeamId;
+      /** The shot that came out, decided by the situation. */
       kind: ShotKind;
+      /** Played on the side of the racket hand (derecha) or not (revés). */
+      forehand: boolean;
+      /** Taken in the air, before it bounced. */
+      volley: boolean;
       quality: Quality;
       /** Timing error in seconds: negative = early, positive = late. */
       error: number;
@@ -64,6 +78,7 @@ export type SimEvent =
   | { type: 'let' }
   | { type: 'point'; winner: TeamId; reason: PointReason }
   | { type: 'game'; winner: TeamId }
+  | { type: 'tieBreak' }
   | { type: 'match'; winner: TeamId };
 
 /** Decides what one player does. Humans and AIs implement the same interface. */
@@ -82,25 +97,43 @@ export interface TeamSetup {
   players: PlayerEntry[];
 }
 
+/** Enough of a match to pick it up again at the start of a point. */
+export interface MatchSnapshot {
+  score: ScoreState;
+  serveAttempt: number;
+}
+
 export interface MatchOptions {
   teams: [TeamSetup, TeamSetup];
   config?: GameConfig;
   seed?: number;
   firstServer?: TeamId;
+  /** Continue a match from the point it was saved at. */
+  resume?: MatchSnapshot;
+  /** Keep the intents of the human players, to be able to replay the match. */
+  record?: boolean;
+  /** First ever point: the rival plays gently until the person wins one. */
+  tutorial?: boolean;
 }
 
 /** How long before contact the swing animation starts. */
 const SWING_LEAD = 0.12;
 const SWING_DURATION = 0.42;
+/** How often the advice on where to stand is refreshed for a hand-moved player, in steps. */
+const GUIDE_EVERY = 12;
 
 /**
  * The whole simulation of a match: players, ball, rules and score.
  *
  * It knows nothing about the screen or the input devices. `step()` advances it
  * by exactly SIM_DT; rendering reads its state and drains `events`.
+ *
+ * It is deterministic: the same seed and the same intents, step by step, play
+ * the same match.
  */
 export class Match {
   readonly config: GameConfig;
+  readonly seed: number;
   readonly rng: Rng;
   readonly players: Player[] = [];
   /** Players of each team. Nothing assumes one player per team. */
@@ -127,11 +160,15 @@ export class Match {
   lastPoint: { winner: TeamId; reason: PointReason } | null = null;
   /** Hits in the current rally, the serve included. */
   rallyHits = 0;
+  /** True until a person wins a point: the rival goes easy meanwhile. */
+  tutorial: boolean;
 
   private readonly controllers: Controller[] = [];
   private readonly intents: PlayerIntent[] = [];
   private readonly walkIntent = createIntent();
   private readonly ballEvents: BallEvent[] = [];
+  private readonly recorder: InputRecorder | null;
+  private phaseStarted = 0;
   private phaseUntil = 0;
   private afterPause: 'serve' | 'matchOver' = 'serve';
   private serveHitAt = 0;
@@ -140,13 +177,12 @@ export class Match {
 
   constructor(options: MatchOptions) {
     this.config = options.config ?? createConfig();
-    this.rng = new Rng(options.seed ?? 1);
+    this.seed = options.seed ?? 1;
+    this.rng = new Rng(this.seed);
     this.teamNames = [options.teams[0].name, options.teams[1].name];
-    this.format = {
-      gamesToWin: this.config.rules.gamesToWin,
-      setsToWin: this.config.rules.setsToWin,
-      goldenPoint: this.config.rules.goldenPoint,
-    };
+    this.format = { ...this.config.rules.format };
+    this.tutorial = options.tutorial ?? false;
+    this.recorder = options.record ? new InputRecorder() : null;
 
     for (const team of [0, 1] as const) {
       options.teams[team].players.forEach((entry, index) => {
@@ -162,7 +198,12 @@ export class Match {
       throw new Error('Each team needs at least one player');
     }
 
-    this.score = createScore(options.firstServer ?? 0);
+    if (options.resume) {
+      this.score = cloneScore(options.resume.score);
+      this.serveAttempt = options.resume.serveAttempt;
+    } else {
+      this.score = createScore(options.firstServer ?? 0);
+    }
     this.assignSpots();
     this.beginServe();
   }
@@ -179,6 +220,28 @@ export class Match {
   get heat(): number {
     const rules = this.config.rules;
     return clamp((this.rallyHits - rules.heatAfter) * rules.heatPerHit, 0, rules.heatMax);
+  }
+
+  /** What is needed to continue this match later from the current point. */
+  snapshot(): MatchSnapshot {
+    return { score: cloneScore(this.score), serveAttempt: this.serveAttempt };
+  }
+
+  /** The intents recorded so far, when the match was created with `record`. */
+  recording(): Recording | null {
+    return this.recorder ? this.recorder.recording(this.seed) : null;
+  }
+
+  /**
+   * Cuts the pause between points short. Returns true if there was one to
+   * skip. The very start of the pause cannot be skipped, so the touch that
+   * ended the point does not also swallow its result.
+   */
+  skipPause(): boolean {
+    if (this.phase !== 'pointOver' || this.afterPause !== 'serve') return false;
+    if (this.time - this.phaseStarted < this.config.rules.skipAfter) return false;
+    this.phaseUntil = this.time;
+    return true;
   }
 
   /** Advances the simulation by one fixed step. */
@@ -202,9 +265,12 @@ export class Match {
     if (this.phase !== 'matchOver') {
       this.updatePlans();
       for (let i = 0; i < this.players.length; i++) {
+        const player = this.players[i]!;
         const intent = this.intents[i]!;
         resetIntent(intent);
-        this.controllers[i]!.update(this, this.players[i]!, intent);
+        this.controllers[i]!.update(this, player, intent);
+        if (intent.home) player.homeMode = intent.home;
+        if (this.recorder && player.isHuman) this.recorder.capture(this.tick, i, intent);
       }
     }
 
@@ -277,6 +343,7 @@ export class Match {
       player.vx = 0;
       player.vy = 0;
       player.plan = null;
+      player.guide = null;
       player.swing = null;
       player.swingLockUntil = 0;
       player.homeMode = 'back';
@@ -311,6 +378,11 @@ export class Match {
     ball.outside = false;
   }
 
+  /** Sign of x of the service box the next serve has to land in. */
+  serveBox(): 1 | -1 {
+    return serveBoxSign(this.server.team, serveSide(this.score));
+  }
+
   private startServe(server: Player, intent: ShotIntent): void {
     const rules = this.config.rules;
     this.phase = 'windup';
@@ -322,21 +394,23 @@ export class Match {
     server.anim.duration = rules.serveWindup + 0.3;
     server.anim.side = (server.hand * teamDir(server.team)) as 1 | -1;
     server.anim.shot = 'serve';
+    server.anim.reachX = this.ball.x - server.x;
+    server.anim.reachY = this.ball.y - server.y;
+    server.anim.reachZ = 0.55;
     this.events.push({ type: 'toss', player: server.id });
   }
 
   private executeServe(): void {
     const server = this.server;
     const config = this.config;
-    const intent = this.serveIntent ?? { kind: 'safe', aim: 0 };
-    const dir = teamDir(server.team);
+    const intent = this.serveIntent ?? { aim: 0, depth: 0.6, lob: false, power: 1 };
     const side = serveSide(this.score);
     const box = serveBoxSign(server.team, side);
     const spec = config.shots.specs.serve;
     const ball = this.ball;
 
-    const targetX = box * (config.court.halfWidth / 2) + clamp(intent.aim, -1, 1) * spec.aimRange;
-    const launch = solveShot(ball.x, ball.y, ball.z, targetX, dir * spec.depth, spec, config.physics, config.court);
+    const target = serveTarget(server.team, box, intent, config);
+    const launch = solveShot(ball.x, ball.y, ball.z, target.x, target.y, spec, config.physics, config.court);
     const x = ball.x;
     const y = ball.y;
     const z = ball.z;
@@ -354,6 +428,8 @@ export class Match {
       player: server.id,
       team: server.team,
       kind: 'serve',
+      forehand: true,
+      volley: false,
       quality: 'good',
       error: 0,
       x,
@@ -370,6 +446,11 @@ export class Match {
 
   // ---------------------------------------------------------------- swings
 
+  /**
+   * A swing is not a hit yet: it arms the player. The racket goes back and the
+   * ball is struck when it gets there, so a player can choose where to hit
+   * well before the ball arrives. Asking again replaces what was armed.
+   */
   private requestSwing(player: Player, intent: ShotIntent): void {
     if (this.time < player.swingLockUntil) return;
     if (this.phase === 'serve') {
@@ -381,44 +462,49 @@ export class Match {
     const timing = this.config.timing;
     player.swingLockUntil = this.time + timing.reswipeGap;
 
-    let plan = player.plan;
-    if (!plan || !this.rally.live || this.rally.hitter === player.team) {
-      // Nothing to hit: swing at the air so the input is visibly acknowledged.
+    if (!this.rally.live || this.rally.hitter === player.team) {
+      // The ball is not coming: swing at the air so the input is visibly acknowledged.
       player.swing = null;
-      this.playSwing(player, 'whiff', this.time, intent.kind);
+      this.playSwing(player, 'whiff', this.time, intent);
       this.events.push({ type: 'whiff', player: player.id, reason: 'nothing' });
       return;
     }
+
     const at = this.time - (player.isHuman ? timing.latencyCompensation : 0);
 
-    // The assisted movement may be waiting for a later, more comfortable
-    // contact, typically the rebound off the back wall. A person who swipes
-    // while the ball is passing within reach means that ball: take it there,
-    // earlier and harder to control, instead of calling the swipe early.
-    if (player.isHuman && !player.manual && this.trajectory && plan.t - at > timing.good) {
-      const passing = contactNear(this.trajectory, player, this.time, this.config, timing.takeNow, timing.takeNowBack);
-      if (passing && passing.t < plan.t - timing.good) {
-        plan = passing;
-        player.plan = passing;
-      }
+    // Assisted movement may be waiting for a later, more comfortable contact,
+    // typically the rebound off the back wall. A person who swings while the
+    // ball is passing within reach means that ball: take it there. Unless it
+    // has already got past: then the rebound that was planned is the better ball.
+    const plan = player.plan;
+    if (player.isHuman && !player.manual && this.trajectory && plan && plan.t - at > timing.good) {
+      const passing = contactNear(
+        this.trajectory,
+        player,
+        this.time,
+        this.config,
+        timing.takeNow,
+        timing.takeNowBack,
+        undefined,
+        false,
+      );
+      if (passing && passing.t < plan.t - timing.good) player.plan = passing;
     }
 
-    // A swing before the contact is armed and waits for the ball; a swing
-    // after it reaches for the ball straight away. Either way the error
-    // against the ideal moment decides the quality.
-    const executeAt = Math.max(plan.t, this.time);
-    player.swing = { intent, requestedAt: this.time, executeAt, error: at - plan.t };
-    this.playSwing(player, 'swing', executeAt - SWING_LEAD, intent.kind);
+    player.swing = { intent, at };
+    this.playSwing(player, 'swing', Infinity, intent);
   }
 
-  private playSwing(player: Player, kind: 'swing' | 'whiff', t0: number, shot: ShotKind): void {
+  private playSwing(player: Player, kind: 'swing' | 'whiff', t0: number, intent: ShotIntent): void {
     const anim = player.anim;
     anim.kind = kind;
     anim.t0 = t0;
     anim.duration = SWING_DURATION;
-    anim.shot = shot;
-    const ballSide = this.ball.x >= player.x ? 1 : -1;
-    anim.side = player.plan ? (player.plan.x >= player.plan.stanceX ? 1 : -1) : ballSide;
+    // The final name of the shot is only known at contact; until then the
+    // racket is held the way the intent asks for.
+    anim.shot = intent.lob ? 'lob' : intent.depth <= this.config.shots.dropAt ? 'drop' : 'drive';
+    const plan = player.plan;
+    anim.side = (plan ? plan.x >= player.x : this.ball.x >= player.x) ? 1 : -1;
   }
 
   private resolveSwings(): void {
@@ -426,14 +512,27 @@ export class Match {
     for (const player of this.players) {
       const swing = player.swing;
       if (!swing) continue;
-      // A player that moves by hand changes its own contact while it runs.
-      if (player.manual && player.plan && swing.error < 0) {
-        swing.executeAt = Math.max(player.plan.t, swing.requestedAt);
+      const plan = player.plan;
+      if (!plan) {
+        // Nothing within reach yet: stay armed.
+        player.anim.t0 = Infinity;
+        continue;
       }
-      if (this.time + 1e-9 < swing.executeAt) continue;
-      if (this.tryHit(player, swing.intent, swing.error)) continue;
-      if (this.time > swing.executeAt + timing.graceAfter) {
+      // Start the stroke so the racket arrives together with the ball.
+      const anim = player.anim;
+      anim.t0 = plan.t - SWING_LEAD;
+      anim.side = plan.x >= player.x ? 1 : -1;
+      anim.reachX = plan.x - player.x;
+      anim.reachY = plan.y - player.y;
+      anim.reachZ = plan.z;
+      if (this.time + 1e-9 < plan.t) continue;
+
+      if (this.tryHit(player, swing.intent, swing.at - plan.t)) continue;
+      // A player that moves by itself gives up when it did not get there. A
+      // player moved by hand stays armed: the ball may still come back.
+      if (!player.manual && this.time > plan.t + timing.graceAfter) {
         player.swing = null;
+        player.anim.kind = 'idle';
         this.events.push({ type: 'whiff', player: player.id, reason: 'far' });
       }
     }
@@ -445,8 +544,8 @@ export class Match {
     if (!canHit(this.rally, player.team, ball.y)) return false;
     if (ball.z < pc.minContactZ * 0.5 || ball.z > pc.maxContactZ + 0.15) return false;
     const gap = Math.hypot(ball.x - player.x, ball.y - player.y);
-    const reach = error > 0 ? pc.lungeReach : pc.reach * 1.1;
-    if (gap > reach) return false;
+    const reach = playerReach(player, this.config);
+    if (gap > (error > 0 ? reach + pc.lungeExtra : reach * 1.1)) return false;
     this.executeHit(player, intent, error, gap);
     return true;
   }
@@ -454,48 +553,54 @@ export class Match {
   private executeHit(player: Player, intent: ShotIntent, error: number, gap: number): void {
     const config = this.config;
     const pc = config.player;
-    const ball = this.ball;
-    const dir = teamDir(player.team);
-    const quality = qualityFromError(error, config.timing);
-    const netDistance = Math.abs(ball.y);
-    const wasVolley = this.rally.bounces === 0;
-
-    // A drive taken in the air near the net is a volley; a high ball is a smash.
-    let kind: ShotKind = intent.kind;
-    if (kind === 'drive') {
-      if (ball.z >= pc.smashZ && netDistance <= pc.smashMaxNetDistance) kind = 'smash';
-      else if (wasVolley && netDistance <= pc.volleyMaxNetDistance) kind = 'volley';
-    }
     const shots = config.shots;
-    const spec = shots.specs[kind];
+    const ball = this.ball;
+    const quality = qualityFromError(error, config.timing);
     const effect = shots.quality[quality];
 
-    // How hard the ball was to play: reached at full stretch, coming fast, or
-    // dug out from the floor. All of it widens the scatter of the shot.
+    const context: ShotContext = {
+      team: player.team,
+      hand: player.hand,
+      playerX: player.x,
+      playerY: player.y,
+      ballX: ball.x,
+      ballY: ball.y,
+      ballZ: ball.z,
+      bounces: this.rally.bounces,
+      walls: this.rally.walls,
+    };
+    const shot = resolveShot(context, intent, config);
+    const spec = shots.specs[shot.kind];
+
+    // How hard the ball was to play: reached at full stretch, coming fast, dug
+    // out from the floor, deep into a long rally. And the risk the player
+    // chose by aiming close to the walls. All of it widens the scatter.
     const incoming = Math.hypot(ball.vx, ball.vy, ball.vz);
-    const stretch = clamp((gap - pc.sweetSpot) / (pc.reach - pc.sweetSpot), 0, 2);
+    const reach = playerReach(player, config);
+    const stretch = clamp((gap - pc.sweetSpot) / (reach - pc.sweetSpot), 0, 1.5);
     const fast = clamp((incoming - shots.paceFrom) / 12, 0, 1.5);
     const low = clamp((0.45 - ball.z) / 0.45, 0, 1);
-    let scale = 1 + stretch * shots.stretchPenalty + fast * shots.pacePenalty + low * shots.lowPenalty;
-    scale += this.heat * config.rules.heatError;
+    let scale =
+      1 +
+      stretch * shots.stretchPenalty +
+      fast * shots.pacePenalty +
+      low * shots.lowPenalty +
+      shot.risk * shots.riskPenalty +
+      this.heat * config.rules.heatError;
     scale *= player.errorScale;
-    if (kind === 'safe') scale *= 0.6;
 
-    const depth = spec.depth + (shots.shortDepth - spec.depth) * effect.shorten;
-    const launch = solveShot(
-      ball.x,
-      ball.y,
-      ball.z,
-      clamp(intent.aim, -1, 1) * spec.aimRange,
-      dir * depth,
-      {
-        clearance: spec.clearance + effect.lift,
-        apex: spec.apex,
-        speed: spec.speed * effect.pace * (1 + this.heat),
-      },
-      config.physics,
-      config.court,
-    );
+    // A weak ball lands short and floats.
+    const dir = teamDir(player.team);
+    const depth = lerp(Math.abs(shot.targetY), shots.shortDepth, effect.shorten);
+    const params = {
+      clearance: shot.params.clearance + effect.lift,
+      apex: shot.params.apex,
+      speed: shot.params.speed * effect.pace * (1 + this.heat),
+    };
+    const launch =
+      shot.kind === 'backWall'
+        ? solveBackWall(ball.x, ball.y, ball.z, shot.targetX, dir * depth, player.team, params, config.physics, config.court)
+        : solveShot(ball.x, ball.y, ball.z, shot.targetX, dir * depth, params, config.physics, config.court);
     this.rallyHits++;
     const x = ball.x;
     const y = ball.y;
@@ -504,11 +609,32 @@ export class Match {
 
     registerHit(this.rally, player.team, false, 1);
     player.swing = null;
-    // After a lob, a drop or anything played at the net, hold the net; otherwise fall back.
-    const attacking = kind === 'lob' || kind === 'drop' || kind === 'volley' || kind === 'smash';
+    player.anim.kind = 'swing';
+    player.anim.t0 = this.time - SWING_LEAD;
+    player.anim.shot = shot.kind;
+    player.anim.side = ball.x >= player.x ? 1 : -1;
+    player.anim.reachX = x - player.x;
+    player.anim.reachY = y - player.y;
+    player.anim.reachZ = z;
+    // After an attacking shot hold the net; otherwise fall back. A controller
+    // can overrule this with its own idea of where to wait.
+    const attacking = spec.apex > 0 || shot.kind === 'drop' || shot.kind === 'volley' || shot.kind === 'smash' || shot.kind === 'bandeja' || shot.kind === 'vibora';
     player.homeMode = attacking ? 'net' : 'back';
 
-    this.events.push({ type: 'hit', player: player.id, team: player.team, kind, quality, error, x, y, z, speed });
+    this.events.push({
+      type: 'hit',
+      player: player.id,
+      team: player.team,
+      kind: shot.kind,
+      forehand: shot.forehand,
+      volley: context.bounces === 0,
+      quality,
+      error,
+      x,
+      y,
+      z,
+      speed,
+    });
     this.onBallStruck(player.team, -1);
   }
 
@@ -536,7 +662,10 @@ export class Match {
   private onBallStruck(hitter: TeamId, receiverId: number): void {
     const trajectory = predictTrajectory(this.ball, this.rally, this.time, this.config);
     this.trajectory = trajectory;
-    for (const player of this.players) player.plan = null;
+    for (const player of this.players) {
+      player.plan = null;
+      player.guide = null;
+    }
 
     const receiving = otherTeam(hitter);
     this.assigned[hitter] = -1;
@@ -572,6 +701,14 @@ export class Match {
     return end.result.winner === team;
   }
 
+  /**
+   * Works out, for every player, where and when it can meet the ball.
+   *
+   * A player that moves by itself (AI, assisted movement) gets a plan: the
+   * most comfortable contact it can run to. A player moved by hand gets the
+   * moment the ball passes closest to where it is standing right now, plus,
+   * as advice only, the place the plan would have taken it to.
+   */
   private updatePlans(): void {
     const trajectory = this.trajectory;
     const timing = this.config.timing;
@@ -580,10 +717,14 @@ export class Match {
         this.phase === 'rally' && trajectory !== null && this.rally.live && this.rally.hitter !== player.team;
       if (!incoming) {
         player.plan = null;
+        player.guide = null;
         continue;
       }
       if (player.manual) {
-        player.plan = contactNear(trajectory, player, this.time, this.config);
+        player.plan = contactNear(trajectory, player, this.time, this.config, undefined, undefined, player.contact);
+        if (!player.guide || this.tick % GUIDE_EVERY === 0) {
+          player.guide = this.shouldLeave(player.team) ? null : planIntercept(trajectory, player, this.time, this.config);
+        }
         continue;
       }
       if (this.assigned[player.team] !== player.id) {
@@ -647,6 +788,7 @@ export class Match {
     this.rally.live = false;
     for (const player of this.players) {
       player.plan = null;
+      player.guide = null;
       // A swing that was still waiting for the ball never happens.
       if (player.swing) player.anim.kind = 'idle';
       player.swing = null;
@@ -676,9 +818,11 @@ export class Match {
 
     this.serveAttempt = 1;
     this.lastPoint = { winner, reason };
+    if (this.tutorial && this.teams[winner].some((player) => player.isHuman)) this.tutorial = false;
     const award = awardPoint(this.score, winner, this.format, this.teamSizes);
     this.events.push({ type: 'point', winner, reason });
     if (award.game !== null) this.events.push({ type: 'game', winner: award.game });
+    if (award.tieBreak) this.events.push({ type: 'tieBreak' });
     if (award.match !== null) {
       this.events.push({ type: 'match', winner: award.match });
       this.pause(rules.gamePause, 'matchOver');
@@ -691,6 +835,7 @@ export class Match {
 
   private pause(duration: number, then: 'serve' | 'matchOver'): void {
     this.phase = 'pointOver';
+    this.phaseStarted = this.time;
     this.phaseUntil = this.time + duration;
     this.afterPause = then;
   }

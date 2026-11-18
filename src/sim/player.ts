@@ -4,14 +4,15 @@ import { teamDir } from './court';
 import type { InterceptPlan } from './intercept';
 import type { PlayerIntent, ShotIntent, ShotKind, TeamId } from './types';
 
-/** A swing that was requested and waits for the ball to arrive. */
+/**
+ * A swing that was asked for and is armed: the racket is back and the ball is
+ * struck the moment it gets to the player. Asking early is how a player
+ * chooses where to hit before the ball arrives.
+ */
 export interface PendingSwing {
   intent: ShotIntent;
-  requestedAt: number;
-  /** Simulation time at which the racket meets the ball. */
-  executeAt: number;
-  /** Timing error in seconds: negative = early, positive = late. */
-  error: number;
+  /** Simulation time of the request, already corrected for input latency. */
+  at: number;
 }
 
 /** Abstract animation state. The renderer decides what it looks like. */
@@ -23,6 +24,13 @@ export interface PlayerAnim {
   /** World-x side of the body the racket swings on. */
   side: 1 | -1;
   shot: ShotKind;
+  /**
+   * Where the ball is met, relative to the player's feet (world metres). The
+   * reach is generous, so the figure has to stretch for the ball to look hit.
+   */
+  reachX: number;
+  reachY: number;
+  reachZ: number;
 }
 
 export interface PlayerSetup {
@@ -35,6 +43,8 @@ export interface PlayerSetup {
   reaction: number;
   /** Multiplier on the scatter of its shots (1 = standard). */
   errorScale: number;
+  /** Multiplier on the reach. A person gets a generous one: getting close is enough. */
+  reachScale: number;
   /** 1 = right handed, -1 = left handed. */
   hand: 1 | -1;
 }
@@ -54,8 +64,15 @@ export interface Player extends PlayerSetup {
   /** Where to stand while the ball is not in play. */
   spotX: number;
   spotY: number;
-  /** Where and when this player intends to meet the ball. */
+  /** Where and when this player can meet the ball. */
   plan: InterceptPlan | null;
+  /**
+   * For a player moved by hand: where it would be best to stand. Advice for
+   * the visual aids only; nothing in the simulation acts on it.
+   */
+  guide: InterceptPlan | null;
+  /** Reused every step for the contact of a hand-moved player. */
+  contact: InterceptPlan;
   swing: PendingSwing | null;
   swingLockUntil: number;
   anim: PlayerAnim;
@@ -78,9 +95,11 @@ export function createPlayer(id: number, team: TeamId, index: number, setup: Pla
     spotX: 0,
     spotY: 0,
     plan: null,
+    guide: null,
+    contact: { trajId: 0, t: 0, x: 0, y: 0, z: 0, stanceX: 0, stanceY: 0, kind: 'bounce', reachable: true, slack: 0 },
     swing: null,
     swingLockUntil: 0,
-    anim: { kind: 'idle', t0: 0, duration: 0, side: 1, shot: 'drive' },
+    anim: { kind: 'idle', t0: 0, duration: 0, side: 1, shot: 'drive', reachX: 0.6, reachY: 0.2, reachZ: 0.9 },
     homeMode: 'back',
   };
 }
@@ -88,6 +107,11 @@ export function createPlayer(id: number, team: TeamId, index: number, setup: Pla
 /** Top speed of a player in metres per second. */
 export function playerSpeed(player: Player, config: GameConfig): number {
   return config.player.maxSpeed * player.speedFactor;
+}
+
+/** Horizontal distance from the body at which this player can hit the ball. */
+export function playerReach(player: Player, config: GameConfig): number {
+  return config.player.reach * player.reachScale;
 }
 
 /**

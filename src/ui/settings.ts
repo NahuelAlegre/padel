@@ -1,51 +1,53 @@
-import type { AILevelName } from '../config';
+import type { RivalId } from '../config';
+import type { ControlScheme } from '../input/pointer';
 import type { CameraName } from '../render/view';
 
 export type QualityName = 'auto' | 'high' | 'medium' | 'low';
 
 export interface Settings {
-  /** Assisted: the player runs by itself. Manual: virtual stick. */
-  controlMode: 'assisted' | 'manual';
+  /** 'two': stick plus hold-aim-release. 'one': drag to move, flick to hit. */
+  scheme: ControlScheme;
   stickSide: 'left' | 'right';
-  difficulty: AILevelName;
-  /** Game speed, 1 = real time. An accessibility option as much as a difficulty one. */
+  /** Accessibility: the player runs to the ball by itself. Off by default. */
+  assistedMovement: boolean;
+  rival: RivalId;
+  /** Game speed, 1 = real time. For playing at one's own pace. */
   speed: number;
-  /** Games needed to win the match. */
-  games: number;
   bounceMarker: boolean;
   timingAid: boolean;
+  /** Footprints where it would be best to stand. */
+  positionGuide: boolean;
   reduceMotion: boolean;
   vibration: boolean;
   camera: CameraName;
   quality: QualityName;
+  fullscreen: boolean;
   showFps: boolean;
 }
 
-export const SPEEDS = [0.7, 0.85, 1] as const;
-export const GAME_COUNTS = [1, 2, 3] as const;
+export const SPEEDS = [0.6, 0.8, 1] as const;
+export const RIVALS: readonly RivalId[] = ['lola', 'tincho', 'mora'];
 export const QUALITY_SCALE: Record<Exclude<QualityName, 'auto'>, number> = {
   high: 1,
   medium: 0.75,
   low: 0.55,
 };
 
-const STORAGE_KEY = 'padel.settings.v1';
-
-function defaults(): Settings {
-  const reduce =
-    typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+export function defaultSettings(reduceMotion: boolean): Settings {
   return {
-    controlMode: 'assisted',
+    scheme: 'two',
     stickSide: 'left',
-    difficulty: 'easy',
+    assistedMovement: false,
+    rival: 'lola',
     speed: 1,
-    games: 2,
     bounceMarker: true,
     timingAid: true,
-    reduceMotion: reduce,
+    positionGuide: true,
+    reduceMotion,
     vibration: true,
     camera: 'mid',
     quality: 'auto',
+    fullscreen: false,
     showFps: false,
   };
 }
@@ -54,38 +56,26 @@ function pick<T>(value: unknown, allowed: readonly T[], fallback: T): T {
   return allowed.includes(value as T) ? (value as T) : fallback;
 }
 
-/** Reads the saved settings, ignoring anything missing or no longer valid. */
-export function loadSettings(): Settings {
-  const base = defaults();
-  let saved: Partial<Record<keyof Settings, unknown>> = {};
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) saved = JSON.parse(raw) as typeof saved;
-  } catch {
-    // Private mode or a corrupted entry: play with the defaults.
-  }
+/** Builds valid settings out of whatever was stored, ignoring anything missing or no longer valid. */
+export function readSettings(saved: unknown, reduceMotion: boolean): Settings {
+  const base = defaultSettings(reduceMotion);
+  const data = (typeof saved === 'object' && saved !== null ? saved : {}) as Partial<Record<keyof Settings, unknown>>;
   const flag = (key: keyof Settings): boolean =>
-    typeof saved[key] === 'boolean' ? (saved[key] as boolean) : (base[key] as boolean);
+    typeof data[key] === 'boolean' ? (data[key] as boolean) : (base[key] as boolean);
   return {
-    controlMode: pick(saved.controlMode, ['assisted', 'manual'] as const, base.controlMode),
-    stickSide: pick(saved.stickSide, ['left', 'right'] as const, base.stickSide),
-    difficulty: pick(saved.difficulty, ['easy', 'normal', 'hard'] as const, base.difficulty),
-    speed: pick(saved.speed, SPEEDS, base.speed),
-    games: pick(saved.games, GAME_COUNTS, base.games),
+    scheme: pick(data.scheme, ['two', 'one'] as const, base.scheme),
+    stickSide: pick(data.stickSide, ['left', 'right'] as const, base.stickSide),
+    assistedMovement: flag('assistedMovement'),
+    rival: pick(data.rival, RIVALS, base.rival),
+    speed: pick(data.speed, SPEEDS, base.speed),
     bounceMarker: flag('bounceMarker'),
     timingAid: flag('timingAid'),
+    positionGuide: flag('positionGuide'),
     reduceMotion: flag('reduceMotion'),
     vibration: flag('vibration'),
-    camera: pick(saved.camera, ['low', 'mid', 'high'] as const, base.camera),
-    quality: pick(saved.quality, ['auto', 'high', 'medium', 'low'] as const, base.quality),
+    camera: pick(data.camera, ['low', 'mid', 'high'] as const, base.camera),
+    quality: pick(data.quality, ['auto', 'high', 'medium', 'low'] as const, base.quality),
+    fullscreen: flag('fullscreen'),
     showFps: flag('showFps'),
   };
-}
-
-export function saveSettings(settings: Settings): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // Nothing to do: the settings simply last for this visit only.
-  }
 }

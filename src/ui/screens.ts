@@ -1,16 +1,29 @@
-import { GAME_COUNTS, SPEEDS, type Settings } from './settings';
+import type { FormatName } from '../config';
+import { RIVALS, SPEEDS, type Settings } from './settings';
 import { TEXT } from './text';
 
 export type ScreenName = 'menu' | 'pause' | 'options' | 'over';
 
 export interface ScreenHandlers {
-  onPlay(): void;
+  onPlay(format: FormatName): void;
+  /** Continue the match that was saved. */
+  onContinue(): void;
   onDemo(): void;
   onResume(): void;
   onRestart(): void;
   onMenu(): void;
   /** A setting changed: apply it and save it. */
   onSettings(settings: Settings): void;
+}
+
+/** What the screens show that is not a setting. Asked for every time a screen is built. */
+export interface ScreenInfo {
+  /** Score of the match that can be continued, or null. */
+  saved: string | null;
+  /** Lines for "data on this device". */
+  stats: string[];
+  canVibrate: boolean;
+  canGoFullscreen: boolean;
 }
 
 export interface MatchResult {
@@ -32,9 +45,10 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return element;
 }
 
-function button(label: string, className: string, onClick: () => void): HTMLButtonElement {
+function button(label: string, className: string, onClick: () => void, note = ''): HTMLButtonElement {
   const element = el('button', className, label);
   element.type = 'button';
+  if (note) element.append(el('small', '', note));
   element.addEventListener('click', onClick);
   return element;
 }
@@ -53,6 +67,7 @@ export class Screens {
     private readonly root: HTMLElement,
     private readonly settings: Settings,
     private readonly handlers: ScreenHandlers,
+    private readonly info: () => ScreenInfo,
   ) {}
 
   show(name: ScreenName, result?: MatchResult): void {
@@ -61,13 +76,16 @@ export class Screens {
     this.current = name;
     this.root.replaceChildren(this.build(name));
     this.root.classList.add('open');
+    // The start screen sits low, where the thumb is.
+    this.root.classList.toggle('low', name === 'menu');
     // Keyboard and switch users land on the main action.
-    this.root.querySelector<HTMLElement>('.btn.primary, .btn')?.focus({ preventScroll: true });
+    const main = this.root.querySelector<HTMLElement>('.btn.primary') ?? this.root.querySelector<HTMLElement>('.btn');
+    main?.focus({ preventScroll: true });
   }
 
   hide(): void {
     this.current = null;
-    this.root.classList.remove('open');
+    this.root.classList.remove('open', 'low');
     this.root.replaceChildren();
   }
 
@@ -84,25 +102,31 @@ export class Screens {
     }
   }
 
+  /** One touch and you are playing: the quick match is always the main button. */
   private menu(): HTMLElement {
-    const list = el('ul', 'howto');
-    for (const [gesture, effect] of TEXT.howTo) list.append(el('li', '', el('b', '', gesture), ` ${effect}`));
-    return el(
-      'section',
-      'panel',
-      el('h1', '', TEXT.title),
-      el('p', '', TEXT.subtitle),
-      list,
-      el('p', '', TEXT.howToTiming),
-      this.choice(TEXT.settings.difficulty, 'difficulty', [
-        ['easy', TEXT.level.easy],
-        ['normal', TEXT.level.normal],
-        ['hard', TEXT.level.hard],
-      ]),
-      button(TEXT.play, 'btn primary', this.handlers.onPlay),
-      button(TEXT.options, 'btn', () => this.show('options')),
-      button(TEXT.demo, 'btn quiet', this.handlers.onDemo),
+    const info = this.info();
+    const rival = TEXT.rivals[this.settings.rival];
+    const panel = el('section', 'panel', el('h1', '', TEXT.title));
+    if (info.saved) {
+      panel.append(button(TEXT.resumeMatch, 'btn', this.handlers.onContinue, info.saved));
+    }
+    panel.append(
+      button(TEXT.quickMatch, 'btn primary', () => this.handlers.onPlay('quick'), TEXT.quickMatchNote),
+      button(TEXT.fullMatch, 'btn', () => this.handlers.onPlay('match'), TEXT.fullMatchNote),
+      this.choice(
+        TEXT.rival,
+        'rival',
+        RIVALS.map((id) => [id, TEXT.rivals[id].name] as const),
+        rival.style,
+      ),
+      el(
+        'div',
+        'row',
+        button(TEXT.options, 'btn quiet', () => this.show('options')),
+        button(TEXT.demo, 'btn quiet', this.handlers.onDemo),
+      ),
     );
+    return panel;
   }
 
   private pause(): HTMLElement {
@@ -131,6 +155,7 @@ export class Screens {
 
   private options(): HTMLElement {
     const s = TEXT.settings;
+    const info = this.info();
     const onOff: Array<[boolean, string]> = [
       [true, s.on],
       [false, s.off],
@@ -142,16 +167,16 @@ export class Screens {
 
       el('h3', '', s.controls),
       this.choice(
-        s.controls,
-        'controlMode',
+        s.scheme,
+        'scheme',
         [
-          ['assisted', s.assisted],
-          ['manual', s.manual],
+          ['two', s.two],
+          ['one', s.one],
         ],
-        this.settings.controlMode === 'assisted' ? s.assistedHint : s.manualHint,
+        this.settings.scheme === 'two' ? s.twoHint : s.oneHint,
       ),
     );
-    if (this.settings.controlMode === 'manual') {
+    if (this.settings.scheme === 'two') {
       panel.append(
         this.choice(s.stickSide, 'stickSide', [
           ['left', s.left],
@@ -160,28 +185,23 @@ export class Screens {
       );
     }
     panel.append(
-      this.choice(s.difficulty, 'difficulty', [
-        ['easy', TEXT.level.easy],
-        ['normal', TEXT.level.normal],
-        ['hard', TEXT.level.hard],
-      ]),
       this.choice(
         s.speed,
         'speed',
         SPEEDS.map((value) => [value, TEXT.speedLabel(value)] as [number, string]),
-      ),
-      this.choice(
-        s.matchLength,
-        'games',
-        GAME_COUNTS.map((value) => [value, `${value} ${value === 1 ? s.game : s.gamesPlural}`] as [number, string]),
+        s.speedHint,
       ),
 
-      el('h3', '', s.accessibility),
+      el('h3', '', s.aids),
+      this.choice(s.assisted, 'assistedMovement', onOff, s.assistedHint),
+      this.choice(s.positionGuide, 'positionGuide', onOff),
       this.choice(s.bounceMarker, 'bounceMarker', onOff),
       this.choice(s.timingAid, 'timingAid', onOff),
       this.choice(s.reduceMotion, 'reduceMotion', onOff),
-      this.choice(s.vibration, 'vibration', onOff),
+    );
+    if (info.canVibrate) panel.append(this.choice(s.vibration, 'vibration', onOff));
 
+    panel.append(
       el('h3', '', s.video),
       this.choice(s.camera, 'camera', [
         ['low', s.cameraLow],
@@ -194,8 +214,16 @@ export class Screens {
         ['medium', s.qualityMedium],
         ['low', s.qualityLow],
       ]),
-      this.choice(s.fps, 'showFps', onOff),
+    );
+    if (info.canGoFullscreen) panel.append(this.choice(s.fullscreen, 'fullscreen', onOff));
+    panel.append(this.choice(s.fps, 'showFps', onOff));
 
+    const data = el('div', 'field');
+    for (const line of info.stats) data.append(el('p', 'note', line));
+    data.append(el('p', 'note', s.dataNote));
+    panel.append(
+      el('h3', '', s.data),
+      data,
       // The list is longer than a phone screen: the way back stays in view.
       el('div', 'sticky', button(TEXT.back, 'btn primary', () => this.show(this.cameFrom))),
     );

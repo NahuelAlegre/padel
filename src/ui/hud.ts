@@ -1,3 +1,4 @@
+import type { ControlScheme } from '../input/pointer';
 import type { Match, SimEvent } from '../sim/match';
 import { isGoldenPoint, pointLabel } from '../sim/score';
 import { TEXT } from './text';
@@ -8,12 +9,18 @@ function need<T extends Element>(root: ParentNode, selector: string): T {
   return element;
 }
 
+/** How long a message stays up. Shorter than the pause between points, which can also be skipped. */
+const MESSAGE_MS = 950;
+
 /**
  * Scoreboard, messages and hints, as plain DOM over the canvas.
  * Text stays sharp at any resolution scale, and screen readers get the score
  * and the result of every point through the live regions.
  */
 export class Hud {
+  /** Which gestures the hints talk about. */
+  scheme: ControlScheme = 'two';
+
   private readonly root: HTMLElement;
   private readonly rows: HTMLElement[];
   private readonly tag: HTMLElement;
@@ -21,7 +28,7 @@ export class Hud {
   private readonly hint: HTMLElement;
   private readonly fps: HTMLElement;
   private bannerTimer = 0;
-  private usesTouch = true;
+  private usesKeys = false;
 
   constructor(stage: HTMLElement, onPause: () => void) {
     this.root = need<HTMLElement>(stage, '#hud');
@@ -32,8 +39,8 @@ export class Hud {
     this.fps = need<HTMLElement>(this.root, '#fps');
     need<HTMLButtonElement>(this.root, '#pause').addEventListener('click', onPause);
     // Hints mention the device actually in use.
-    window.addEventListener('pointerdown', (event) => (this.usesTouch = event.pointerType !== 'mouse'), { passive: true });
-    window.addEventListener('keydown', () => (this.usesTouch = false), { passive: true });
+    window.addEventListener('pointerdown', () => (this.usesKeys = false), { passive: true });
+    window.addEventListener('keydown', () => (this.usesKeys = true), { passive: true });
   }
 
   setVisible(visible: boolean): void {
@@ -52,30 +59,32 @@ export class Hud {
       row.classList.toggle('serving', serving);
       row.setAttribute('aria-label', serving ? `${match.teamNames[team]}, ${TEXT.serves}` : match.teamNames[team]);
     }
-    const golden = isGoldenPoint(score, match.format) && score.winner === null;
-    this.tag.hidden = !golden;
-    this.tag.textContent = golden ? TEXT.goldenPoint : '';
+    const open = score.winner === null;
+    const label = !open ? '' : isGoldenPoint(score, match.format) ? TEXT.goldenPoint : score.tieBreak ? TEXT.tieBreak : '';
+    this.tag.hidden = label === '';
+    this.tag.textContent = label;
   }
 
   /** Reacts to what happened in the match. `humanTeam` is -1 when nobody is playing (demo). */
   onEvent(event: SimEvent, match: Match, humanTeam: number): void {
+    const rival = humanTeam < 0 ? '' : match.teamNames[humanTeam === 0 ? 1 : 0];
     switch (event.type) {
       case 'serveReady': {
         this.showScore(match);
         const server = match.players[event.server];
-        if (event.attempt > 1) this.say(TEXT.secondServe, '', 1400);
-        if (server?.isHuman) this.hint.textContent = this.usesTouch ? TEXT.serveHint : TEXT.serveHintKeys;
-        else this.hint.textContent = humanTeam >= 0 ? TEXT.rivalServes : '';
+        if (event.attempt > 1) this.say(TEXT.secondServe, '');
+        if (server?.isHuman) this.hint.textContent = this.usesKeys ? TEXT.serveHint.keys : TEXT.serveHint[this.scheme];
+        else this.hint.textContent = humanTeam >= 0 ? TEXT.rivalServes(rival) : '';
         break;
       }
       case 'toss':
         this.hint.textContent = '';
         break;
       case 'fault':
-        this.say(TEXT.fault[event.reason], '', 1500);
+        this.say(TEXT.fault[event.reason], '');
         break;
       case 'let':
-        this.say(TEXT.letServe, '', 1500);
+        this.say(TEXT.letServe, '');
         break;
       case 'point': {
         this.showScore(match);
@@ -84,8 +93,8 @@ export class Hud {
             ? match.teamNames[event.winner]
             : event.winner === humanTeam
               ? TEXT.pointYou
-              : TEXT.pointRival;
-        this.say(title, TEXT.reason[event.reason], 1500);
+              : TEXT.pointRival(rival);
+        this.say(title, TEXT.reason[event.reason]);
         break;
       }
       case 'game': {
@@ -95,17 +104,21 @@ export class Hud {
             ? match.teamNames[event.winner]
             : event.winner === humanTeam
               ? TEXT.gameYou
-              : TEXT.gameRival;
-        this.say(title, '', 2200);
+              : TEXT.gameRival(rival);
+        this.say(title, '');
         break;
       }
+      case 'tieBreak':
+        this.showScore(match);
+        this.say(TEXT.tieBreak, '');
+        break;
       default:
         break;
     }
   }
 
   /** Shows a message in the middle of the court for a moment. */
-  say(title: string, detail: string, milliseconds: number): void {
+  say(title: string, detail: string): void {
     this.banner.textContent = title;
     if (detail) {
       const small = document.createElement('small');
@@ -114,12 +127,17 @@ export class Hud {
     }
     this.banner.classList.add('show');
     window.clearTimeout(this.bannerTimer);
-    this.bannerTimer = window.setTimeout(() => this.banner.classList.remove('show'), milliseconds);
+    this.bannerTimer = window.setTimeout(() => this.banner.classList.remove('show'), MESSAGE_MS);
+  }
+
+  /** Takes the message away at once (the pause it belonged to was skipped). */
+  dismiss(): void {
+    window.clearTimeout(this.bannerTimer);
+    this.banner.classList.remove('show');
   }
 
   clear(): void {
-    window.clearTimeout(this.bannerTimer);
-    this.banner.classList.remove('show');
+    this.dismiss();
     this.banner.textContent = '';
     this.hint.textContent = '';
   }

@@ -1,24 +1,27 @@
 import { it } from 'vitest';
-import type { AILevelName } from '../../src/config';
+import type { RivalId } from '../../src/config';
 import { Match } from '../../src/sim/match';
-import { aiEntry, playMatch, testConfig } from '../helpers';
+import { shotName } from '../../src/ui/text';
+import { aiEntry, humanEntry, playMatch, SKILLS, testConfig } from '../helpers';
 
 /**
  * Prints every hit of one match, to read how rallies actually unfold.
- *   SIM_LEVEL=hard SIM_SEED=3 npx vitest run --config vitest.sim.config.ts rally
+ *   SIM_RIVAL=mora SIM_SEED=3 npx vitest run --config vitest.sim.config.ts rally
+ * With SIM_PERSON=average (or beginner, expert) the near side is a simulated person.
  */
 const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env;
 
 it('rally log', () => {
-  const level = (env?.SIM_LEVEL ?? 'hard') as AILevelName;
+  const rival = (env?.SIM_RIVAL ?? 'mora') as RivalId;
   const seed = Number(env?.SIM_SEED ?? 1);
+  const person = env?.SIM_PERSON as keyof typeof SKILLS | undefined;
   const config = testConfig();
   const match = new Match({
     config,
     seed,
     teams: [
-      { name: 'A', players: [aiEntry(config, level, seed * 11)] },
-      { name: 'B', players: [aiEntry(config, level, seed * 13)] },
+      { name: 'A', players: [person ? humanEntry(seed * 11, SKILLS[person]) : aiEntry(config, rival, seed * 11)] },
+      { name: 'B', players: [aiEntry(config, rival, seed * 13)] },
     ],
   });
   const lines: string[] = [];
@@ -28,7 +31,7 @@ it('rally log', () => {
     if (event.type === 'hit') {
       const who = event.team === 0 ? 'A' : 'B';
       line.push(
-        `${who} ${event.kind.padEnd(6)} ${event.quality.padEnd(7)} @(${f(event.x)},${f(event.y)},${f(event.z)}) ${event.speed.toFixed(0)}m/s`,
+        `${who} ${shotName(event.kind, event.forehand, event.volley).padEnd(16)} ${event.quality.padEnd(7)} @(${f(event.x)},${f(event.y)},${f(event.z)}) ${event.speed.toFixed(0)}m/s`,
       );
     } else if (event.type === 'point') {
       lines.push(`--- punto para ${event.winner === 0 ? 'A' : 'B'} (${event.reason}), ${line.length} golpes`);

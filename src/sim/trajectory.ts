@@ -13,9 +13,9 @@ export interface TrajPoint {
   vz: number;
   /** Team that may legally hit the ball at this moment, or -1. */
   hittable: number;
-  /** Floor bounces so far (0 = it can only be volleyed). */
+  /** Bounces on the receiving half so far (0 = it can only be volleyed). */
   bounces: number;
-  /** Wall hits so far. */
+  /** Walls touched after that bounce. */
   walls: number;
 }
 
@@ -55,13 +55,22 @@ export function predictTrajectory(
 
   const trajectory: Trajectory = { id: nextId++, t0, points: [], bounces: [], end: null };
   const steps = Math.ceil(horizon / SIM_DT);
-  let bounces = 0;
-  let walls = 0;
   let t = t0;
 
   const push = (): void => {
     const hittable = r.live ? (canHit(r, 0, b.y) ? 0 : canHit(r, 1, b.y) ? 1 : -1) : -1;
-    trajectory.points.push({ t, x: b.x, y: b.y, z: b.z, vx: b.vx, vy: b.vy, vz: b.vz, hittable, bounces, walls });
+    trajectory.points.push({
+      t,
+      x: b.x,
+      y: b.y,
+      z: b.z,
+      vx: b.vx,
+      vy: b.vy,
+      vz: b.vz,
+      hittable,
+      bounces: r.bounces,
+      walls: r.walls,
+    });
   };
 
   push();
@@ -70,12 +79,7 @@ export function predictTrajectory(
     stepBall(b, SIM_DT, config.physics, config.court, scratchEvents);
     t = t0 + (i + 1) * SIM_DT;
     for (const event of scratchEvents) {
-      if (event.type === 'floor') {
-        bounces++;
-        trajectory.bounces.push({ t, x: event.x, y: event.y });
-      } else if (event.type === 'wall') {
-        walls++;
-      }
+      if (event.type === 'floor') trajectory.bounces.push({ t, x: event.x, y: event.y });
       const result = applyBallEvent(r, event, config.court);
       if (result && !trajectory.end) {
         trajectory.end = { t, result };

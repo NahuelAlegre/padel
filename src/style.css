@@ -33,13 +33,22 @@ body {
   place-items: center;
 }
 
-/* The game is a portrait column: the whole screen on a phone, centred on a desktop. */
+/*
+ * The game is a portrait column: the whole screen on a phone, centred on a
+ * desktop. It is an app, not a document: nothing in it is meant to be
+ * selected, and a double tap must not zoom.
+ */
 #stage {
   position: relative;
   height: 100vh;
   width: min(100vw, calc(100vh * 9 / 16));
   overflow: hidden;
   background: var(--stage);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 @supports (height: 100dvh) {
@@ -74,10 +83,15 @@ body {
   display: none;
 }
 
+/*
+ * The scoreboard, the pause button and the hint keep clear of the notch, the
+ * rounded corners and the home bar: env(safe-area-inset-*) is what the device
+ * reserves, and it is zero where there is nothing to avoid.
+ */
 .score {
   position: absolute;
-  top: max(10px, env(safe-area-inset-top));
-  left: 10px;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  left: calc(10px + env(safe-area-inset-left, 0px));
   display: grid;
   row-gap: 3px;
   min-width: 158px;
@@ -139,8 +153,8 @@ body {
 #pause {
   pointer-events: auto;
   position: absolute;
-  top: max(10px, env(safe-area-inset-top));
-  right: 10px;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  right: calc(10px + env(safe-area-inset-right, 0px));
   display: grid;
   place-items: center;
   width: 48px;
@@ -164,7 +178,7 @@ body {
 #banner {
   position: absolute;
   left: 50%;
-  top: 31%;
+  top: calc(31% + env(safe-area-inset-top, 0px) * 0.5);
   width: 92%;
   transform: translateX(-50%);
   text-align: center;
@@ -194,8 +208,8 @@ body {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(22px + env(safe-area-inset-bottom));
-  padding: 0 16px;
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  padding: 0 calc(16px + env(safe-area-inset-right, 0px)) 0 calc(16px + env(safe-area-inset-left, 0px));
   text-align: center;
   font-size: 15px;
   font-weight: 600;
@@ -204,8 +218,8 @@ body {
 
 #fps {
   position: absolute;
-  top: calc(max(10px, env(safe-area-inset-top)) + 56px);
-  right: 10px;
+  top: calc(66px + env(safe-area-inset-top, 0px));
+  right: calc(10px + env(safe-area-inset-right, 0px));
   margin: 0;
   padding: 4px 7px;
   border-radius: 7px;
@@ -226,12 +240,19 @@ body {
   inset: 0;
   display: none;
   place-items: center;
-  padding: 12px;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px))
+    calc(12px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
   background: rgba(8, 9, 11, 0.78);
 }
 
 #overlay.open {
   display: grid;
+}
+
+/* The start screen sits at the bottom: the main button is where the thumb already is. */
+#overlay.low {
+  place-items: end center;
+  background: linear-gradient(to bottom, rgba(8, 9, 11, 0.25), rgba(8, 9, 11, 0.86) 55%);
 }
 
 .panel {
@@ -281,28 +302,6 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.howto {
-  display: grid;
-  gap: 7px;
-  margin: 14px 0 0;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  list-style: none;
-  font-size: 14px;
-  line-height: 1.3;
-  color: var(--muted);
-}
-
-.howto b {
-  color: var(--ink);
-  font-weight: 700;
-}
-
-.howto b::after {
-  content: ':';
-}
-
 .btn {
   display: block;
   width: 100%;
@@ -328,6 +327,28 @@ body {
   font-weight: 600;
   font-size: 15px;
   min-height: 46px;
+}
+
+/* A second line inside a button: what the button means, in a few words. */
+.btn small {
+  display: block;
+  margin-top: 5px;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.72;
+}
+
+.btn:has(small) {
+  min-height: 64px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.panel .row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 8px;
 }
 
 /* Pinned to the bottom of a panel that scrolls. */

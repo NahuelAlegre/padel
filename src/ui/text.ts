@@ -1,13 +1,41 @@
-import type { AILevelName } from '../config';
+import type { RivalId } from '../config';
 import type { FaultReason, PointReason } from '../sim/rules';
 import type { Quality, ShotKind } from '../sim/types';
+
+/**
+ * Name of a shot as it is called on court. The player never picks it from a
+ * list: it is shown when the shot is played, and that is how it is learnt.
+ */
+export function shotName(kind: ShotKind, forehand: boolean, volley = false): string {
+  switch (kind) {
+    case 'serve':
+      return 'Saque';
+    case 'drive':
+      return forehand ? 'Derecha' : 'Revés';
+    case 'volley':
+      return 'Volea';
+    case 'lob':
+      return 'Globo';
+    case 'drop':
+      return volley ? 'Dejada' : 'Chiquita';
+    case 'smash':
+      return 'Remate';
+    case 'bandeja':
+      return 'Bandeja';
+    case 'vibora':
+      return 'Víbora';
+    case 'wallExit':
+      return 'Salida de pared';
+    case 'backWall':
+      return 'Contrapared';
+  }
+}
 
 /** Every string the player reads. The game speaks rioplatense Spanish. */
 export const TEXT = {
   title: 'Pádel',
   subtitle: 'Prototipo de mecánicas',
   you: 'Vos',
-  rival: 'Rival',
 
   quality: {
     perfect: '¡Perfecto!',
@@ -16,17 +44,6 @@ export const TEXT = {
     late: 'Tarde',
   } satisfies Record<Quality, string>,
   whiffFar: 'No llegás',
-
-  /** Name of the shot that came out, shown under the timing: gestures are learnt by playing. */
-  shot: {
-    safe: 'Seguro',
-    drive: 'Drive',
-    volley: 'Volea',
-    lob: 'Globo',
-    drop: 'Dejada',
-    smash: 'Remate',
-    serve: 'Saque',
-  } satisfies Record<ShotKind, string>,
 
   reason: {
     doubleBounce: 'Doble pique',
@@ -51,16 +68,24 @@ export const TEXT = {
   secondServe: 'Segundo saque',
   letServe: 'Red: se repite el saque',
   pointYou: 'Punto para vos',
-  pointRival: 'Punto del rival',
+  pointRival: (name: string): string => `Punto de ${name}`,
   gameYou: '¡Juego para vos!',
-  gameRival: 'Juego del rival',
+  gameRival: (name: string): string => `Juego de ${name}`,
   goldenPoint: 'Punto de oro',
-  serveHint: 'Deslizá para sacar',
-  serveHintKeys: 'Espacio para sacar',
-  rivalServes: 'Saca el rival',
+  tieBreak: 'Tie-break',
+  serveHint: {
+    two: 'Apretá, apuntá y soltá para sacar',
+    one: 'Deslizá rápido para sacar',
+    keys: 'J, K o L para sacar',
+  },
+  rivalServes: (name: string): string => `Saca ${name}`,
   serves: 'saca',
 
-  play: 'Jugar',
+  quickMatch: 'Partida rápida',
+  quickMatchNote: 'A 2 juegos, con punto de oro',
+  fullMatch: 'Partido',
+  fullMatchNote: 'Set a 4 juegos, tie-break en 3-3',
+  resumeMatch: 'Seguir el partido',
   resume: 'Seguir',
   restart: 'Reiniciar',
   options: 'Opciones',
@@ -72,34 +97,36 @@ export const TEXT = {
   win: '¡Ganaste!',
   lose: 'Perdiste',
   games: 'juegos',
-  demo: 'Ver demo (IA contra IA)',
+  demo: 'Ver una demo',
+  rival: 'Rival',
 
-  howTo: [
-    ['Deslizá', 'pegale hacia donde deslizás'],
-    ['Deslizá largo hacia arriba', 'globo'],
-    ['Deslizá hacia abajo', 'dejada'],
-    ['Tocá', 'golpe seguro al centro'],
-  ] as ReadonlyArray<readonly [string, string]>,
-  howToTiming: 'Pegale justo cuando el anillo se cierra: ni antes ni después.',
+  rivals: {
+    lola: { name: 'Lola', style: 'Tranquila: se queda en el fondo y devuelve todo al medio.' },
+    tincho: { name: 'Tincho', style: 'Globero: te tira globos y sube a la red.' },
+    mora: { name: 'Mora', style: 'Atacante: saca y sube, volea y remata lo que quede corto.' },
+  } satisfies Record<RivalId, { name: string; style: string }>,
 
   settings: {
     controls: 'Controles',
-    assisted: 'Asistido',
-    assistedHint: 'El jugador se mueve solo; vos elegís cuándo y hacia dónde pegar.',
-    manual: 'Joystick',
-    manualHint: 'Movés al jugador con el pulgar izquierdo y pegás con el derecho.',
+    scheme: 'Esquema',
+    two: 'Dos pulgares',
+    twoHint: 'Un pulgar mueve con el joystick. El otro aprieta, apunta y suelta para pegar.',
+    one: 'Una mano',
+    oneHint: 'Arrastrar mueve al jugador. Un deslizamiento rápido es el golpe.',
     stickSide: 'Joystick del lado',
     left: 'Izquierdo',
     right: 'Derecho',
-    difficulty: 'Dificultad',
     speed: 'Velocidad del juego',
-    matchLength: 'Partido a',
-    game: 'juego',
-    gamesPlural: 'juegos',
+    speedHint: 'Para jugar a tu ritmo. No cambia las reglas.',
+    aids: 'Ayudas',
+    assisted: 'Movimiento asistido',
+    assistedHint: 'El jugador corre solo hacia la pelota y vos solo pegás.',
     bounceMarker: 'Marca de dónde pica',
     timingAid: 'Anillo de timing',
+    positionGuide: 'Guía de dónde pararse',
     reduceMotion: 'Reducir movimiento',
     vibration: 'Vibración al pegar',
+    video: 'Imagen',
     camera: 'Cámara',
     cameraLow: 'Baja',
     cameraMid: 'Media',
@@ -109,18 +136,20 @@ export const TEXT = {
     qualityHigh: 'Alta',
     qualityMedium: 'Media',
     qualityLow: 'Baja',
+    fullscreen: 'Pantalla completa',
     fps: 'Mostrar fps',
     on: 'Sí',
     off: 'No',
-    accessibility: 'Ayudas',
-    video: 'Imagen',
+    data: 'Datos de este dispositivo',
+    dataNote: 'Se guardan solo acá. No hay cuentas ni se envía nada.',
   },
 
-  level: {
-    easy: 'Fácil',
-    normal: 'Normal',
-    hard: 'Difícil',
-  } satisfies Record<AILevelName, string>,
+  stats: {
+    matches: (played: number, won: number): string => `Partidos: ${played} jugados, ${won} ganados`,
+    perfect: (share: number): string => `Golpes perfectos: ${share} %`,
+    firstHit: (seconds: number): string => `Primer golpe a los ${seconds.toFixed(1)} s de abrir el juego`,
+    none: 'Todavía no hay partidos.',
+  },
 
   speedLabel: (value: number): string => `${Math.round(value * 100)}%`,
 } as const;

@@ -1,46 +1,66 @@
-import { SIM_DT, createConfig, type GameConfig } from '../config';
+import {
+  CONTROLS,
+  FORMATS,
+  PHYSICS_VERSION,
+  SIM_DT,
+  createConfig,
+  type FormatName,
+  type GameConfig,
+  type RivalId,
+} from '../config';
 import { AIController } from '../control/ai';
 import { HumanController } from '../control/human';
+import { NO_INSETS, type Insets } from '../core/layout';
 import { AutoQuality, FrameStats } from '../core/perf';
 import { Rng } from '../core/rng';
 import { KeyboardInput } from '../input/keyboard';
 import { PointerInput } from '../input/pointer';
 import { InputState } from '../input/state';
+import type { Platform } from '../platform/types';
 import { PrototypeRenderer } from '../render/prototype/renderer';
 import type { Scene } from '../render/scene';
 import { VIEW } from '../render/view';
 import { Viewport } from '../render/viewport';
 import { Match, type PlayerEntry, type SimEvent } from '../sim/match';
+import { pointLabel } from '../sim/score';
 import { Hud } from '../ui/hud';
-import { Screens } from '../ui/screens';
-import { QUALITY_SCALE, loadSettings, saveSettings, type Settings } from '../ui/settings';
+import { Screens, type ScreenInfo } from '../ui/screens';
+import { QUALITY_SCALE, RIVALS, type Settings } from '../ui/settings';
 import { TEXT } from '../ui/text';
+import { saveMatch, saveProfile, saveSettings, type Profile, type SavedData, type SavedMatch } from './persistence';
 import { createScene, fillScene, type SceneOptions } from './scene';
 
 export type AppState = 'menu' | 'playing' | 'paused' | 'over';
-export type PlayMode = 'play' | 'demo';
+/** A match in one of the formats, or the computer playing itself. */
+export type PlayMode = FormatName | 'demo';
 
 /** Never simulate more than this per frame: after a long stall, time is dropped instead. */
 const MAX_STEPS_PER_FRAME = 12;
-/** The person's player is assisted, but not instantaneous. */
-const HUMAN_REACTION = 0.12;
+/** A person reaches further than the computer: getting close to the ball is enough. */
+const HUMAN_REACH = 1.3;
+/** With assisted movement on, the player is helped but not instantaneous. */
+const ASSISTED_REACTION = 0.12;
 
 /**
- * Glue between the simulation and the browser: owns the match, feeds it the
+ * Glue between the simulation and the device: owns the match, feeds it the
  * input, runs it at a fixed step and asks the renderer for frames in between.
+ * Everything that depends on where the game runs comes in through `platform`.
  */
 export class Game {
   readonly settings: Settings;
+  readonly profile: Profile;
   match: Match;
   state: AppState = 'menu';
-  mode: PlayMode = 'play';
+  mode: PlayMode = 'quick';
   /** When set, the demo starts over instead of showing the result (performance runs). */
   loopDemo = false;
-  /** Called with everything that happens in the match: for tests, tools and, later, sound. */
+  /** Called with everything that happens in the match: for tests and tools. */
   onSimEvent: ((event: SimEvent) => void) | null = null;
   readonly stats = new FrameStats();
 
   private config: GameConfig;
+  private saved: SavedMatch | null;
+  private rival: RivalId;
   private readonly viewport: Viewport;
   private readonly renderer: PrototypeRenderer;
   private readonly input = new InputState();
@@ -50,8 +70,19 @@ export class Game {
   private readonly screens: Screens;
   private readonly scene: Scene;
   private readonly autoQuality = new AutoQuality();
-  private readonly options: SceneOptions = { bounceMarker: true, timingAid: true, reduceMotion: false, debug: false };
+  private readonly options: SceneOptions = {
+    bounceMarker: true,
+    timingAid: true,
+    positionGuide: true,
+    reduceMotion: false,
+    debug: false,
+    cueLead: 0,
+    tutorial: null,
+  };
   private ais: AIController[] = [];
+  private safeArea: Insets = NO_INSETS;
+  private safeAreaStale = true;
+  private immersive = false;
 
   private running = false;
   private raf = 0;
@@ -61,45 +92,81 @@ export class Game {
   /** Seconds left of the freeze that follows a strong hit. */
   private hitStop = 0;
 
-  constructor(stage: HTMLElement) {
+  constructor(
+    stage: HTMLElement,
+    private readonly platform: Platform,
+    data: SavedData,
+  ) {
     const canvas = stage.querySelector<HTMLCanvasElement>('#court');
     const overlay = stage.querySelector<HTMLElement>('#overlay');
     if (!canvas || !overlay) throw new Error('The page is missing the game elements');
 
-    this.settings = loadSettings();
+    this.settings = data.settings;
+    this.profile = data.profile;
+    this.saved = data.match;
+    this.rival = this.settings.rival;
     this.config = createConfig();
     this.viewport = new Viewport(canvas, VIEW.dprCap);
     this.renderer = new PrototypeRenderer(canvas, this.config.court);
     this.pointer = new PointerInput(canvas, this.input);
-    this.keyboard = new KeyboardInput(this.input, () => this.togglePause());
+    this.pointer.onTouch = () => this.skipPause();
+    this.keyboard = new KeyboardInput(
+      this.input,
+      () => this.togglePause(),
+      () => this.skipPause(),
+    );
     this.scene = createScene(this.pointer.feedback);
     this.hud = new Hud(stage, () => this.togglePause());
-    this.screens = new Screens(overlay, this.settings, {
-      onPlay: () => this.start('play'),
-      onDemo: () => this.start('demo'),
-      onResume: () => this.resume(),
-      onRestart: () => this.start(this.mode),
-      onMenu: () => this.toMenu(),
-      onSettings: () => this.applySettings(),
-    });
+    this.screens = new Screens(
+      overlay,
+      this.settings,
+      {
+        onPlay: (format) => this.start(format),
+        onContinue: () => this.continueSaved(),
+        onDemo: () => this.start('demo'),
+        onResume: () => this.resume(),
+        onRestart: () => this.rematch(),
+        onMenu: () => this.toMenu(),
+        onSettings: () => this.applySettings(),
+      },
+      () => this.screenInfo(),
+    );
 
-    this.match = this.createMatch('demo');
+    this.match = this.createMatch('demo', null);
     this.applySettings();
 
     // Losing sight of the game pauses it: nobody should lose a point to a notification.
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) this.pause();
+    platform.lifecycle.onBackground(() => this.pause());
+    platform.lifecycle.onBack(() => {
+      if (this.state !== 'playing' && this.state !== 'paused') return false;
+      this.togglePause();
+      return true;
     });
-    new ResizeObserver(() => this.draw()).observe(stage);
-
-    this.toMenu();
+    new ResizeObserver(() => {
+      this.safeAreaStale = true;
+      this.draw();
+    }).observe(stage);
   }
 
   // ---------------------------------------------------------------- flow
 
-  start(mode: PlayMode): void {
+  /**
+   * Opens the game. The first time there is no start screen: it goes straight
+   * to the court with the serve ready. After that, the start screen has the
+   * quick match one touch away.
+   */
+  begin(): void {
+    this.profile.opens++;
+    saveProfile(this.platform.storage, this.profile);
+    this.platform.analytics.track('open', { visit: this.profile.opens });
+    if (this.profile.introDone) this.toMenu();
+    else this.start('quick');
+  }
+
+  start(mode: PlayMode, saved: SavedMatch | null = null): void {
     this.mode = mode;
-    this.match = this.createMatch(mode);
+    this.rival = saved?.rival ?? this.settings.rival;
+    this.match = this.createMatch(mode, saved);
     this.renderer.reset();
     this.input.clear();
     this.pointer.release();
@@ -113,8 +180,27 @@ export class Game {
     this.warmup = 2;
     this.autoQuality.reset();
     this.setInputEnabled(true);
+    if (mode !== 'demo' && !saved) {
+      this.profile.matchesStarted++;
+      this.profile.byRival[this.rival].played++;
+      saveProfile(this.platform.storage, this.profile);
+      this.platform.analytics.track('match_start', { format: mode, rival: this.rival });
+    }
+    if (this.settings.fullscreen) this.setImmersive(true);
     this.drainEvents();
     this.startLoop();
+  }
+
+  private continueSaved(): void {
+    if (this.saved) this.start(this.saved.format, this.saved);
+  }
+
+  private rematch(): void {
+    if (this.state === 'over' && this.mode !== 'demo') {
+      this.profile.rematches++;
+      this.platform.analytics.track('rematch');
+    }
+    this.start(this.mode);
   }
 
   pause(): void {
@@ -149,6 +235,11 @@ export class Game {
     this.draw();
   }
 
+  /** A touch during the pause between points moves on to the next one. */
+  private skipPause(): void {
+    if (this.state === 'playing' && this.match.skipPause()) this.hud.dismiss();
+  }
+
   private finish(): void {
     if (this.mode === 'demo' && this.loopDemo) {
       this.start('demo');
@@ -164,7 +255,7 @@ export class Game {
 
   private setInputEnabled(enabled: boolean): void {
     // In the demo nobody plays: touches are ignored.
-    const active = enabled && this.mode === 'play';
+    const active = enabled && this.mode !== 'demo';
     this.pointer.options.enabled = active;
     this.keyboard.enabled = active;
     if (!active) {
@@ -174,104 +265,238 @@ export class Game {
     }
   }
 
+  private setImmersive(on: boolean): void {
+    if (on === this.immersive || !this.platform.display.canGoImmersive) return;
+    this.immersive = on;
+    void this.platform.display.setImmersive(on).then((done) => {
+      if (on && !done) this.immersive = false;
+    });
+  }
+
   // ---------------------------------------------------------------- match
 
-  private createMatch(mode: PlayMode): Match {
+  private createMatch(mode: PlayMode, saved: SavedMatch | null): Match {
     const config = createConfig();
-    config.rules.gamesToWin = this.settings.games;
+    config.rules.format = { ...FORMATS[mode === 'demo' ? 'quick' : mode] };
     this.config = config;
     this.ais = [];
 
     const seed = (Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0;
-    const ai = (name: string, offset: number): PlayerEntry => {
-      const level = config.ai[this.settings.difficulty];
+    const ai = (id: RivalId, offset: number): PlayerEntry => {
+      const level = config.rivals[id];
       const controller = new AIController(level, new Rng(seed + offset));
       this.ais.push(controller);
       return {
-        name,
+        name: TEXT.rivals[id].name,
         isHuman: false,
         manual: false,
         speedFactor: level.speedFactor,
         reaction: level.reaction,
         errorScale: level.errorScale,
+        reachScale: 1,
         hand: 1,
         controller,
       };
     };
+
+    if (mode === 'demo') {
+      const other = RIVALS[(RIVALS.indexOf(this.rival) + 1) % RIVALS.length]!;
+      return new Match({
+        config,
+        seed,
+        teams: [
+          { name: TEXT.rivals[other].name, players: [ai(other, 1)] },
+          { name: TEXT.rivals[this.rival].name, players: [ai(this.rival, 2)] },
+        ],
+      });
+    }
+
+    const assisted = this.settings.assistedMovement;
     const human: PlayerEntry = {
       name: TEXT.you,
       isHuman: true,
-      manual: this.settings.controlMode === 'manual',
+      manual: !assisted,
       speedFactor: 1,
-      reaction: HUMAN_REACTION,
+      reaction: assisted ? ASSISTED_REACTION : 0,
       errorScale: 1,
+      reachScale: HUMAN_REACH,
       hand: 1,
       controller: new HumanController(this.input),
     };
-
     return new Match({
       config,
       seed,
-      teams:
-        mode === 'demo'
-          ? [
-              { name: 'IA 1', players: [ai('IA 1', 1)] },
-              { name: 'IA 2', players: [ai('IA 2', 2)] },
-            ]
-          : [
-              { name: TEXT.you, players: [human] },
-              { name: TEXT.rival, players: [ai(TEXT.rival, 1)] },
-            ],
+      teams: [
+        { name: TEXT.you, players: [human] },
+        { name: TEXT.rivals[this.rival].name, players: [ai(this.rival, 1)] },
+      ],
+      resume: saved?.snapshot,
+      // The first rally ever is the tutorial: the rival goes easy until a point is won.
+      tutorial: !this.profile.introDone && !saved,
+      record: this.platform.launch.flag('record'),
     });
   }
 
   /** Applies the settings that can change in the middle of a match, and saves them. */
   applySettings(): void {
     const settings = this.settings;
-    saveSettings(settings);
+    saveSettings(this.platform.storage, settings);
 
-    this.pointer.options.manual = settings.controlMode === 'manual';
+    this.pointer.options.scheme = settings.scheme;
     this.pointer.options.stickSide = settings.stickSide;
+    this.hud.scheme = settings.scheme;
     this.renderer.setCamera(settings.camera);
+    this.platform.sound.setEnabled(true);
 
-    const level = this.config.ai[settings.difficulty];
-    for (const controller of this.ais) controller.level = level;
+    // A new rival takes over the match in progress, unless it is a continued one against somebody else.
+    if (this.mode !== 'demo' && this.state !== 'paused') this.rival = settings.rival;
+    if (this.mode !== 'demo' && this.state === 'paused' && settings.rival !== this.rival) {
+      this.rival = settings.rival;
+      this.match.teamNames[1] = TEXT.rivals[this.rival].name;
+      this.hud.showScore(this.match);
+    }
+    const level = this.config.rivals[this.rival];
     for (const player of this.match.players) {
       if (player.isHuman) {
-        player.manual = settings.controlMode === 'manual';
-      } else {
+        player.manual = !settings.assistedMovement;
+        player.reaction = settings.assistedMovement ? ASSISTED_REACTION : 0;
+      } else if (this.mode !== 'demo') {
         player.speedFactor = level.speedFactor;
         player.reaction = level.reaction;
         player.errorScale = level.errorScale;
       }
     }
+    if (this.mode !== 'demo') for (const controller of this.ais) controller.level = level;
+
     if (!settings.showFps) this.hud.showFps(null);
+    if (this.state !== 'menu' || !settings.fullscreen) this.setImmersive(settings.fullscreen);
     this.draw();
   }
 
   private drainEvents(): void {
     const events = this.match.events;
     if (events.length === 0) return;
-    const humanTeam = this.mode === 'play' ? 0 : -1;
+    const humanTeam = this.mode === 'demo' ? -1 : 0;
     for (const event of events) {
       this.renderer.onEvent(event, this.scene);
       this.hud.onEvent(event, this.match, humanTeam);
-      if (event.type === 'hit') this.onHit(event);
+      this.react(event);
       this.onSimEvent?.(event);
     }
     events.length = 0;
   }
 
-  /** Weight for the good hits: a very short freeze and, on phones that have it, a buzz. */
+  /** Everything around the match that follows from what just happened: feel, saving, counting. */
+  private react(event: SimEvent): void {
+    const { sound, storage, analytics } = this.platform;
+    const playing = this.mode !== 'demo';
+    switch (event.type) {
+      case 'serveReady':
+        // A touch that began during the pause must not turn into the serve.
+        this.pointer.release();
+        this.input.takeSwing();
+        if (playing) {
+          // Saved at every point: closing the game loses nothing.
+          this.saved = {
+            version: PHYSICS_VERSION,
+            format: this.mode as FormatName,
+            rival: this.rival,
+            snapshot: this.match.snapshot(),
+          };
+          saveMatch(storage, this.saved);
+        }
+        break;
+      case 'hit':
+        this.onHit(event);
+        break;
+      case 'bounce':
+        sound.play('bounce', Math.min(1, event.speed / 12));
+        break;
+      case 'wall':
+        sound.play(event.surface === 'glass' ? 'glass' : 'fence', Math.min(1, event.speed / 16));
+        break;
+      case 'net':
+        sound.play('net');
+        break;
+      case 'point':
+        if (!playing) break;
+        if (event.winner === 0) this.profile.pointsWon++;
+        else this.profile.pointsLost++;
+        sound.play(event.winner === 0 ? 'pointWon' : 'pointLost');
+        if (event.winner === 0 && this.profile.pointsWon === 1) analytics.track('first_point_won');
+        saveProfile(storage, this.profile);
+        break;
+      case 'match':
+        if (!playing) break;
+        this.profile.matchesFinished++;
+        this.profile.introDone = true;
+        if (event.winner === 0) {
+          this.profile.matchesWon++;
+          this.profile.byRival[this.rival].won++;
+        }
+        this.saved = null;
+        saveMatch(storage, null);
+        saveProfile(storage, this.profile);
+        analytics.track('match_end', { won: event.winner === 0, rival: this.rival, format: this.mode });
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** Weight for the good hits, and the counting that goes with a hit by the person. */
   private onHit(event: Extract<SimEvent, { type: 'hit' }>): void {
+    const { haptics, sound, analytics, launch } = this.platform;
+    sound.play('hit', Math.min(1, event.speed / 24));
     if (event.kind !== 'serve' && !this.settings.reduceMotion) {
       if (event.kind === 'smash') this.hitStop = VIEW.hitStopSmash;
       else if (event.quality === 'perfect') this.hitStop = VIEW.hitStopPerfect;
     }
-    if (!this.settings.vibration || !this.match.players[event.player]?.isHuman) return;
-    // Browsers only allow vibration after the person has touched the page.
-    if (typeof navigator.vibrate !== 'function' || navigator.userActivation?.hasBeenActive === false) return;
-    navigator.vibrate(event.quality === 'perfect' ? 22 : 12);
+    if (this.mode === 'demo' || !this.match.players[event.player]?.isHuman) return;
+
+    if (this.settings.vibration) {
+      haptics.impact(event.kind === 'smash' ? 'heavy' : event.quality === 'perfect' ? 'medium' : 'light');
+    }
+    if (this.profile.firstHitSeconds === null) {
+      this.profile.firstHitSeconds = launch.elapsed() / 1000;
+      analytics.track('first_hit', { seconds: this.profile.firstHitSeconds });
+    }
+    if (event.kind === 'serve') return;
+    this.profile.hits[event.quality]++;
+    // The first rally hit that comes off ends the first-time help.
+    if (!this.profile.introDone && event.quality !== 'late') {
+      this.profile.introDone = true;
+      saveProfile(this.platform.storage, this.profile);
+      analytics.track('intro_done');
+    }
+  }
+
+  private screenInfo(): ScreenInfo {
+    const { profile, saved } = this;
+    let savedLabel: string | null = null;
+    // A match with nothing played yet is not worth offering back.
+    const begun = saved !== null && saved.snapshot.score.points.concat(saved.snapshot.score.games).some((n) => n > 0);
+    if (saved && begun) {
+      const score = saved.snapshot.score;
+      savedLabel =
+        `${TEXT.rivals[saved.rival].name} · ${score.games[0]}–${score.games[1]} · ` +
+        `${pointLabel(score, 0)}–${pointLabel(score, 1)}`;
+    }
+    const stats: string[] = [];
+    if (profile.matchesStarted === 0) {
+      stats.push(TEXT.stats.none);
+    } else {
+      stats.push(TEXT.stats.matches(profile.matchesStarted, profile.matchesWon));
+      const hits = profile.hits.perfect + profile.hits.good + profile.hits.early + profile.hits.late;
+      if (hits > 0) stats.push(TEXT.stats.perfect(Math.round((profile.hits.perfect / hits) * 100)));
+      if (profile.firstHitSeconds !== null) stats.push(TEXT.stats.firstHit(profile.firstHitSeconds));
+    }
+    return {
+      saved: savedLabel,
+      stats,
+      canVibrate: this.platform.haptics.available,
+      canGoFullscreen: this.platform.display.canGoImmersive,
+    };
   }
 
   // ---------------------------------------------------------------- loop
@@ -292,23 +517,51 @@ export class Game {
     return this.settings.quality === 'auto' ? this.autoQuality.scale : QUALITY_SCALE[this.settings.quality];
   }
 
+  /** Follows the size of the canvas, its pixel density and the safe area of the device. */
+  private syncViewport(): void {
+    const resized = this.viewport.update(this.resolutionScale());
+    if (this.safeAreaStale) {
+      this.safeArea = this.platform.display.safeArea();
+      this.safeAreaStale = false;
+    }
+    if (resized || this.safeArea !== this.lastSafeArea) {
+      this.lastSafeArea = this.safeArea;
+      this.renderer.resize(this.viewport.width, this.viewport.height, this.viewport.pixelRatio, this.safeArea);
+    }
+  }
+
+  private lastSafeArea: Insets | null = null;
+
   /** Draws one frame without advancing the match: menus, pause, resize. */
   private draw(): void {
     if (this.running) return;
-    if (this.viewport.update(this.resolutionScale())) {
-      this.renderer.resize(this.viewport.width, this.viewport.height, this.viewport.pixelRatio);
-    }
-    fillScene(this.scene, this.match, 1, this.sceneOptions());
+    this.syncViewport();
+    fillScene(this.scene, this.match, 1, this.input, this.sceneOptions());
     this.renderer.render(this.scene, 0);
   }
 
   private sceneOptions(): SceneOptions {
-    const playing = this.state === 'playing' || this.state === 'paused';
+    const settings = this.settings;
+    const playing = (this.state === 'playing' || this.state === 'paused') && this.mode !== 'demo';
     const options = this.options;
-    options.bounceMarker = this.settings.bounceMarker && playing;
-    options.timingAid = this.settings.timingAid && playing && this.mode === 'play';
-    options.reduceMotion = this.settings.reduceMotion;
-    options.debug = this.settings.showFps;
+    options.bounceMarker = settings.bounceMarker && this.state !== 'menu';
+    options.timingAid = settings.timingAid && playing;
+    options.positionGuide = settings.positionGuide && playing;
+    options.reduceMotion = settings.reduceMotion;
+    options.debug = settings.showFps;
+    options.cueLead = CONTROLS.cueLead[settings.scheme];
+    // First visit: ghost thumbs show the gestures until a hit comes off.
+    if (playing && !this.profile.introDone) {
+      const match = this.match;
+      const serving = (match.phase === 'serve' || match.phase === 'windup') && match.server.isHuman;
+      options.tutorial = {
+        scheme: settings.scheme,
+        stickSide: settings.stickSide,
+        step: serving ? 'serve' : 'play',
+      };
+    } else {
+      options.tutorial = null;
+    }
     return options;
   }
 
@@ -320,9 +573,8 @@ export class Game {
     this.last = now;
     const workStart = performance.now();
 
-    if (this.viewport.update(this.resolutionScale())) {
-      this.renderer.resize(this.viewport.width, this.viewport.height, this.viewport.pixelRatio);
-    }
+    this.syncViewport();
+    this.pointer.update(now);
 
     // Fixed-step simulation: run as many steps as real time asks for.
     if (this.hitStop > 0) this.hitStop -= dt;
@@ -336,7 +588,7 @@ export class Game {
     }
     if (steps === MAX_STEPS_PER_FRAME) this.accumulator = 0;
 
-    fillScene(this.scene, this.match, this.accumulator / SIM_DT, this.sceneOptions());
+    fillScene(this.scene, this.match, this.accumulator / SIM_DT, this.input, this.sceneOptions());
     this.renderer.render(this.scene, dt);
 
     this.stats.push(dt, performance.now() - workStart);

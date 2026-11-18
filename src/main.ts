@@ -1,5 +1,7 @@
 import './style.css';
 import { Game } from './app/game';
+import { loadData } from './app/persistence';
+import { createWebPlatform } from './platform/web';
 
 declare global {
   interface Window {
@@ -8,16 +10,27 @@ declare global {
   }
 }
 
-const stage = document.querySelector<HTMLElement>('#stage');
-if (!stage) throw new Error('Missing #stage');
+/**
+ * Entry point of the web build. Everything that is specific to running in a
+ * browser is in `createWebPlatform`; a native shell would start the same
+ * `Game` with another platform.
+ */
+async function boot(): Promise<void> {
+  const stage = document.querySelector<HTMLElement>('#stage');
+  if (!stage) throw new Error('Missing #stage');
 
-const game = new Game(stage);
-window.padel = game;
+  const platform = createWebPlatform();
+  const data = await loadData(platform.storage, platform.display.prefersReducedMotion());
+  const game = new Game(stage, platform, data);
+  window.padel = game;
 
-// Shortcuts for testing:
-//   ?demo   plays AI against AI        ?loop   the demo starts over when it ends
-//   ?fps    shows the frame counter
-const params = new URLSearchParams(location.search);
-if (params.has('fps')) game.settings.showFps = true;
-game.loopDemo = params.has('loop');
-if (params.has('demo')) game.start('demo');
+  // Developer switches. On the web they come from the query string:
+  //   ?demo   the computer plays itself     ?loop   the demo starts over when it ends
+  //   ?fps    frame counter and timing errors     ?record   keep the inputs for a replay
+  if (platform.launch.flag('fps')) game.settings.showFps = true;
+  game.loopDemo = platform.launch.flag('loop');
+  if (platform.launch.flag('demo')) game.start('demo');
+  else game.begin();
+}
+
+void boot();

@@ -60,6 +60,23 @@ describe('peloteo', () => {
     expect(play(rally, floor(1, 6))).toMatchObject({ winner: 0, reason: 'doubleBounce' });
   });
 
+  it('cuenta las paredes que toca después del pique: de ahí sale la salida de pared', () => {
+    const rally = rallyAfterHit();
+    play(rally, cross(1));
+    expect(rally.walls).toBe(0);
+    play(rally, floor(1, 7));
+    expect(rally.walls).toBe(0);
+    play(rally, wall(10, 'glass'));
+    expect(rally.walls).toBe(1);
+    play(rally, wall(10, 'glass'));
+    expect(rally.walls).toBe(2);
+    // A new hit starts the count again; the hitter's own glass does not count.
+    registerHit(rally, 1, false, 1);
+    expect(rally.walls).toBe(0);
+    play(rally, wall(10, 'glass'));
+    expect(rally.walls).toBe(0);
+  });
+
   it('tocar la pared rival antes de picar es punto en contra', () => {
     expect(play(rallyAfterHit(), cross(1), wall(10, 'glass'))).toEqual({ kind: 'point', winner: 1, reason: 'wall' });
     expect(play(rallyAfterHit(), cross(1), wall(10, 'fence'))).toEqual({ kind: 'point', winner: 1, reason: 'fence' });

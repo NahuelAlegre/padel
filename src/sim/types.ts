@@ -4,19 +4,39 @@ export type TeamId = 0 | 1;
 export const otherTeam = (team: TeamId): TeamId => (team === 0 ? 1 : 0);
 
 /**
- * What a controller can ask for. The simulation turns a drive into a volley
- * or a smash when the ball is taken in the air, and it owns the serve.
+ * Shots as they are called on a padel court. A player never picks one from a
+ * list: it says where it wants the ball, and the situation (height of the
+ * ball, position, wall or no wall) decides which shot that is.
  */
-export type ShotRequest = 'safe' | 'drive' | 'lob' | 'drop';
-export type ShotKind = ShotRequest | 'volley' | 'smash' | 'serve';
+export type ShotKind =
+  | 'serve'
+  | 'drive' // groundstroke: derecha or revés
+  | 'volley'
+  | 'lob' // globo
+  | 'drop' // chiquita after the bounce, dejada in the air
+  | 'smash' // remate
+  | 'bandeja'
+  | 'vibora'
+  | 'wallExit' // salida de pared
+  | 'backWall'; // contrapared
 
 /** How well the swing was timed against the arrival of the ball. */
 export type Quality = 'perfect' | 'good' | 'early' | 'late';
 
+/** Everything a player decides about a shot: where, how deep, how high, how hard. */
 export interface ShotIntent {
-  kind: ShotRequest;
   /** Lateral aim in world space: -1 is the left edge of the screen, +1 the right edge. */
   aim: number;
+  /** How deep the ball should land: 0 just over the net, 1 at the back of the court. */
+  depth: number;
+  /** Over the opponent instead of through. */
+  lob: boolean;
+  /** Fraction of the pace of the shot, 0..1. */
+  power: number;
+}
+
+export function createShotIntent(aim = 0, depth = 0.6, lob = false, power = 1): ShotIntent {
+  return { aim, depth, lob, power };
 }
 
 /** What a controller wants its player to do during one simulation step. */
@@ -30,10 +50,12 @@ export interface PlayerIntent {
   moveY: number;
   /** Set for exactly one step to request a swing. */
   swing: ShotIntent | null;
+  /** Where to wait while the ball is on the other side. Null leaves it to the match. */
+  home: 'back' | 'net' | null;
 }
 
 export function createIntent(): PlayerIntent {
-  return { hasTarget: false, targetX: 0, targetY: 0, moveX: 0, moveY: 0, swing: null };
+  return { hasTarget: false, targetX: 0, targetY: 0, moveX: 0, moveY: 0, swing: null, home: null };
 }
 
 export function resetIntent(intent: PlayerIntent): void {
@@ -41,4 +63,5 @@ export function resetIntent(intent: PlayerIntent): void {
   intent.moveX = 0;
   intent.moveY = 0;
   intent.swing = null;
+  intent.home = null;
 }

@@ -1,3 +1,4 @@
+import type { MatchFormat } from './sim/score';
 import type { Quality, ShotKind } from './sim/types';
 
 /**
@@ -11,6 +12,13 @@ import type { Quality, ShotKind } from './sim/types';
 
 export const SIM_HZ = 120;
 export const SIM_DT = 1 / SIM_HZ;
+
+/**
+ * Bump this whenever a change makes the same inputs play out differently
+ * (physics, rules, shot maths, AI). Recorded matches carry the version they
+ * were played with, so an old recording is replayed right or cleanly refused.
+ */
+export const PHYSICS_VERSION = 1;
 
 export interface SideSegment {
   /** Distance from the back wall where this segment ends. */
@@ -60,60 +68,72 @@ export interface PlayerConfig {
   radius: number;
   /** How close to the net a player may stand. */
   netGap: number;
-  /** Horizontal distance from the body at which the ball can be hit. */
+  /**
+   * Horizontal distance from the body at which the ball can be hit. Each
+   * player multiplies it by its own `reachScale`: a person gets a generous
+   * reach, so getting close is enough.
+   */
   reach: number;
-  /** Extra reach granted to late swings, when the ball has already gone by. */
-  lungeReach: number;
+  /** Extra reach for a swing that comes late, when the ball has already gone by. */
+  lungeExtra: number;
   /** Ideal lateral distance between body and ball at contact. */
   sweetSpot: number;
   /** The ball is taken slightly in front of the body. */
   contactAhead: number;
   minContactZ: number;
   maxContactZ: number;
-  /** Contact above this height turns a drive into a smash... */
-  smashZ: number;
-  /** ...as long as the player is this close to the net. */
+  /** A ball at least this high is played over the head... */
+  overheadZ: number;
+  /** ...as a smash this close to the net... */
   smashMaxNetDistance: number;
-  /** A drive taken in the air this close to the net is a volley. */
+  /** ...and as a bandeja or a víbora up to here. */
+  overheadMaxNetDistance: number;
+  /** A ball taken in the air this close to the net is a volley. */
   volleyMaxNetDistance: number;
+  /**
+   * A ball that got past the player and is this close to its own back wall
+   * is played against the glass (contrapared).
+   */
+  backWallZone: number;
+  backWallBehind: number;
   /** Distance from the net of the two resting positions. */
   homeBack: number;
   homeNet: number;
 }
 
 export interface TimingConfig {
-  /** |error| below this is a perfect hit. */
+  /** A swing this close to the ideal contact is perfect. */
   perfect: number;
-  /** |error| below this is a good hit. Beyond it the hit is early or late. */
+  /** A swing up to this late is good; later than that it is "late". */
   good: number;
   /** A swing this long after the ideal contact can still reach the ball. */
   lateMax: number;
-  /** Minimum time between two swings: a new swipe replaces the armed one. */
+  /** Minimum time between two swings: a new one replaces the armed one. */
   reswipeGap: number;
-  /** An armed swing waits this long for a ball that is slightly out of reach. */
+  /** An automatically moved player waits this long for a ball slightly out of reach. */
   graceAfter: number;
-  /** Subtracted from the swipe time of human players: touch and display latency. */
+  /** Subtracted from the swing time of human players: touch and display latency. */
   latencyCompensation: number;
-  /**
-   * How much earlier than the real contact the timing ring closes on screen.
-   * A swipe is judged when the finger lifts, and people start it on the cue:
-   * with this lead, starting on the ring ends on the ball. Display only.
-   */
-  cueLead: number;
   /** After missing a contact, the next opportunity has to be at least this far ahead. */
   replanLead: number;
   /**
-   * A person who swipes while the assisted player is waiting for a later
-   * contact takes the ball right there if it passes within reach in the next
-   * `takeNow` seconds (or did in the last `takeNowBack`).
+   * How far ahead a hand-moved player looks for the ball passing within reach.
+   * Long enough to see the rebound off the back glass while the ball goes by.
+   */
+  manualLookahead: number;
+  /**
+   * Assisted movement only: a person who swings while the player is waiting
+   * for a later contact takes the ball right there if it passes within reach
+   * in the next `takeNow` seconds (or did in the last `takeNowBack`).
    */
   takeNow: number;
   takeNowBack: number;
 }
 
 export interface ShotSpec {
-  /** Distance from the net where the ball should land. */
-  depth: number;
+  /** Distance from the net where the ball lands: from `depthNear` to `depthFar` as the player asks for more depth. */
+  depthNear: number;
+  depthFar: number;
   /** Minimum height above the net tape. */
   clearance: number;
   /** Peak height of the arc. 0 means "as flat as `speed` allows". */
@@ -150,6 +170,10 @@ export interface ShotsConfig {
   quality: Record<Quality, QualityEffect>;
   /** Scatter of the serve, which has no timing: same fields as a quality. */
   serve: QualityEffect;
+  /** Asking for this little depth (0..1) or less is a chiquita. */
+  dropAt: number;
+  /** An overhead from mid court aimed at least this wide (0..1) is a víbora, otherwise a bandeja. */
+  viboraAim: number;
   /** Extra scatter when the ball is hit away from the sweet spot. */
   stretchPenalty: number;
   /** Extra scatter against a fast incoming ball (above `paceFrom` m/s). */
@@ -157,19 +181,21 @@ export interface ShotsConfig {
   paceFrom: number;
   /** Extra scatter when the ball is dug out close to the floor. */
   lowPenalty: number;
+  /** Extra scatter when aiming close to the walls: the risk the player chooses. */
+  riskPenalty: number;
   /** Depth weak shots are pulled toward. */
   shortDepth: number;
 }
 
 export interface RulesConfig {
-  gamesToWin: number;
-  setsToWin: number;
-  goldenPoint: boolean;
+  format: MatchFormat;
   serveAttempts: number;
   /** Pause after a point, a game and a fault before the next serve. */
   pointPause: number;
   gamePause: number;
   faultPause: number;
+  /** The pause can be skipped once this much of it has passed. */
+  skipAfter: number;
   /** Lateral position of the server and distance behind the service line. */
   serverX: number;
   serverBehindLine: number;
@@ -192,8 +218,9 @@ export interface RulesConfig {
   heatError: number;
 }
 
+/** How a computer player plays. Nothing here lets it break the rules a person plays by. */
 export interface AILevel {
-  /** Delay before the AI starts moving to a new ball. */
+  /** Delay before it starts moving to a new ball. */
   reaction: number;
   speedFactor: number;
   /** Standard deviation of its swing timing, in seconds. */
@@ -204,11 +231,13 @@ export interface AILevel {
   smart: number;
   lobChance: number;
   dropChance: number;
+  /** 0..1, how often it follows its serve and its attacking shots to the net. */
+  netRush: number;
   /** Seconds it takes to serve once in position. */
   serveDelay: number;
 }
 
-export type AILevelName = 'easy' | 'normal' | 'hard';
+export type RivalId = 'lola' | 'tincho' | 'mora';
 
 export interface GameConfig {
   court: CourtConfig;
@@ -217,8 +246,18 @@ export interface GameConfig {
   timing: TimingConfig;
   shots: ShotsConfig;
   rules: RulesConfig;
-  ai: Record<AILevelName, AILevel>;
+  rivals: Record<RivalId, AILevel>;
 }
+
+/** The two ways to play a match today. Both are real padel: full games and golden point. */
+export const FORMATS = {
+  /** The one-touch match: first to 2 games. */
+  quick: { gamesToWin: 2, setsToWin: 1, goldenPoint: true, tieBreakAt: null, tieBreakPoints: 5 },
+  /** A short set: first to 4 games, with a short tie-break at 3-3. */
+  match: { gamesToWin: 4, setsToWin: 1, goldenPoint: true, tieBreakAt: 3, tieBreakPoints: 5 },
+} satisfies Record<string, MatchFormat>;
+
+export type FormatName = keyof typeof FORMATS;
 
 const defaults: GameConfig = {
   court: {
@@ -256,60 +295,79 @@ const defaults: GameConfig = {
     radius: 0.35,
     netGap: 0.6,
     reach: 1.25,
-    lungeReach: 1.9,
+    lungeExtra: 0.6,
     sweetSpot: 0.62,
     contactAhead: 0.2,
-    minContactZ: 0.2,
-    maxContactZ: 2.6,
-    smashZ: 1.9,
-    smashMaxNetDistance: 6.5,
+    minContactZ: 0.15,
+    maxContactZ: 2.7,
+    overheadZ: 1.9,
+    smashMaxNetDistance: 4.5,
+    overheadMaxNetDistance: 8,
     volleyMaxNetDistance: 6,
+    backWallZone: 2.4,
+    backWallBehind: 0.25,
     homeBack: 7.4,
     homeNet: 3.2,
   },
   timing: {
-    perfect: 0.07,
-    good: 0.16,
-    lateMax: 0.22,
-    reswipeGap: 0.2,
+    perfect: 0.06,
+    good: 0.15,
+    lateMax: 0.24,
+    reswipeGap: 0.15,
     graceAfter: 0.1,
     latencyCompensation: 0.03,
-    cueLead: 0.06,
     replanLead: 0.2,
+    manualLookahead: 1.1,
     takeNow: 0.15,
     takeNowBack: 0.06,
   },
   shots: {
     specs: {
-      safe: { depth: 6.6, clearance: 1.0, apex: 0, speed: 12.5, aimRange: 1.5 },
-      drive: { depth: 7.4, clearance: 0.55, apex: 0, speed: 16, aimRange: 3.8 },
-      volley: { depth: 6.8, clearance: 0.3, apex: 0, speed: 18, aimRange: 3.9 },
-      lob: { depth: 8.3, clearance: 2, apex: 5.6, speed: 30, aimRange: 3.4 },
-      drop: { depth: 2.2, clearance: 0.3, apex: 0, speed: 9, aimRange: 3.4 },
-      smash: { depth: 3.6, clearance: 0.2, apex: 0, speed: 26, aimRange: 3.7 },
-      serve: { depth: 5.8, clearance: 0.45, apex: 0, speed: 13.5, aimRange: 1.6 },
+      serve: { depthNear: 5.8, depthFar: 5.8, clearance: 0.45, apex: 0, speed: 13.5, aimRange: 1.6 },
+      // Groundstroke: derecha or revés.
+      drive: { depthNear: 4.8, depthFar: 8.2, clearance: 0.55, apex: 0, speed: 16, aimRange: 3.8 },
+      volley: { depthNear: 4.6, depthFar: 7.6, clearance: 0.3, apex: 0, speed: 18, aimRange: 3.9 },
+      lob: { depthNear: 8.3, depthFar: 8.3, clearance: 2, apex: 5.6, speed: 30, aimRange: 3.4 },
+      // Chiquita (after the bounce) or dejada (in the air): short and soft.
+      drop: { depthNear: 2.2, depthFar: 2.2, clearance: 0.3, apex: 0, speed: 9, aimRange: 3.4 },
+      // Steep and short on purpose: it bounces over the walls or back over the net.
+      smash: { depthNear: 3.6, depthFar: 3.6, clearance: 0.2, apex: 0, speed: 26, aimRange: 3.7 },
+      // The safe overhead from mid court: deep, to keep the net.
+      bandeja: { depthNear: 7.6, depthFar: 7.6, clearance: 0.45, apex: 0, speed: 15, aimRange: 3.2 },
+      // The aggressive one: faster, lower and to the side.
+      vibora: { depthNear: 7, depthFar: 7, clearance: 0.3, apex: 0, speed: 19.5, aimRange: 3.9 },
+      // Off the back glass: higher over the net, to win time.
+      wallExit: { depthNear: 5.2, depthFar: 8, clearance: 0.9, apex: 0, speed: 13.5, aimRange: 3.6 },
+      // Against the own back glass; `speed` is how hard it is sent into it.
+      backWall: { depthNear: 6.5, depthFar: 6.5, clearance: 0.6, apex: 0, speed: 21, aimRange: 3 },
     },
     quality: {
-      perfect: { azimuth: 0.6, elevation: 0.6, speed: 0.01, pace: 1.14, lift: 0, shorten: 0 },
-      good: { azimuth: 1.6, elevation: 1.6, speed: 0.025, pace: 1, lift: 0.1, shorten: 0 },
-      early: { azimuth: 4, elevation: 3.2, speed: 0.06, pace: 0.8, lift: 0.5, shorten: 0.3 },
-      late: { azimuth: 4.5, elevation: 3.2, speed: 0.06, pace: 0.78, lift: 0.5, shorten: 0.3 },
+      perfect: { azimuth: 0.5, elevation: 0.5, speed: 0.01, pace: 1.12, lift: 0, shorten: 0 },
+      good: { azimuth: 1.3, elevation: 1.2, speed: 0.02, pace: 1, lift: 0.1, shorten: 0 },
+      // Swinging early arms the shot and it is played when the ball arrives:
+      // as good as a good one, it only misses the perfect.
+      early: { azimuth: 1.3, elevation: 1.2, speed: 0.02, pace: 1, lift: 0.1, shorten: 0 },
+      // A late ball still goes back, weak and high. It is risk and pressure
+      // that send it out, not the timing by itself.
+      late: { azimuth: 2.4, elevation: 1.6, speed: 0.035, pace: 0.76, lift: 0.7, shorten: 0.35 },
     },
     serve: { azimuth: 0.7, elevation: 0.7, speed: 0.012, pace: 1, lift: 0, shorten: 0 },
-    stretchPenalty: 0.7,
+    dropAt: 0.22,
+    viboraAim: 0.55,
+    stretchPenalty: 0.6,
     pacePenalty: 0.8,
     paceFrom: 9,
     lowPenalty: 0.5,
+    riskPenalty: 1.6,
     shortDepth: 4.8,
   },
   rules: {
-    gamesToWin: 2,
-    setsToWin: 1,
-    goldenPoint: true,
+    format: { ...FORMATS.quick },
     serveAttempts: 2,
-    pointPause: 1.6,
-    gamePause: 2.4,
-    faultPause: 1.1,
+    pointPause: 1,
+    gamePause: 1,
+    faultPause: 0.8,
+    skipAfter: 0.25,
     serverX: 2.2,
     serverBehindLine: 0.9,
     serveDropHeight: 1.0,
@@ -321,35 +379,41 @@ const defaults: GameConfig = {
     heatMax: 0.45,
     heatError: 1.2,
   },
-  ai: {
-    easy: {
+  rivals: {
+    // Calm: stays back and puts everything in the middle.
+    lola: {
       reaction: 0.4,
       speedFactor: 0.74,
-      timingSigma: 0.16,
+      timingSigma: 0.2,
       errorScale: 1.4,
       smart: 0.25,
-      lobChance: 0.12,
-      dropChance: 0.03,
-      serveDelay: 1.3,
+      lobChance: 0.1,
+      dropChance: 0.02,
+      netRush: 0.1,
+      serveDelay: 1.2,
     },
-    normal: {
-      reaction: 0.3,
-      speedFactor: 0.84,
-      timingSigma: 0.1,
-      errorScale: 1.15,
+    // Lobs a lot and takes the net behind them.
+    tincho: {
+      reaction: 0.28,
+      speedFactor: 0.88,
+      timingSigma: 0.11,
+      errorScale: 1.1,
       smart: 0.55,
-      lobChance: 0.18,
-      dropChance: 0.08,
-      serveDelay: 1.1,
+      lobChance: 0.38,
+      dropChance: 0.06,
+      netRush: 0.8,
+      serveDelay: 1,
     },
-    hard: {
-      reaction: 0.24,
-      speedFactor: 0.92,
-      timingSigma: 0.075,
+    // Attacks: serve and volley, smashes whatever is short.
+    mora: {
+      reaction: 0.2,
+      speedFactor: 0.96,
+      timingSigma: 0.085,
       errorScale: 1,
       smart: 0.85,
-      lobChance: 0.22,
+      lobChance: 0.14,
       dropChance: 0.12,
+      netRush: 1,
       serveDelay: 0.9,
     },
   },
@@ -360,42 +424,78 @@ export function createConfig(): GameConfig {
   return structuredClone(defaults);
 }
 
-/** How touches, mouse drags and keys turn into shots. Not used by the simulation. */
+/** How touches, mouse drags and keys turn into movement and shots. Not used by the simulation. */
 export interface ControlsConfig {
-  /** A gesture has to start below this fraction of the screen height (0 = anywhere). */
-  gestureZoneTop: number;
-  /** A drag shorter than this, in CSS pixels, is a tap. */
-  swipeMinDistance: number;
-  /** A touch held longer than this many milliseconds without moving is ignored. */
-  tapMaxDuration: number;
-  /** Angle from straight up, in degrees, that already aims at the edge of the court. */
-  aimMaxAngle: number;
-  /** A swipe at least this long is a lob: a fraction of the screen height, kept within pixel bounds. */
-  lobLengthFraction: number;
-  lobLengthMin: number;
-  lobLengthMax: number;
-  /** ...as long as it points up within this many degrees. */
-  lobMaxAngle: number;
-  /** A swipe pointing down past this angle from straight up is a drop shot. */
-  dropMinAngle: number;
-  /** Radius of the virtual stick in CSS pixels, and the part of it that does nothing. */
+  /** A touch has to start below this fraction of the screen height (0 = anywhere). */
+  zoneTop: number;
+  /** A touch that moves less than this, in CSS pixels, is a tap. */
+  tapMaxDistance: number;
+  /** Floating stick: radius in CSS pixels, and the part of it that does nothing. */
   stickRadius: number;
   stickDeadzone: number;
+  /**
+   * Two-thumb scheme: the pad under the aiming thumb, in CSS pixels measured
+   * from where the thumb went down.
+   *   sideways `aimRadius`   aims at the edge of the court
+   *   up `deepAt`            asks for full depth
+   *   up `lobAt` or more     is a lob
+   *   down `dropAt` or more  is a chiquita
+   * With no drag at all the ball goes to the middle at `restDepth` (0..1).
+   */
+  aimRadius: number;
+  deepAt: number;
+  lobAt: number;
+  dropAt: number;
+  restDepth: number;
+  /**
+   * One-hand scheme: a drag moves, a flick hits.
+   *   a touch still down after `moveDelay` ms is the stick
+   *   released before that, having moved `flickMinDistance` px, it is a flick
+   *   lifting off a drag faster than `flingSpeed` px/ms is a flick too
+   */
+  moveDelay: number;
+  flickMinDistance: number;
+  flingWindow: number;
+  flingSpeed: number;
+  flingMinDistance: number;
+  /** Flick: angle from straight up, in degrees, that already aims at the edge. */
+  flickAimAngle: number;
+  /** Flick: pointing down past this angle from straight up is a chiquita. */
+  flickDropAngle: number;
+  /** Flick: length in CSS pixels that asks for no depth and for full depth; longer than `flickLobLength` is a lob. */
+  flickShortLength: number;
+  flickDeepLength: number;
+  flickLobLength: number;
   /** How far to the side the keyboard aims when a direction is held. */
   keyAim: number;
+  /**
+   * How much earlier than the real contact the timing ring closes, per
+   * scheme. Releasing a held thumb is immediate; a flick takes a moment, and
+   * people start it on the cue.
+   */
+  cueLead: { two: number; one: number };
 }
 
 export const CONTROLS: ControlsConfig = {
-  gestureZoneTop: 0.5,
-  swipeMinDistance: 22,
-  tapMaxDuration: 350,
-  aimMaxAngle: 38,
-  lobLengthFraction: 0.2,
-  lobLengthMin: 120,
-  lobLengthMax: 190,
-  lobMaxAngle: 42,
-  dropMinAngle: 115,
+  zoneTop: 0.5,
+  tapMaxDistance: 14,
   stickRadius: 46,
   stickDeadzone: 0.18,
+  aimRadius: 64,
+  deepAt: 70,
+  lobAt: 112,
+  dropAt: 40,
+  restDepth: 0.6,
+  moveDelay: 110,
+  flickMinDistance: 26,
+  flingWindow: 70,
+  flingSpeed: 1.1,
+  flingMinDistance: 34,
+  flickAimAngle: 40,
+  flickDropAngle: 115,
+  flickShortLength: 34,
+  flickDeepLength: 120,
+  flickLobLength: 165,
   keyAim: 0.85,
+  cueLead: { two: 0.01, one: 0.06 },
 };

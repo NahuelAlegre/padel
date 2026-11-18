@@ -53,7 +53,7 @@ export async function startPreview() {
     [join(root, 'node_modules', 'vite', 'bin', 'vite.js'), 'preview', '--port', String(port), '--strictPort'],
     { cwd: root, stdio: 'ignore' },
   );
-  const url = `http://localhost:${port}/padel/`;
+  const url = `http://localhost:${port}/`;
   for (let attempt = 0; attempt < 50; attempt++) {
     try {
       const response = await fetch(url);
@@ -226,6 +226,78 @@ export async function openPhone({ width = 360, height = 800, dpr = 3, headed = f
 
     tap(x, y) {
       return this.swipe(x, y, x, y, 40);
+    },
+
+    /**
+     * Several fingers at once. Each has an id and stays down until `touchUp`:
+     * what the two-thumb controls need.
+     *
+     * How Chrome reads the list of points is not what the protocol notes
+     * suggest: a touchStart or a touchMove takes every finger that is down
+     * and reports the ones that changed, but a touchEnd lifts exactly the
+     * fingers it lists (all of them when the list is empty) and leaves the
+     * others where they were.
+     */
+    fingers: new Map(),
+    touchPoints(only) {
+      return [...this.fingers]
+        .filter(([id]) => only === undefined || id === only)
+        .map(([id, at]) => ({ x: Math.round(at.x), y: Math.round(at.y), id, radiusX: 8, radiusY: 8, force: 1 }));
+    },
+    async touchDown(id, x, y) {
+      this.fingers.set(id, { x, y });
+      await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: this.touchPoints() });
+    },
+    async touchMove(id, x, y) {
+      if (!this.fingers.has(id)) return;
+      this.fingers.set(id, { x, y });
+      await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: this.touchPoints() });
+    },
+    async touchUp(id) {
+      if (!this.fingers.has(id)) return;
+      // The last finger lifts with an empty list, which every version accepts.
+      const lifted = this.fingers.size === 1 ? [] : this.touchPoints(id);
+      this.fingers.delete(id);
+      await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: lifted });
+    },
+    async touchReset() {
+      if (this.fingers.size === 0) return;
+      this.fingers.clear();
+      await send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+    },
+
+    /** Every address the page asked for, to check that nothing comes from outside. */
+    requests: [],
+    async watchNetwork() {
+      await send('Network.enable');
+      devtools.listeners.push((method, params) => {
+        if (method === 'Network.requestWillBeSent') this.requests.push(params.request.url);
+      });
+    },
+
+    /** Pretends the device reserves part of the screen (notch, home bar). False where the browser cannot. */
+    async setSafeArea(insets) {
+      try {
+        await send('Emulation.setSafeAreaInsetsOverride', { insets });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+
+    /** Changes the emulated phone screen. */
+    async setScreen(nextWidth, nextHeight, nextDpr) {
+      this.width = nextWidth;
+      this.height = nextHeight;
+      this.dpr = nextDpr;
+      await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+      await send('Emulation.setDeviceMetricsOverride', {
+        width: nextWidth,
+        height: nextHeight,
+        deviceScaleFactor: nextDpr,
+        mobile: true,
+        screenOrientation: { type: 'portraitPrimary', angle: 0 },
+      });
     },
 
     /** Switches the page to a desktop window with a mouse and no touch screen. */

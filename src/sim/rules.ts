@@ -18,6 +18,8 @@ export interface RallyState {
   serveBox: 1 | -1;
   /** Bounces on the floor of the receiving half since the last hit. */
   bounces: number;
+  /** Walls touched after that bounce: a ball coming off them is a "salida de pared". */
+  walls: number;
   /** The ball touched the net since the last hit. */
   netTouched: boolean;
 }
@@ -41,7 +43,7 @@ export type RallyResult =
   | { kind: 'let' };
 
 export function createRally(): RallyState {
-  return { live: false, hitter: 0, isServe: false, serveBox: 1, bounces: 0, netTouched: false };
+  return { live: false, hitter: 0, isServe: false, serveBox: 1, bounces: 0, walls: 0, netTouched: false };
 }
 
 export function copyRally(from: RallyState, to: RallyState): void {
@@ -50,6 +52,7 @@ export function copyRally(from: RallyState, to: RallyState): void {
   to.isServe = from.isServe;
   to.serveBox = from.serveBox;
   to.bounces = from.bounces;
+  to.walls = from.walls;
   to.netTouched = from.netTouched;
 }
 
@@ -60,6 +63,7 @@ export function registerHit(rally: RallyState, team: TeamId, isServe: boolean, s
   rally.isServe = isServe;
   rally.serveBox = serveBox;
   rally.bounces = 0;
+  rally.walls = 0;
   rally.netTouched = false;
 }
 
@@ -119,6 +123,7 @@ export function applyBallEvent(
       if (rally.bounces >= 1) {
         // A serve that bounces in and then reaches the fence is a fault; the glass is fine.
         if (rally.isServe && event.surface === 'fence') return fault('fence');
+        rally.walls += 1;
         return null;
       }
       if (rally.isServe) return fault(event.surface === 'fence' ? 'fence' : 'wall');

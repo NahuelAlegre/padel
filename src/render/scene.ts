@@ -1,3 +1,4 @@
+import type { Insets } from '../core/layout';
 import type { SimEvent } from '../sim/match';
 import type { ShotKind, TeamId } from '../sim/types';
 
@@ -19,6 +20,12 @@ export interface Scene {
   bounce: { x: number; y: number; eta: number; first: boolean } | null;
   /** Where and when the person meets the ball, when the aid is on. */
   contact: SceneContact | null;
+  /** Where the person is aiming, on the rival's court. */
+  aim: SceneAim | null;
+  /** Advice on where to stand, when the aid is on. */
+  guide: { x: number; y: number } | null;
+  /** First visit: a ghost hand shows the gesture until the first good hit. */
+  tutorial: SceneTutorial | null;
   /** Rally pace above the base: 0 at the start, up to 1 in a long rally. */
   heat: number;
   pointer: PointerFeedback;
@@ -54,6 +61,13 @@ export interface ScenePlayer {
   /** World-x side the racket rests on: the player's hand, seen from the camera. */
   restSide: 1 | -1;
   shot: ShotKind;
+  /**
+   * Where the ball is met, relative to the feet, in world metres. The reach
+   * is generous on purpose, so the body has to stretch for it to look right.
+   */
+  reachX: number;
+  reachY: number;
+  reachZ: number;
 }
 
 export interface SceneContact {
@@ -67,9 +81,31 @@ export interface SceneContact {
   good: number;
 }
 
-/** What the pointer is doing, so the renderer can draw the swipe and the stick. */
+export interface SceneAim {
+  /** Where the ball is meant to land. */
+  x: number;
+  y: number;
+  /** The shot that would come out right now: its name is part of the mark. */
+  kind: ShotKind;
+  /** Played on the side of the racket hand. */
+  forehand: boolean;
+  /** 0..1: how close to the walls it is aimed, which widens the scatter. */
+  risk: number;
+  /** The thumb was released: the shot is armed and waits for the ball. */
+  armed: boolean;
+}
+
+export interface SceneTutorial {
+  scheme: 'two' | 'one';
+  stickSide: 'left' | 'right';
+  /** What to show: how to serve, or how to move and hit. */
+  step: 'serve' | 'play';
+}
+
+/** What the pointers are doing, so the renderer can draw the thumbs. */
 export interface PointerFeedback {
-  swipe: {
+  /** The thumb that aims or flicks: from where it went down to where it is. */
+  stroke: {
     active: boolean;
     x0: number;
     y0: number;
@@ -90,14 +126,14 @@ export interface PointerFeedback {
 
 export function createPointerFeedback(): PointerFeedback {
   return {
-    swipe: { active: false, x0: 0, y0: 0, x1: 0, y1: 0, releasedAt: 0 },
+    stroke: { active: false, x0: 0, y0: 0, x1: 0, y1: 0, releasedAt: 0 },
     stick: { active: false, cx: 0, cy: 0, dx: 0, dy: 0, radius: 0 },
   };
 }
 
 export interface Renderer {
-  /** The canvas changed size or pixel density. */
-  resize(width: number, height: number, pixelRatio: number): void;
+  /** The canvas changed size, pixel density or safe area. */
+  resize(width: number, height: number, pixelRatio: number, safeArea: Insets): void;
   /** Something happened in the simulation: start an effect, a sound, an animation. */
   onEvent(event: SimEvent, scene: Scene): void;
   /** Draws one frame. `dt` is the real time since the previous frame, in seconds. */

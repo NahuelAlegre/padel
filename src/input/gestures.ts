@@ -1,48 +1,97 @@
 import { CONTROLS, type ControlsConfig } from '../config';
-import { clamp } from '../core/math';
+import { clamp, lerp } from '../core/math';
 import type { ShotIntent } from '../sim/types';
 
-/** Length a swipe needs to count as a lob, in CSS pixels. */
-export function lobLength(viewportHeight: number, controls: ControlsConfig = CONTROLS): number {
-  return clamp(viewportHeight * controls.lobLengthFraction, controls.lobLengthMin, controls.lobLengthMax);
+/** Depth asked for by a chiquita: anything at or below `shots.dropAt` is one. */
+const DROP_DEPTH = 0.1;
+/** Shallowest ball that is still a normal shot and not a chiquita. */
+const SHORT_DEPTH = 0.32;
+
+/**
+ * Two-thumb scheme. Where the aiming thumb is, measured from where it went
+ * down, is where the ball goes:
+ *
+ *   sideways        the side of the court
+ *   up              deeper; far enough up, a lob
+ *   down            a chiquita, just over the net
+ *   not moved       the middle, at a comfortable depth
+ *
+ * `dx` and `dy` are in CSS pixels with y growing downward, as on screen.
+ */
+export function aimFromDrag(dx: number, dy: number, controls: ControlsConfig = CONTROLS): ShotIntent {
+  const up = -dy;
+  const aim = clamp(dx / controls.aimRadius, -1, 1);
+  if (up >= controls.lobAt) return { aim, depth: 1, lob: true, power: 1 };
+  if (up <= -controls.dropAt) return { aim, depth: DROP_DEPTH, lob: false, power: 1 };
+  const depth =
+    up >= 0
+      ? lerp(controls.restDepth, 1, clamp(up / controls.deepAt, 0, 1))
+      : lerp(controls.restDepth, SHORT_DEPTH, -up / controls.dropAt);
+  return { aim, depth, lob: false, power: 1 };
 }
 
 /**
- * Turns a finished touch into a shot.
- *
- *   tap                   safe shot to the middle
- *   swipe                 drive, aimed where the swipe points
- *   long swipe upward     lob
- *   swipe downward        drop shot
- *
- * `dx` and `dy` are the movement from touch-down to release in CSS pixels,
- * with y growing downward as on screen. Returns null for a touch that should
- * do nothing (a long press).
+ * One-hand scheme. A flick is a shot: its direction aims, its length says
+ * how deep, a long one upward is a lob and one pointing down is a chiquita.
  */
-export function interpretGesture(
-  dx: number,
-  dy: number,
-  durationMs: number,
-  viewportHeight: number,
-  controls: ControlsConfig = CONTROLS,
-): ShotIntent | null {
-  const distance = Math.hypot(dx, dy);
-  if (distance < controls.swipeMinDistance) {
-    return durationMs <= controls.tapMaxDuration ? { kind: 'safe', aim: 0 } : null;
-  }
-
+export function intentFromFlick(dx: number, dy: number, controls: ControlsConfig = CONTROLS): ShotIntent {
+  const length = Math.hypot(dx, dy);
   // 0 = straight up, 90 = right, -90 = left, 180 = straight down.
   const angle = (Math.atan2(dx, -dy) * 180) / Math.PI;
   const tilt = Math.abs(angle);
 
-  if (tilt >= controls.dropMinAngle) {
-    const full = Math.sin((controls.aimMaxAngle * Math.PI) / 180);
-    return { kind: 'drop', aim: clamp(dx / (distance * full), -1, 1) };
+  if (tilt >= controls.flickDropAngle) {
+    const full = Math.sin((controls.flickAimAngle * Math.PI) / 180);
+    return { aim: clamp(dx / (Math.max(length, 1) * full), -1, 1), depth: DROP_DEPTH, lob: false, power: 1 };
   }
+  const aim = clamp(angle / controls.flickAimAngle, -1, 1);
+  if (length >= controls.flickLobLength && tilt <= controls.flickAimAngle + 5) {
+    return { aim, depth: 1, lob: true, power: 1 };
+  }
+  const t = clamp(
+    (length - controls.flickShortLength) / (controls.flickDeepLength - controls.flickShortLength),
+    0,
+    1,
+  );
+  return { aim, depth: lerp(SHORT_DEPTH + 0.08, 1, t), lob: false, power: 1 };
+}
 
-  const aim = clamp(angle / controls.aimMaxAngle, -1, 1);
-  if (distance >= lobLength(viewportHeight, controls) && tilt <= controls.lobMaxAngle) {
-    return { kind: 'lob', aim };
+/** A tap, or a key with no direction: the middle of the court at a comfortable depth. */
+export function neutralIntent(controls: ControlsConfig = CONTROLS): ShotIntent {
+  return { aim: 0, depth: controls.restDepth, lob: false, power: 1 };
+}
+
+export interface TouchSummary {
+  /** Milliseconds between touch down and release. */
+  duration: number;
+  /** Distance between where it went down and where it lifted, in CSS pixels. */
+  distance: number;
+  /** The touch had already become the stick. */
+  moving: boolean;
+  /** Distance covered during the last `flingWindow` milliseconds, and how long that really was. */
+  flingDistance: number;
+  flingMs: number;
+}
+
+/**
+ * One-hand scheme: what a finished touch was.
+ *
+ *   'flick'  a quick stroke from touch down: a shot along the whole movement
+ *   'fling'  the thumb left the stick at speed: a shot along the last stretch
+ *   'tap'    a touch that did not move: a shot to the middle
+ *   'none'   the end of a drag: the player just stops
+ *
+ * Speed is what separates moving from hitting.
+ */
+export function classifyTouch(
+  touch: TouchSummary,
+  controls: ControlsConfig = CONTROLS,
+): 'flick' | 'fling' | 'tap' | 'none' {
+  if (!touch.moving) {
+    if (touch.distance >= controls.flickMinDistance) return 'flick';
+    return touch.distance <= controls.tapMaxDistance ? 'tap' : 'none';
   }
-  return { kind: 'drive', aim };
+  const speed = touch.flingMs > 0 ? touch.flingDistance / touch.flingMs : 0;
+  if (touch.flingDistance >= controls.flingMinDistance && speed >= controls.flingSpeed) return 'fling';
+  return 'none';
 }

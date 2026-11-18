@@ -1,7 +1,9 @@
 """Hoja de revisión del modelo: el personaje girado en varias vistas, en una sola imagen.
 
-Uso: blender -b --factory-startup --python vista.py -- salida.png [variante] [res] [zona]
+Uso: blender -b --factory-startup --python vista.py -- salida.png [variante] [res] [zona] [ángulos] [expresión]
+  variante: una paleta (jugador, rival) o un personaje (beto, romina, chela), que suma sus piezas
   zona: todo | cara | pies | manos
+  expresión: normal | parpadeo | esfuerzo | alegria | fastidio
 """
 import math
 import os
@@ -21,13 +23,15 @@ out = argv[0] if argv else '//vista.png'
 variant = argv[1] if len(argv) > 1 else 'rival'
 res = int(argv[2]) if len(argv) > 2 else 2
 zone = argv[3] if len(argv) > 3 else 'todo'
-custom = [float(a) for a in argv[4].split(',')] if len(argv) > 4 else None
+custom = [float(a) for a in argv[4].split(',')] if len(argv) > 4 and argv[4] != '-' else None
+expr = argv[5] if len(argv) > 5 else None
 
 toon.clear_scene()
 sun = (-0.55, 0.62, 0.56)            # el sol queda atrás y a la izquierda del personaje
-parts = personaje.build(res)
+who = personaje.PERSONAJES.get(variant)
+parts = personaje.build(res, pieces=who['piezas'] if who else personaje.PIEZAS_BASE, expr=expr)
 print('VERTS/TRIS', personaje.count(parts))
-mats = toon.make_materials(personaje.PALETTES[variant], variant + '_', sun)
+mats = toon.make_materials(personaje.PALETTES[who['paleta'] if who else variant], variant + '_', sun)
 base = comun.to_object(parts, 'personaje', mats)
 toon.add_outline(base, 0.0105 if zone == 'todo' else 0.004)
 

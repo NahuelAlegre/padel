@@ -6,8 +6,15 @@ cuello en la remera, la muñeca en la muñequera y el tobillo en la media. Por e
 un tubo cerrado simple y no hace falta soldar nada.
 
 RES controla el detalle: 1 = malla de juego (tiempo real), 2 = malla para renderizar sprites.
+La malla de juego gasta vértices solo donde se ven: nada debajo de la ropa ni del pelo, dedos de
+cuatro lados y agujeros de la pala hechos con rombos.
+
+El mismo modelo sirve para todo el elenco: cambian la paleta, unas piezas chicas opcionales
+(trenza, gorra, ala, bigote) y la escala de algunos huesos. La cara tiene expresiones que mueven
+siempre los mismos vértices (ver EXPRESIONES).
 """
 import math
+import os
 
 from mathutils import Matrix, Vector
 
@@ -43,7 +50,10 @@ PARENT = {
     'braid1': 'head', 'braid2': 'braid1', 'braid3': 'braid2',
 }
 HAND_K = 1.20                  # manos algo sobredimensionadas (se leen mejor en chico)
-SHOE_K = 1.13                  # zapatillas grandes: la pierna se ensancha al llegar al pie
+# Prueba de una estilización más marcada (ESTILO=marcado): zapatillas más grandes y tobillo más fino.
+# El resultado de la prueba está en el README; el modelo que se exporta usa la variante normal.
+MARCADO = os.environ.get('ESTILO', '') == 'marcado'
+SHOE_K = 1.30 if MARCADO else 1.13   # zapatillas grandes: la pierna se ensancha al llegar al pie
 WRIST = Vector(JOINTS['hand.L'])
 GRIP0 = Vector((0.762, 0.0, 1.352))  # centro del mango dentro del puño, antes de escalar la mano
 GRIP = WRIST + (GRIP0 - WRIST) * HAND_K
@@ -98,6 +108,10 @@ LEG = [
     (0.088, 0.081, 0.014, 0.030, 0.029, 0.032),       # maléolos
     (0.050, 0.081, 0.014, 0.029, 0.029, 0.031),
 ]
+
+if MARCADO:
+    # tobillo y canilla más finos: la zapatilla grande se despega de la pierna
+    LEG = [(z, cx, cy) + tuple(r * (1.0 - 0.17 * max(0.0, min(1.0, (0.40 - z) / 0.22))) for r in (rx, rf, rb)) for z, cx, cy, rx, rf, rb in LEG]
 
 
 def profile_at(table, z):
@@ -159,23 +173,136 @@ def H(x, y, dz):
 
 
 # ---------------------------------------------------------------------------
+# Cara: calcos proyectados sobre la cabeza. Cada expresión mueve los mismos vértices.
+# ---------------------------------------------------------------------------
+# eye: 1 abierto .. 0 cerrado. arch: el ojo cerrado hace un arco hacia arriba (sonrisa).
+# brow_in / brow_out: cuánto sube la ceja en el entrecejo y en la punta.
+# mouth_open: grosor de la boca. mouth_w: ancho. smile: suben las comisuras. drop: baja el centro.
+# teeth: media altura de la fila de dientes (0 = no se ven).
+EXPRESIONES = {
+    'normal': {},
+    'parpadeo': dict(eye=0.0),
+    'esfuerzo': dict(eye=0.60, brow_in=-0.0064, brow_out=0.0016, mouth_open=2.9, mouth_w=1.12, smile=-0.0022, teeth=0.0056),
+    'alegria': dict(eye=0.0, arch=1.0, brow_in=0.0052, brow_out=0.0060, mouth_open=3.7, mouth_w=1.22, smile=0.0086, drop=0.0052, teeth=0.0044),
+    'fastidio': dict(eye=0.64, brow_in=-0.0054, brow_out=-0.0032, mouth_open=0.95, mouth_w=0.86, smile=-0.0062),
+}
+MORFOS = ['parpadeo', 'esfuerzo', 'alegria', 'fastidio']     # lo que se exporta; 'normal' es la malla base
+
+
+def face_part(bvh, expr=None):
+    """Ojos, párpados, cejas, boca y dientes. La cantidad y el orden de los vértices no dependen de la expresión."""
+    e = dict(eye=1.0, arch=0.0, brow_in=0.0, brow_out=0.0, mouth_open=1.0, mouth_w=1.0, smile=0.0, drop=0.0, teeth=0.0)
+    e.update(expr or {})
+    face = Part('face')
+    zeye = 0.1165
+    op, arch = e['eye'], e['arch']
+    lid_c = lerp(lerp(-0.0085, -0.0045, arch), 0.0015, op)          # altura del párpado en las puntas
+    lid_a = lerp(lerp(-0.0020, 0.0080, arch), 0.0094, op)           # cuánto se arquea
+    cut = lerp(-0.0100, 0.0088, op)                                 # hasta dónde se ve el ojo
+    LID_R = 0.0182
+
+    def top(x):
+        """Altura máxima visible del ojo en x (local, relativa al centro del ojo)."""
+        return cut
+
+    def shut(x, z):
+        """El punto del ojo con el párpado puesto. En el ojo que sonríe, todo se pliega sobre el arco."""
+        if arch > 0.5:
+            return lid_c + lid_a * math.sqrt(max(0.0, 1.0 - min(1.0, abs(x) / LID_R) ** 2))
+        return min(z, top(x))
+
+    for sx in (1, -1):
+        ex = sx * 0.0335
+
+        def P(x, z):
+            return ((ex + x) * HS, -0.4, HEAD.z + (zeye + z) * HS)
+        # blanco: abajo redondo, arriba más chato (lo corta el párpado)
+        white = []
+        for k in range(14):
+            th = 2 * math.pi * k / 14
+            rz = 0.0088 if math.sin(th) > 0 else 0.0118
+            x, z = ring_point(th, 0.0170, rz, rz, 2.4)
+            white.append(P(x, shut(x, z)))
+        decal(face, bvh, white, 0.0011, mat='eye_white')
+        ix = -sx * 0.0016
+        iris = []
+        for k in range(10):
+            th = 2 * math.pi * k / 10
+            x, z = ix + 0.0086 * math.cos(th), 0.0002 + 0.0090 * math.sin(th)
+            iris.append(P(x, shut(x, z)))
+        decal(face, bvh, iris, 0.0019, mat='ink')
+        glint = []
+        for k in range(6):
+            th = 2 * math.pi * k / 6
+            x, z = ix + 0.0032 + 0.0025 * math.cos(th), 0.0036 + 0.0025 * math.sin(th)
+            glint.append(P(x, shut(x, z)))
+        decal(face, bvh, glint, 0.0026, mat='eye_white')
+        # párpado superior: arco grueso con una pestaña corta hacia afuera
+        lid = []
+        for k in range(8):
+            th = math.radians(lerp(178, 2, k / 7))
+            lid.append(P(LID_R * math.cos(th), lid_c + lid_a * math.sin(th)))
+        wl = [0.0030, 0.0046, 0.0058, 0.0062, 0.0062, 0.0058, 0.0046, 0.0030]
+        if sx > 0:
+            wl[-1] = 0.0052          # pestaña del lado de afuera
+        else:
+            wl[0] = 0.0052
+        thick = lerp(1.18, 1.0, op)
+        band_decal(face, bvh, lid, [w * HS * thick for w in wl], 0.0023, mat='ink')
+        # ceja: baja hacia el entrecejo (decidida) y se afina hacia afuera
+        bx = (0.0110, 0.0235, 0.0390, 0.0545)
+        bz = (0.1345, 0.1425, 0.1470, 0.1415)
+        brow = [((sx * bx[i]) * HS, -0.4, HEAD.z + (bz[i] + lerp(e['brow_in'], e['brow_out'], i / 3.0)) * HS) for i in range(4)]
+        band_decal(face, bvh, brow, [0.0070 * HS, 0.0084 * HS, 0.0070 * HS, 0.0032 * HS], 0.0017, mat='brow')
+    mx = (-0.0200, -0.0100, 0.0020, 0.0130, 0.0215)
+    mz = (0.0545, 0.0508, 0.0500, 0.0528, 0.0580)
+    mw = (0.0026, 0.0042, 0.0046, 0.0040, 0.0022)
+    grow = (0.35, 0.9, 1.0, 0.9, 0.35)
+    pts, widths = [], []
+    for i in range(5):
+        side = min(1.0, abs(mx[i]) / 0.021)
+        z = mz[i] + e['smile'] * side ** 1.5 - e['drop'] * (1.0 - side * side)
+        pts.append((mx[i] * e['mouth_w'] * HS, -0.4, HEAD.z + z * HS))
+        widths.append(mw[i] * (1.0 + (e['mouth_open'] - 1.0) * grow[i]) * HS)
+    band_decal(face, bvh, pts, widths, 0.0015, mat='mouth')
+    # dientes: una tira blanca en la mitad de arriba de la boca; sin altura cuando la boca está cerrada
+    tz = [pts[i][2] + widths[i] * 0.22 for i in (1, 2, 3)]
+    tx = [pts[i][0] * 0.92 for i in (1, 2, 3)]
+    band_decal(face, bvh, [(tx[i], -0.4, tz[i]) for i in range(3)], [e['teeth'] * 2 * HS * k for k in (0.85, 1.0, 0.85)], 0.0021, mat='eye_white')
+    face.rigid('head').set_outline(0.0)
+    return face
+
+
+# ---------------------------------------------------------------------------
 # Piezas
 # ---------------------------------------------------------------------------
+PIEZAS = ['trenza', 'gorra', 'ala', 'bigote']      # piezas opcionales, en el orden en que se exportan
+PIEZAS_BASE = ('trenza',)                          # las que lleva el personaje por defecto
 
-def build(res=1):
-    """Arma todas las piezas. Devuelve la lista de Part."""
+
+def build(res=1, pieces=PIEZAS_BASE, expr=None):
+    """Arma todas las piezas. Devuelve la lista de Part.
+
+    res: 1 = malla de juego (tiempo real), 2 = malla para renderizar sprites.
+    pieces: piezas opcionales a incluir, o 'todas'.
+    expr: expresión de la cara (nombre de EXPRESIONES), para las hojas de revisión.
+    """
     R = res
-    st = 1 if R < 2 else 2          # subdivisiones a lo largo
+    game = R < 2
+    st = 1 if game else 2          # subdivisiones a lo largo
+    want = set(PIEZAS) if pieces == 'todas' else set(pieces or ())
 
     def N(n):
-        return int(round(n * (1.0 if R < 2 else 1.6) / 2)) * 2
+        return int(round(n * (1.0 if game else 1.6) / 2)) * 2
 
     parts = []
 
     # --- Pierna izquierda -------------------------------------------------
+    # Filas elegidas a mano: más juntas en la rodilla y el gemelo. Abajo termina adentro de la media.
     leg = Part('leg.L')
-    sweep(leg, [dict(p=(cx, cy, z), rx=rx, rf=rf, rb=rb) for z, cx, cy, rx, rf, rb in [profile_at(LEG, 0.865)] + LEG[1:]],
-          n=N(10), steps=st + 1, mat='skin', cap0='flat', cap1='flat')
+    leg_z = [0.865, 0.80, 0.74, 0.68, 0.625, 0.575, 0.535, 0.495, 0.458, 0.42, 0.375, 0.33, 0.28, 0.215]
+    sweep(leg, [dict(p=(cx, cy, z), rx=rx, rf=rf, rb=rb) for z, cx, cy, rx, rf, rb in [profile_at(LEG, z) for z in leg_z]],
+          n=N(10), steps=st, mat='skin', cap0='flat', cap1='flat')
 
     def w_leg(co, m):
         knee = smooth(0.545, 0.445, co.z)
@@ -187,7 +314,7 @@ def build(res=1):
     # --- Media ------------------------------------------------------------
     sock = Part('sock.L')
     secs = []
-    for z in (0.238, 0.232, 0.205, 0.16, 0.115, 0.075, 0.055):
+    for z in (0.238, 0.232, 0.205, 0.16, 0.115, 0.09):
         _z, cx, cy, rx, rf, rb = profile_at(LEG, z)
         g = 0.0075 if z > 0.2 else 0.0052
         secs.append(dict(p=(cx, cy, z), rx=rx + g, rf=rf + g, rb=rb + g, sharp=z > 0.2))
@@ -198,74 +325,79 @@ def build(res=1):
     # --- Zapatilla --------------------------------------------------------
     x0 = 0.081
     toe_w = lambda co, m: {'foot.L': 1 - smooth(-0.085, -0.125, co.y), 'toe.L': smooth(-0.085, -0.125, co.y)}
+    box = math.pi / 8               # con 8 lados y este giro, la sección queda con caras planas arriba y abajo
 
     sole = Part('sole.L')
     SOLE = [  # y, medio ancho, z abajo, z arriba
-        (0.094, 0.022, 0.004, 0.036), (0.078, 0.036, 0.000, 0.037), (0.045, 0.042, 0.000, 0.036),
-        (0.000, 0.040, 0.000, 0.034), (-0.050, 0.043, 0.000, 0.031), (-0.105, 0.053, 0.000, 0.029),
-        (-0.155, 0.052, 0.002, 0.029), (-0.190, 0.043, 0.007, 0.031), (-0.210, 0.027, 0.012, 0.032),
+        (0.094, 0.022, 0.004, 0.036), (0.070, 0.038, 0.000, 0.037), (0.020, 0.041, 0.000, 0.035),
+        (-0.050, 0.043, 0.000, 0.031), (-0.105, 0.053, 0.000, 0.029), (-0.160, 0.051, 0.002, 0.029), (-0.205, 0.030, 0.010, 0.032),
     ]
     sweep(sole, [dict(p=(x0, y, (zb + zt) / 2), rx=w, ry=(zt - zb) / 2, e=5.0) for y, w, zb, zt in SOLE],
-          n=N(10), steps=st, mat='shoe_sole', front=(0, 0, -1), capk=0.9)
+          n=8 if game else N(10), steps=st, mat='shoe_sole', front=(0, 0, -1), capk=0.5 if game else 0.9, ang0=box if game else 0.0,
+          cap0='point' if game else 'round', cap1='point' if game else 'round')
     sole.set_weights(toe_w)
     parts.append(scale_about(sole, ANKLE0, SHOE_K))
 
     upper = Part('upper.L')
     UP = [  # y, medio ancho, altura sobre z=0.028
-        (0.088, 0.017, 0.048), (0.072, 0.031, 0.078), (0.045, 0.037, 0.088), (0.010, 0.037, 0.082),
-        (-0.030, 0.037, 0.086), (-0.070, 0.041, 0.066), (-0.110, 0.047, 0.047), (-0.148, 0.047, 0.036),
-        (-0.180, 0.040, 0.030), (-0.199, 0.025, 0.022),
+        (0.088, 0.017, 0.048), (0.072, 0.031, 0.078), (0.045, 0.037, 0.088), (-0.010, 0.037, 0.084),
+        (-0.070, 0.041, 0.066), (-0.110, 0.047, 0.047), (-0.148, 0.047, 0.036), (-0.180, 0.040, 0.030), (-0.199, 0.025, 0.022),
     ]
 
     def up_mat(s, ang):
-        if s >= 6.9:
+        if s >= 5.9:
             return 'shoe_cap'
         if s < 1.6 and 0.6 < ang < math.pi - 0.6:
             return 'shoe_accent'
         return 'shoe_upper'
-    sweep(upper, [dict(p=(x0, y, 0.028), rx=w, rb=h, rf=0.014, e=2.7, sharp=(i in (7,)))
-                  for i, (y, w, h) in enumerate(UP)],
-          n=N(12), steps=st, mat=up_mat, front=(0, 0, -1), capk=0.8)
+    sweep(upper, [dict(p=(x0, y, 0.028), rx=w, rb=h, rf=0.014, e=2.7, sharp=(i == 6)) for i, (y, w, h) in enumerate(UP)],
+          n=8 if game else N(12), steps=st, mat=up_mat, front=(0, 0, -1), capk=0.5 if game else 0.8,
+          cap0='point' if game else 'round', cap1='point' if game else 'round')
     upper.set_weights(toe_w)
     parts.append(scale_about(upper, ANKLE0, SHOE_K))
 
     collar = Part('collar.L')
     csecs = []
-    for k in range(10):
-        th = 2 * math.pi * k / 10
+    nc = 8 if game else 10
+    for k in range(nc):
+        th = 2 * math.pi * k / nc
         csecs.append(dict(p=(x0 + 0.035 * math.cos(th), 0.018 + 0.047 * math.sin(th), 0.112 + 0.007 * math.sin(th)),
-                          rx=0.0105, ry=0.0125))
-    sweep(collar, csecs, n=N(6), steps=1, closed=True, mat='shoe_collar', frames=lambda s: (0, 0, 1))
+                          rx=0.0105, ry=0.0125, e=3.0 if game else 2.0))
+    sweep(collar, csecs, n=4 if game else N(6), steps=1, closed=True, mat='shoe_collar', frames=lambda s: (0, 0, 1), ang0=math.pi / 4 if game else 0.0)
     collar.rigid('foot.L')
     parts.append(scale_about(collar, ANKLE0, SHOE_K))
 
     tongue = Part('tongue.L')
     sweep(tongue, [dict(p=(x0, -0.050, 0.094), rx=0.022, ry=0.008, e=3), dict(p=(x0, -0.034, 0.112), rx=0.025, ry=0.009, e=3),
-                   dict(p=(x0, -0.020, 0.134), rx=0.023, ry=0.008, e=3)], n=N(8), steps=st, mat='shoe_tongue', front=(0, -1, 0.2), capk=0.5)
+                   dict(p=(x0, -0.020, 0.134), rx=0.023, ry=0.008, e=3)], n=4 if game else N(8), steps=st, mat='shoe_cap', front=(0, -1, 0.2),
+          capk=0.5, ang0=math.pi / 4 if game else 0.0, cap0='flat' if game else 'round', cap1='point' if game else 'round')
     tongue.rigid('foot.L')
     parts.append(scale_about(tongue, ANKLE0, SHOE_K))
 
+    # cordones: tres tiras planas apoyadas en el lomo del empeine
+    lace = Part('lace.L')
+    hh = [h for yy, w, h in UP]
+    yy = [u[0] for u in UP]
     for y in (-0.062, -0.086, -0.110):
-        # cordones: barras que siguen el lomo del empeine
-        hh = [h for yy, w, h in UP]
-        yy = [u[0] for u in UP]
         i = max(k for k in range(len(yy) - 1) if yy[k] >= y)
         t = (yy[i] - y) / (yy[i] - yy[i + 1])
         top = 0.028 + lerp(hh[i], hh[i + 1], t)
         wd = lerp(UP[i][1], UP[i + 1][1], t) * 0.62
-        lace = Part('lace.L')
-        sweep(lace, [dict(p=(x0 - wd, y, top - 0.012), r=0.0042), dict(p=(x0, y, top + 0.0015), r=0.0046),
-                     dict(p=(x0 + wd, y, top - 0.012), r=0.0042)], n=N(6), steps=st, mat='shoe_tongue', front=(0, -1, 0), capk=0.6)
-        lace.set_weights(toe_w)
-        lace.set_outline(0.0)
-        parts.append(scale_about(lace, ANKLE0, SHOE_K))
+        row = []
+        for dx, dz in ((-wd, -0.0085), (0.0, 0.0045), (wd, -0.0085)):
+            row.append((lace.add_vert((x0 + dx, y + 0.0055, top + dz), s=0, a=0, u=0), lace.add_vert((x0 + dx, y - 0.0055, top + dz), s=0, a=0, u=1)))
+        for k in range(2):
+            lace.add_face((row[k][0], row[k][1], row[k + 1][1], row[k + 1][0]), 'shoe_cap')
+    lace.set_weights(toe_w)
+    lace.set_outline(0.0)
+    parts.append(scale_about(lace, ANKLE0, SHOE_K))
 
     # --- Short ------------------------------------------------------------
     shorts = Part('shorts')
     SH = [(1.098, 0.120, 0.087, 0.093, 2.2, True), (1.066, 0.126, 0.091, 0.097, 2.2, True), (1.00, 0.144, 0.098, 0.110, 2.2, False),
           (0.94, 0.166, 0.103, 0.123, 2.3, False), (0.885, 0.150, 0.098, 0.116, 2.4, False), (0.842, 0.105, 0.086, 0.098, 2.4, False)]
     sweep(shorts, [dict(p=(0, 0.004, z), rx=rx, rf=rf, rb=rb, e=e, sharp=sh) for z, rx, rf, rb, e, sh in SH],
-          n=N(14), steps=st, mat=lambda s, a: 'shorts_band' if s < 1.0 else 'shorts', cap0='flat', cap1='round', capk=0.25)
+          n=N(14), steps=st, mat='shorts', cap0='flat', cap1='round', capk=0.25)
 
     def w_shorts(co, m):
         sp = smooth(1.03, 1.10, co.z) * 0.6
@@ -282,7 +414,7 @@ def build(res=1):
         _z, cx, cy, rx, rf, rb = profile_at(LEG, z)
         g = 0.0065 if z > 0.8 else 0.0090
         SL.append(dict(p=(cx, cy, z), rx=rx + g, rf=rf + g, rb=rb + g, sharp=z < 0.76))
-    sweep(sleg, SL, n=N(10), steps=st + 1, mat='shorts', cap0='flat', cap1='flat')
+    sweep(sleg, SL, n=N(10), steps=st, mat='shorts', cap0='flat', cap1='flat')
     sleg.set_weights(lambda co, m: {'hips': 1 - smooth(0.965, 0.855, co.z), 'thigh.L': smooth(0.965, 0.855, co.z)})
     parts.append(sleg)
 
@@ -337,11 +469,12 @@ def build(res=1):
     shirt.set_weights(w_shirt)
     parts.append(shirt)
 
+    # la manga tiene sus propios materiales: una musculosa es la misma manga con el color de la piel
     sleeve = Part('sleeve.L')
     sweep(sleeve, [dict(p=(0.135, 0.0, 1.376), r=0.050), dict(p=(0.190, 0.0, 1.380), rx=0.058, ry=0.056),
                    dict(p=(0.250, 0.0, 1.380), rx=0.055, ry=0.054), dict(p=(0.300, 0.0, 1.380), rx=0.0535, ry=0.0525, sharp=True),
                    dict(p=(0.320, 0.0, 1.380), rx=0.054, ry=0.053, sharp=True)],
-          n=N(10), steps=st + 1, mat=lambda s, a: 'shirt_trim' if s > 3.0 else 'shirt', cap0='round', cap1='flat')
+          n=N(10), steps=st, mat=lambda s, a: 'sleeve_trim' if s > 3.0 else 'sleeve', cap0='flat' if game else 'round', cap1='flat')
     sleeve.set_weights(lambda co, m: {'clav.L': smooth(0.20, 0.15, co.x) * 0.6, 'upper_arm.L': 1 - smooth(0.20, 0.15, co.x) * 0.6})
     parts.append(sleeve)
 
@@ -357,9 +490,21 @@ def build(res=1):
     PALM = [(0.725, 0.0165, 0.040, 0.038, 2.7), (0.760, 0.0155, 0.045, 0.042, 3.0), (0.787, 0.0125, 0.043, 0.040, 3.0)]
     az = 1.382
 
+    def arm_at(x):
+        t = ARM
+        for i in range(len(t) - 1):
+            a, b = t[i], t[i + 1]
+            if a[0] <= x <= b[0]:
+                u = (x - a[0]) / (b[0] - a[0])
+                p0, p3 = t[max(0, i - 1)], t[min(len(t) - 1, i + 2)]
+                return tuple(catmull(p0[k], a[k], b[k], p3[k], u) if k else x for k in range(5))
+        return t[-1]
+
     def arm_part(name, grip):
         arm = Part(name)
-        secs = [dict(p=(x, 0, az), rx=rx, rf=rf, rb=rb, e=e) for x, rx, rf, rb, e in ARM]
+        # en la malla de juego el brazo empieza adentro de la manga y lleva las filas justas para doblar el codo
+        rows = [arm_at(x) for x in (0.300, 0.360, 0.405, 0.448, 0.490, 0.540, 0.600, 0.650, 0.692)] if game else ARM
+        secs = [dict(p=(x, 0, az), rx=rx, rf=rf, rb=rb, e=e) for x, rx, rf, rb, e in rows]
         if grip:
             # puño: la palma se acorta y se curva sobre el mango
             secs += [dict(p=(0.722, 0, az - 0.002), rx=0.0185, rf=0.040, rb=0.038, e=2.7),
@@ -367,7 +512,7 @@ def build(res=1):
                      dict(p=(0.778, 0, az - 0.006), rx=0.0150, rf=0.042, rb=0.039, e=3.0)]
         else:
             secs += [dict(p=(x, 0, az), rx=rx, rf=rf, rb=rb, e=e) for x, rx, rf, rb, e in PALM]
-        sweep(arm, secs, n=N(8), steps=st + 1, mat='skin', cap0='flat', cap1='round', capk=0.7)
+        sweep(arm, secs, n=N(8), steps=st, mat='skin', cap0='flat', cap1='round', capk=0.7)
         arm.set_weights(arm_w)
         return scale_about(arm, WRIST, HAND_K, lambda v: v.x > WRIST.x)
 
@@ -376,7 +521,14 @@ def build(res=1):
         for i, p in enumerate(pts):
             t = i / (len(pts) - 1)
             secs.append(dict(p=p, r=lerp(r0, r1, t)))
-        sweep(part, secs, n=N(n) if R >= 2 else n, steps=st, mat='skin', front=(0, 0, 1), cap0='flat', cap1='round', capk=0.9)
+        if game:
+            # cuatro lados y la punta en un solo vértice: a este tamaño se lee igual
+            sweep(part, secs, n=4, steps=1, mat='skin', front=(0, 0, 1), cap0='none', cap1='point', capk=0.45, ang0=math.pi / 4)
+        else:
+            sweep(part, secs, n=N(n), steps=st, mat='skin', front=(0, 0, 1), cap0='flat', cap1='round', capk=0.9)
+
+    def thin(pts, keep):
+        return [pts[i] for i in keep] if game else pts
 
     # mano abierta (izquierda)
     armL = arm_part('arm.L', False)
@@ -391,10 +543,11 @@ def build(res=1):
             d = Vector((math.cos(ang) * math.cos(sp), math.sin(sp), -math.sin(ang)))
             pos = pos + d * (L * seg)
             pts.append(pos.copy())
-        finger(handL, pts, 0.0098, 0.0072)
+        finger(handL, thin(pts, (0, 2, 3, 4)), 0.0105 if game else 0.0098, 0.0080 if game else 0.0072)
     tb = Vector((0.716, -0.030, az - 0.004))
     td = Vector((0.52, -0.82, -0.22)).normalized()
-    finger(handL, [tb - td * 0.012, tb + td * 0.018, tb + td * 0.042 + Vector((0.004, 0, -0.004)), tb + td * 0.064 + Vector((0.012, 0, -0.010))], 0.0128, 0.0088)
+    finger(handL, thin([tb - td * 0.012, tb + td * 0.018, tb + td * 0.042 + Vector((0.004, 0, -0.004)), tb + td * 0.064 + Vector((0.012, 0, -0.010))], (0, 1, 3)),
+           0.0134 if game else 0.0128, 0.0096 if game else 0.0088)
     handL.rigid('hand.L').set_outline(0.45)
     scale_about(handL, WRIST, HAND_K)
     parts += [armL, handL]
@@ -405,12 +558,12 @@ def build(res=1):
     cx, cz, rr = GRIP0.x, GRIP0.z, 0.0268
     for y in (-0.031, -0.0105, 0.010, 0.029):
         pts = []
-        for a in (62, 30, -8, -52, -98, -140, -176):
+        for a in ((62, 10, -45, -100, -150, -178) if game else (62, 30, -8, -52, -98, -140, -176)):
             a = math.radians(a)
             pts.append(Vector((cx + rr * math.cos(a) * (1.12 if a > 0.4 else 1.0), y, cz + rr * math.sin(a) * (1.18 if a > 0.4 else 1.0))))
-        finger(handG, pts, 0.0100, 0.0082)
-    finger(handG, [Vector((0.726, -0.034, az - 0.006)), Vector((0.742, -0.047, az + 0.001)), Vector((0.766, -0.052, az + 0.000)),
-                   Vector((0.787, -0.049, az - 0.012)), Vector((0.794, -0.045, az - 0.028))], 0.0125, 0.0090)
+        finger(handG, pts, 0.0106 if game else 0.0100, 0.0088 if game else 0.0082)
+    finger(handG, thin([Vector((0.726, -0.034, az - 0.006)), Vector((0.742, -0.047, az + 0.001)), Vector((0.766, -0.052, az + 0.000)),
+                        Vector((0.787, -0.049, az - 0.012)), Vector((0.794, -0.045, az - 0.028))], (0, 1, 3, 4)), 0.0130 if game else 0.0125, 0.0096 if game else 0.0090)
     handG.rigid('hand.L').set_outline(0.45)
     scale_about(handG, WRIST, HAND_K)
     # derecha = espejo del puño; izquierda = mano abierta
@@ -420,7 +573,7 @@ def build(res=1):
     band = Part('wrist.L')
     sweep(band, [dict(p=(0.646, 0, az), rx=0.0295, ry=0.0355, e=2.2, sharp=True), dict(p=(0.662, 0, az), rx=0.0290, ry=0.0355, e=2.2, sharp=True),
                  dict(p=(0.682, 0, az), rx=0.0275, ry=0.0350, e=2.3, sharp=True), dict(p=(0.698, 0, az), rx=0.0265, ry=0.0350, e=2.3, sharp=True)],
-          n=N(10), steps=1, mat=lambda s, a: 'wrist_stripe' if 1.0 < s < 2.0 else 'wrist', cap0='flat', cap1='flat')
+          n=N(8) if game else N(10), steps=1, mat=lambda s, a: 'wrist_stripe' if 1.0 < s < 2.0 else 'wrist', cap0='flat', cap1='flat')
     band.rigid('forearm.L')
     parts.append(band)
 
@@ -428,17 +581,30 @@ def build(res=1):
     head = Part('head')
     hsecs = [dict(p=(0, 0.018, 1.385), rx=0.053, rf=0.050, rb=0.055), dict(p=(0, 0.013, 1.430), rx=0.047, rf=0.046, rb=0.050),
              dict(p=(0, 0.009, 1.462), rx=0.047, rf=0.047, rb=0.054)]
-    for dz, cy, rx, rf, rb, e in HEADP:
+    if game:
+        # filas propias: más juntas en la cara, que es lo que se ve de perfil
+        rows = [head_profile(dz) for dz in (0.004, 0.014, 0.026, 0.038, 0.050, 0.062, 0.074, 0.086, 0.098, 0.110, 0.122, 0.134, 0.146, 0.158, 0.170,
+                                            0.185, 0.215, 0.238)]
+    else:
+        rows = HEADP
+    for dz, cy, rx, rf, rb, e in rows:
         hsecs.append(dict(p=H(0, cy, dz), rx=rx * HS, rf=rf * HS, rb=rb * HS, e=e))
-    sweep(head, hsecs, n=N(16), steps=st + 1, mat='skin', cap0='flat', cap1='round', capk=0.55)
+    sweep(head, hsecs, n=18 if game else N(16), steps=st, mat='skin', cap0='flat', cap1='round', capk=0.55)
 
     def w_head(co, m):
         hd = smooth(1.445, 1.490, co.z)
         ch = smooth(1.425, 1.395, co.z)
         return {'head': hd, 'neck': (1 - hd) * (1 - ch), 'chest': (1 - hd) * ch}
     head.set_weights(w_head)
-    parts.append(head)
     bvh = bvh_of(head)
+    build.bvh = bvh
+    if game:
+        # lo que queda tapado por el pelo no se exporta: de la coronilla para arriba
+        top_z = HEAD.z + 0.1845 * HS
+        keep = [i for i, f in enumerate(head.faces) if min(head.verts[v].z for v in f) < top_z]
+        head.faces = [head.faces[i] for i in keep]
+        head.fmat = [head.fmat[i] for i in keep]
+    parts.append(head)
 
     # nariz: cuña redondeada, sin contorno para que no quede un aro alrededor
     nose = Part('nose')
@@ -449,47 +615,11 @@ def build(res=1):
 
     for sx in (1, -1):
         ear = Part('ear')
-        ellipsoid(ear, H(sx * 0.0865, 0.014, 0.103), (0.011 * HS, 0.017 * HS, 0.027 * HS), n=N(8), rings=4 if R < 2 else 6, mat='skin')
+        ellipsoid(ear, H(sx * 0.0865, 0.014, 0.103), (0.011 * HS, 0.017 * HS, 0.027 * HS), n=N(8), rings=4 if game else 6, mat='skin')
         ear.rigid('head').set_outline(0.55)
         parts.append(ear)
 
-    # cara: calcos proyectados sobre la cabeza
-    face = Part('face')
-    zeye, off = 0.1165, 0.0
-    for sx in (1, -1):
-        ex = sx * 0.0335
-        cz = HEAD.z + zeye * HS
-        # blanco: abajo redondo, arriba más chato (lo corta el párpado)
-        white = []
-        for k in range(14):
-            th = 2 * math.pi * k / 14
-            rz = 0.0088 if math.sin(th) > 0 else 0.0118
-            x, z = ring_point(th, 0.0170, rz, rz, 2.4)
-            white.append((ex * HS + x * HS, -0.4, cz + z * HS))
-        decal(face, bvh, white, 0.0011, mat='eye_white')
-        ix = ex - sx * 0.0016
-        decal(face, bvh, circle_pts(ix * HS, cz + 0.0002 * HS, 0.0086 * HS, 0.0090 * HS, -0.4, n=10), 0.0019, mat='ink')
-        decal(face, bvh, circle_pts((ix + 0.0032) * HS, cz + 0.0036 * HS, 0.0025 * HS, 0.0025 * HS, -0.4, n=6), 0.0026, mat='eye_white')
-        # párpado superior: arco grueso con una pestaña corta hacia afuera
-        lid = []
-        for k in range(8):
-            th = math.radians(lerp(178, 2, k / 7))
-            lid.append((ex * HS + 0.0182 * HS * math.cos(th), -0.4, cz + 0.0015 * HS + 0.0094 * HS * math.sin(th)))
-        wl = [0.0030, 0.0046, 0.0058, 0.0062, 0.0062, 0.0058, 0.0046, 0.0030]
-        if sx > 0:
-            wl[-1] = 0.0052          # pestaña del lado de afuera
-        else:
-            wl[0] = 0.0052
-        band_decal(face, bvh, lid, [w * HS for w in wl], 0.0023, mat='ink')
-        # ceja: baja hacia el entrecejo (decidida) y se afina hacia afuera
-        brow = [((sx * 0.0110) * HS, -0.4, HEAD.z + 0.1345 * HS), ((sx * 0.0235) * HS, -0.4, HEAD.z + 0.1425 * HS),
-                ((sx * 0.0390) * HS, -0.4, HEAD.z + 0.1470 * HS), ((sx * 0.0545) * HS, -0.4, HEAD.z + 0.1415 * HS)]
-        band_decal(face, bvh, brow, [0.0070 * HS, 0.0084 * HS, 0.0070 * HS, 0.0032 * HS], 0.0017, mat='brow')
-    mouth = [(-0.0200 * HS, -0.4, HEAD.z + 0.0545 * HS), (-0.0100 * HS, -0.4, HEAD.z + 0.0508 * HS), (0.0020 * HS, -0.4, HEAD.z + 0.0500 * HS),
-             (0.0130 * HS, -0.4, HEAD.z + 0.0528 * HS), (0.0215 * HS, -0.4, HEAD.z + 0.0580 * HS)]
-    band_decal(face, bvh, mouth, [0.0026 * HS, 0.0042 * HS, 0.0046 * HS, 0.0040 * HS, 0.0022 * HS], 0.0015, mat='mouth')
-    face.rigid('head').set_outline(0.0)
-    parts.append(face)
+    parts.append(face_part(bvh, EXPRESIONES.get(expr) if isinstance(expr, str) else expr))
 
     # --- Pelo -------------------------------------------------------------
     def hairline(ang):
@@ -506,35 +636,32 @@ def build(res=1):
                 return lerp(h0, h1, smooth(a0, a1, f))
         return pts[-1][1]
 
+    def hair_grow(dz, ang):
+        return 0.0075 + 0.0075 * max(0.0, math.sin(ang)) + 0.003 * smooth(0.15, 0.205, dz)
+
     hair = Part('hair')
     nh = N(18)
-    dzs = [0.030, 0.050, 0.070, 0.090, 0.110, 0.128, 0.146, 0.162, 0.176, 0.190, 0.205]
-    if R >= 2:
-        dzs = sorted(dzs + [(a + b) / 2 for a, b in zip(dzs[:-1], dzs[1:])])
     grid = []
-    for dz in dzs:
+    # un anillo metido en la cabeza, otro justo en el nacimiento y después anillos hasta la coronilla
+    for t in (-1.0, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0) if game else (-1.0, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0):
         row = []
         for k in range(nh):
             ang = 2 * math.pi * k / nh
             hl = hairline(ang)
-            back = max(0.0, math.sin(ang))
-            grow = 0.0075 + 0.0075 * back + 0.003 * smooth(0.15, 0.205, dz)
-            if dz >= hl:
-                co = head_point(dz, ang, grow)
-                vis = 1.0
+            if t < 0:
+                co = head_point(hl, ang, -0.6 * hair_grow(hl, ang))
+                co.z -= 0.01
             else:
-                # debajo del nacimiento: se pega al borde y se mete en la cabeza
-                co = head_point(hl, ang, grow * (1.0 if dz > hl - 0.025 else -0.6))
-                co.z -= (0.0 if dz > hl - 0.025 else 0.01)
-                vis = 0.0
-            row.append(hair.add_vert(co, s=dz, a=ang, u=vis))
+                dz = lerp(hl, 0.205, t)
+                co = head_point(dz, ang, hair_grow(dz, ang))
+            row.append(hair.add_vert(co, s=t, a=ang, u=1.0 if t >= 0 else 0.0))
         grid.append(row)
     for i in range(len(grid) - 1):
         for k in range(nh):
             k2 = (k + 1) % nh
             hair.add_face((grid[i][k], grid[i][k2], grid[i + 1][k2], grid[i + 1][k]), 'hair')
     # coronilla: cúpula elíptica lisa desde dz = 0.205 (sin seguir el perfil de la cabeza, que arriba hace un escalón)
-    for phi in (20, 38, 55, 71):
+    for phi in (24, 46, 68) if game else (20, 38, 55, 71):
         row = []
         for k in range(nh):
             ang = 2 * math.pi * k / nh
@@ -542,51 +669,56 @@ def build(res=1):
             base = head_point(0.205, ang, 0.0105 + 0.0075 * back)
             c = H(0, 0.006, 0.205)
             co = c + (base - c) * math.cos(math.radians(phi)) + Vector((0, 0, 0.071 * HS * math.sin(math.radians(phi))))
-            row.append(hair.add_vert(co, s=0.25, a=ang, u=1))
+            row.append(hair.add_vert(co, s=1.25, a=ang, u=1))
         for k in range(nh):
             k2 = (k + 1) % nh
             hair.add_face((grid[-1][k], grid[-1][k2], row[k2], row[k]), 'hair')
         grid.append(row)
-    top = hair.add_vert(H(0, 0.006, 0.205 + 0.0725), s=0.262, a=0, u=1)
+    top = hair.add_vert(H(0, 0.006, 0.205 + 0.0725), s=1.3, a=0, u=1)
     for k in range(nh):
         hair.add_face((grid[-1][k], grid[-1][(k + 1) % nh], top), 'hair')
     hair.rigid('head')
     parts.append(hair)
 
-    # trenza: tubo con bultos alternados; nace arriba de la tira de la visera
-    braid = Part('braid')
-    path = [Vector((0, 0.078, 1.668)), Vector((0, 0.128, 1.652)), Vector((0, 0.158, 1.585)), Vector((0, 0.163, 1.490)),
-            Vector((0, 0.156, 1.390)), Vector((0, 0.150, 1.290)), Vector((0, 0.147, 1.205)), Vector((0, 0.146, 1.150))]
-    samples = 30 if R < 2 else 54
-    bsecs, tie_s = [], None
-    for i in range(samples + 1):
-        t = i / samples
-        f = t * (len(path) - 1)
-        j = min(len(path) - 2, int(f))
-        u = f - j
-        p = catmull(path[max(0, j - 1)], path[j], path[j + 1], path[min(len(path) - 1, j + 2)], u)
-        base = lerp(0.033, 0.021, smooth(0.05, 0.80, t))
-        if t > 0.86:
-            base = lerp(0.020, 0.006, smooth(0.86, 1.0, t))      # mechón final
-        bulge = 1.0 + (0.20 * abs(math.sin(math.pi * t * 9.0)) if 0.10 < t < 0.80 else 0.0)
-        zig = 0.0075 * math.sin(math.pi * t * 9.0) if 0.10 < t < 0.80 else 0.0
-        tie = 0.80 <= t <= 0.86
-        r = 0.0165 if tie else base * bulge
-        bsecs.append(dict(p=p + Vector((zig, 0, 0)), rx=r, ry=r * 0.86, sharp=tie))
-    n_b = len(bsecs)
-    sweep(braid, bsecs, n=N(8), steps=1, mat=lambda s, a: 'hair_tie' if 0.80 <= s / (n_b - 1) < 0.86 else 'hair', front=(0, 1, 0), cap0='flat', cap1='round')
+    # trenza: tubo con bultos alternados; nace arriba de la vincha. Es una pieza opcional.
+    if 'trenza' in want:
+        braid = Part('braid')
+        braid.piece = 'trenza'
+        path = [Vector((0, 0.078, 1.668)), Vector((0, 0.128, 1.652)), Vector((0, 0.158, 1.585)), Vector((0, 0.163, 1.490)),
+                Vector((0, 0.156, 1.390)), Vector((0, 0.150, 1.290)), Vector((0, 0.147, 1.205)), Vector((0, 0.146, 1.150))]
+        samples = 22 if game else 54
+        waves = 6.0 if game else 9.0
+        bsecs = []
+        for i in range(samples + 1):
+            t = i / samples
+            f = t * (len(path) - 1)
+            j = min(len(path) - 2, int(f))
+            u = f - j
+            p = catmull(path[max(0, j - 1)], path[j], path[j + 1], path[min(len(path) - 1, j + 2)], u)
+            base = lerp(0.033, 0.021, smooth(0.05, 0.80, t))
+            if t > 0.86:
+                base = lerp(0.020, 0.006, smooth(0.86, 1.0, t))      # mechón final
+            bulge = 1.0 + (0.22 * abs(math.sin(math.pi * t * waves)) if 0.10 < t < 0.80 else 0.0)
+            zig = 0.0075 * math.sin(math.pi * t * waves) if 0.10 < t < 0.80 else 0.0
+            tie = 0.80 <= t <= 0.86
+            r = 0.0165 if tie else base * bulge
+            bsecs.append(dict(p=p + Vector((zig, 0, 0)), rx=r, ry=r * 0.86, sharp=tie))
+        n_b = len(bsecs)
+        sweep(braid, bsecs, n=6 if game else N(8), steps=1, mat=lambda s, a: 'hair_tie' if 0.80 <= s / (n_b - 1) < 0.86 else 'hair',
+              front=(0, 1, 0), cap0='flat', cap1='point' if game else 'round')
 
-    def w_braid(co, m):
-        z = co.z
-        a = smooth(1.66, 1.58, z)
-        b = smooth(1.52, 1.42, z)
-        c = smooth(1.36, 1.26, z)
-        return {'head': 1 - a, 'braid1': a * (1 - b), 'braid2': a * b * (1 - c), 'braid3': a * b * c}
-    braid.set_weights(w_braid)
-    parts.append(braid)
+        def w_braid(co, m):
+            z = co.z
+            a = smooth(1.66, 1.58, z)
+            b = smooth(1.52, 1.42, z)
+            c = smooth(1.36, 1.26, z)
+            return {'head': 1 - a, 'braid1': a * (1 - b), 'braid2': a * b * (1 - c), 'braid3': a * b * c}
+        braid.set_weights(w_braid)
+        parts.append(braid)
 
     # --- Vincha ------------------------------------------------------------
-    # Con la cámara alta del juego una visera tapa los ojos: va una vincha, que además se lee de espaldas.
+    # Con la cámara alta del juego una visera larga tapa los ojos: la base lleva vincha, que además se lee
+    # de espaldas. Es también la banda de la gorra y de la visera.
     band_h = Part('headband')
     vsecs = []
     nv = 16
@@ -594,9 +726,77 @@ def build(res=1):
         ang = 2 * math.pi * k / nv
         dz = 0.1735 + 0.006 * math.sin(ang)      # sobre el nacimiento del pelo; sube un poco hacia la nuca
         vsecs.append(dict(p=head_point(dz, ang, 0.0105 + 0.007 * max(0.0, math.sin(ang))), rx=0.0050, ry=0.0135 * HS, e=4.0))
-    sweep(band_h, vsecs, n=N(6), steps=1 if R < 2 else 2, closed=True, mat='headband', frames=lambda s: (0, 0, 1))
+    sweep(band_h, vsecs, n=4 if game else N(6), steps=1 if game else 2, closed=True, mat='headband', frames=lambda s: (0, 0, 1),
+          ang0=math.pi / 4 if game else 0.0)
+    if game:
+        # con cuatro lados la sección sale 0,84 veces más chica: se compensa
+        for k in range(nv):
+            c = Vector(vsecs[k]['p'])
+            for i in range(k * 4, k * 4 + 4):
+                band_h.verts[i] = c + (band_h.verts[i] - c) * 1.19
     band_h.rigid('head')
     parts.append(band_h)
+
+    # --- Piezas opcionales de la cabeza ------------------------------------------
+    if 'gorra' in want:
+        # casquete: una cúpula un centímetro por fuera del pelo, desde el borde de arriba de la vincha
+        cap = Part('cap')
+        cap.piece = 'gorra'
+        nk = 14 if game else 22
+        rows = []
+        for t in (0.0, 0.5, 1.0):
+            row = []
+            for k in range(nk):
+                ang = 2 * math.pi * k / nk
+                dz = lerp(0.1735 + 0.006 * math.sin(ang) + 0.010, 0.205, t)
+                row.append(cap.add_vert(head_point(dz, ang, hair_grow(dz, ang) + 0.0095), s=t, a=ang, u=t))
+            rows.append(row)
+        for phi in (26, 50, 70):
+            row = []
+            for k in range(nk):
+                ang = 2 * math.pi * k / nk
+                base = head_point(0.205, ang, 0.0105 + 0.0075 * max(0.0, math.sin(ang)) + 0.0095)
+                c = H(0, 0.006, 0.205)
+                co = c + (base - c) * math.cos(math.radians(phi)) + Vector((0, 0, (0.071 * HS + 0.011) * math.sin(math.radians(phi))))
+                row.append(cap.add_vert(co, s=2.0, a=ang, u=1))
+            rows.append(row)
+        for i in range(len(rows) - 1):
+            for k in range(nk):
+                k2 = (k + 1) % nk
+                cap.add_face((rows[i][k], rows[i][k2], rows[i + 1][k2], rows[i + 1][k]), 'headband')
+        tip = cap.add_vert(H(0, 0.006, 0.205 + 0.0725 + 0.0125), s=3.0, a=0, u=1)
+        for k in range(nk):
+            cap.add_face((rows[-1][k], rows[-1][(k + 1) % nk], tip), 'headband')
+        cap.rigid('head')
+        parts.append(cap)
+
+    if 'ala' in want:
+        # ala corta y levantada: sirve de visera de gorra y de visera suelta, y no tapa los ojos desde arriba
+        brim = Part('brim')
+        brim.piece = 'ala'
+        span = math.radians(62)
+
+        def brim_fn(u, v):
+            ang = math.radians(270) - (u - 0.5) * 2 * span      # de izquierda a derecha, para que la cara de arriba mire hacia arriba
+            base = head_point(0.1640, ang, 0.0125)
+            out = Vector((math.cos(ang), math.sin(ang), 0.0))
+            fwd = (out * 0.35 + Vector((0, -1, 0)) * 0.65).normalized()
+            length = 0.082 * HS * max(0.0, math.cos((u - 0.5) * math.pi)) ** 0.55
+            p = base + fwd * (length * v) + Vector((0, 0, 0.20 * length * v * v + 0.004 * v))
+            return p, (0, -0.2, 1)
+        plate(brim, brim_fn, 6, 2, 0.0075, mat='headband')
+        brim.rigid('head')
+        parts.append(brim)
+
+    if 'bigote' in want:
+        mus = Part('mustache')
+        mus.piece = 'bigote'
+        mx = (-0.0290, -0.0150, 0.0, 0.0150, 0.0290)
+        mz = (0.0640, 0.0700, 0.0722, 0.0700, 0.0640)
+        band_decal(mus, bvh, [(mx[i] * HS, -0.4, HEAD.z + mz[i] * HS) for i in range(5)],
+                   [w * HS for w in (0.0058, 0.0112, 0.0124, 0.0112, 0.0058)], 0.0031, mat='brow')
+        mus.rigid('head').set_outline(0.0)
+        parts.append(mus)
 
     # --- Espejo del lado izquierdo ---------------------------------------------
     out = []
@@ -608,38 +808,57 @@ def build(res=1):
 
     # --- Pala (mano derecha) ----------------------------------------------------
     rk = Part('racket')
-    RK = [  # y, medio ancho, medio espesor, e, sharp
-        (0.058, 0.0215, 0.0195, 2.4, False), (0.044, 0.0190, 0.0172, 2.4, False), (-0.080, 0.0180, 0.0162, 2.4, True),
-        (-0.086, 0.0205, 0.0172, 3.0, True), (-0.118, 0.036, 0.0180, 4.0, False), (-0.165, 0.084, 0.0190, 7.0, False),
-        (-0.215, 0.115, 0.0190, 8.0, False), (-0.272, 0.126, 0.0190, 8.0, False), (-0.330, 0.115, 0.0190, 8.0, False),
-        (-0.376, 0.086, 0.0185, 7.0, False), (-0.400, 0.048, 0.0170, 5.0, False),
-    ]
+    if game:
+        RK = [  # y, medio ancho, medio espesor, e, sharp
+            (0.058, 0.0215, 0.0195, 2.4, False), (0.044, 0.0190, 0.0172, 2.4, False), (-0.080, 0.0180, 0.0162, 2.4, True),
+            (-0.086, 0.0205, 0.0172, 3.0, True), (-0.118, 0.036, 0.0180, 4.0, False), (-0.140, 0.060, 0.0186, 6.0, False),
+            (-0.165, 0.084, 0.0190, 7.0, False), (-0.215, 0.115, 0.0190, 8.0, False), (-0.272, 0.126, 0.0190, 8.0, False),
+            (-0.330, 0.115, 0.0190, 8.0, False), (-0.376, 0.086, 0.0185, 7.0, False), (-0.392, 0.066, 0.0178, 6.0, False),
+            (-0.400, 0.048, 0.0170, 5.0, False),
+        ]
+    else:
+        RK = [
+            (0.058, 0.0215, 0.0195, 2.4, False), (0.044, 0.0190, 0.0172, 2.4, False), (-0.080, 0.0180, 0.0162, 2.4, True),
+            (-0.086, 0.0205, 0.0172, 3.0, True), (-0.118, 0.036, 0.0180, 4.0, False), (-0.165, 0.084, 0.0190, 7.0, False),
+            (-0.215, 0.115, 0.0190, 8.0, False), (-0.272, 0.126, 0.0190, 8.0, False), (-0.330, 0.115, 0.0190, 8.0, False),
+            (-0.376, 0.086, 0.0185, 7.0, False), (-0.400, 0.048, 0.0170, 5.0, False),
+        ]
+    head_from = 4.6 if not game else 4.6
+    last = len(RK) - 1.1
 
     def rk_mat(s, ang):
         if s < 2.0:
             return 'racket_grip'
-        if s < 4.6:
+        if s < head_from:
             return 'racket_frame'
-        return 'racket_frame' if abs(math.cos(ang)) > 0.6 or s > 9.9 else 'racket_face'
+        return 'racket_frame' if abs(math.cos(ang)) > 0.6 or s > last else 'racket_face'
     sweep(rk, [dict(p=(GRIP.x, y, GRIP.z), rx=w, ry=h, e=e, sharp=sh) for y, w, h, e, sh in RK],
-          n=12 if R < 2 else 20, steps=st + 1, mat=rk_mat, front=(0, 0, -1), ang0=0.0, capk=0.5)
-    # agujeros: calcos oscuros en las dos caras
+          n=8 if game else 20, steps=1 if game else st + 1, mat=rk_mat, front=(0, 0, -1), ang0=box if game else 0.0, capk=0.5,
+          cap0='point' if game else 'round', cap1='point' if game else 'round')
+    # agujeros: calcos oscuros en las dos caras. En la malla de juego son rombos: 19 en vez de 22 hexágonos.
     holes = []
-    pitch = 0.031
+    pitch = 0.034 if game else 0.031
     for row in range(-4, 5):
         for col in range(-4, 5):
             hx = (col + (0.5 if row % 2 else 0.0)) * pitch
             hy = -0.272 + row * pitch * 0.866
-            if (hx / 0.092) ** 2 + ((hy + 0.272) / 0.098) ** 2 < 1.0:
+            lim = (0.080, 0.086) if game else (0.092, 0.098)
+            if (hx / lim[0]) ** 2 + ((hy + 0.272) / lim[1]) ** 2 < 1.0:
                 holes.append((hx, hy))
+    sides = 4 if game else 6
+    hr = 0.0084 if game else 0.0072
     for hx, hy in holes:
         for sgn in (1, -1):
-            c = rk.add_vert((GRIP.x + hx, hy, GRIP.z + sgn * 0.0198), s=20, a=0, u=0)
-            ring = [rk.add_vert((GRIP.x + hx + 0.0072 * math.cos(2 * math.pi * k / 6), hy + 0.0072 * math.sin(2 * math.pi * k / 6), GRIP.z + sgn * 0.0198), s=20, a=0, u=0)
-                    for k in range(6)]
-            for k in range(6):
-                f = (c, ring[k], ring[(k + 1) % 6])
+            ring = [rk.add_vert((GRIP.x + hx + hr * math.cos(2 * math.pi * k / sides), hy + hr * math.sin(2 * math.pi * k / sides), GRIP.z + sgn * 0.0198), s=20, a=0, u=0)
+                    for k in range(sides)]
+            if game:
+                f = (ring[0], ring[1], ring[2], ring[3])
                 rk.add_face(f if sgn > 0 else tuple(reversed(f)), 'racket_hole')
+            else:
+                c = rk.add_vert((GRIP.x + hx, hy, GRIP.z + sgn * 0.0198), s=20, a=0, u=0)
+                for k in range(sides):
+                    f = (c, ring[k], ring[(k + 1) % sides])
+                    rk.add_face(f if sgn > 0 else tuple(reversed(f)), 'racket_hole')
     rk.rigid('racket_tmp')
     rkR = rk.mirrored('racket')
     rkR.rigid('racket')
@@ -654,22 +873,82 @@ def count(parts):
 
 
 # ---------------------------------------------------------------------------
-# Paletas (sRGB hex). Un solo modelo, dos variantes de color.
+# Paletas (sRGB hex). Un solo modelo; cada personaje es una paleta, unas piezas y unas escalas de hueso.
+# El orden de los materiales es fijo: el binario guarda los colores por posición.
 # ---------------------------------------------------------------------------
 PALETTES = {
-    'rival': {   # Romina, «la Topadora»: rojo bombero, amarillo y negro
+    'rival': {   # la variante de la ronda 1: rojo bombero, amarillo y negro, con mangas
         'skin': '#e6a076', 'hair': '#33211d', 'hair_tie': '#f2c230', 'brow': '#2a1a17', 'ink': '#241717', 'eye_white': '#fbf6ee', 'mouth': '#8b332f',
-        'shirt': '#d93a2e', 'shirt_stripe': '#f4c531', 'shirt_trim': '#b02a22', 'shorts': '#28242e', 'shorts_band': '#3d3745',
+        'shirt': '#d93a2e', 'shirt_stripe': '#f4c531', 'shirt_trim': '#b02a22', 'shorts': '#28242e', 'sleeve': '#d93a2e',
         'sock': '#f6f1e8', 'shoe_upper': '#d93a2e', 'shoe_cap': '#f7f2ea', 'shoe_sole': '#f7f2ea', 'shoe_accent': '#28242e',
-        'shoe_collar': '#28242e', 'shoe_tongue': '#f7f2ea', 'wrist': '#f4c531', 'wrist_stripe': '#d93a2e', 'headband': '#f7f2ea',
+        'shoe_collar': '#28242e', 'sleeve_trim': '#b02a22', 'wrist': '#f4c531', 'wrist_stripe': '#d93a2e', 'headband': '#f7f2ea',
         'racket_face': '#2b2631', 'racket_frame': '#d93a2e', 'racket_grip': '#f1ece3', 'racket_hole': '#121016',
     },
     'jugador': {  # equipo propio: crema, coral y verde petróleo
         'skin': '#efb890', 'hair': '#6a3a22', 'hair_tie': '#ff7a59', 'brow': '#4a2716', 'ink': '#2a1a17', 'eye_white': '#fbf6ee', 'mouth': '#9a4038',
-        'shirt': '#f6efe2', 'shirt_stripe': '#ff7a59', 'shirt_trim': '#ff7a59', 'shorts': '#1f5263', 'shorts_band': '#173f4d',
+        'shirt': '#f6efe2', 'shirt_stripe': '#ff7a59', 'shirt_trim': '#ff7a59', 'shorts': '#1f5263', 'sleeve': '#f6efe2',
         'sock': '#f6f1e8', 'shoe_upper': '#ff7a59', 'shoe_cap': '#f7f2ea', 'shoe_sole': '#f7f2ea', 'shoe_accent': '#1f5263',
-        'shoe_collar': '#1f5263', 'shoe_tongue': '#f7f2ea', 'wrist': '#ff7a59', 'wrist_stripe': '#f6efe2', 'headband': '#ff7a59',
+        'shoe_collar': '#1f5263', 'sleeve_trim': '#ff7a59', 'wrist': '#ff7a59', 'wrist_stripe': '#f6efe2', 'headband': '#ff7a59',
         'racket_face': '#ffd166', 'racket_frame': '#1f5263', 'racket_grip': '#f1ece3', 'racket_hole': '#b98a2c',
     },
 }
 MATERIALS = list(PALETTES['rival'].keys())
+
+
+def _variante(base, **cambios):
+    p = dict(PALETTES[base])
+    p.update(cambios)
+    return p
+
+
+# Romina, «la Topadora»: la misma ropa con musculosa (la manga toma el color de la piel)
+PALETTES['romina'] = _variante('rival', sleeve='#e6a076', sleeve_trim='#e6a076')
+# Beto, «el Profe»: chomba blanca del club con vivos mostaza, short azul marino, gorra blanca, canas y bigote
+PALETTES['beto'] = _variante(
+    'rival', skin='#dc9c70', hair='#b4aea6', hair_tie='#b4aea6', brow='#6b645d', mouth='#8a4038',
+    shirt='#f4f0e7', shirt_stripe='#f4f0e7', shirt_trim='#e0ac32', shorts='#27375a', sleeve='#f4f0e7', sleeve_trim='#e0ac32',
+    shoe_upper='#f4f0e7', shoe_cap='#e0ac32', shoe_accent='#27375a', shoe_collar='#27375a', wrist='#27375a', wrist_stripe='#e0ac32',
+    headband='#f4f0e7', racket_face='#27375a', racket_frame='#e0ac32', racket_hole='#141a2c',
+)
+# Chela, «la Astronauta»: remera lavanda, short blanco, rulos grises y visera blanca
+PALETTES['chela'] = _variante(
+    'rival', skin='#ecb894', hair='#cdc8c2', hair_tie='#cdc8c2', brow='#8f8983', mouth='#b0504e',
+    shirt='#b7a1e6', shirt_stripe='#d9cdf4', shirt_trim='#f4f0e7', shorts='#f4f0e7', sleeve='#b7a1e6', sleeve_trim='#f4f0e7',
+    shoe_upper='#b7a1e6', shoe_cap='#f7f2ea', shoe_accent='#7d68b8', shoe_collar='#7d68b8', wrist='#f4f0e7', wrist_stripe='#b7a1e6',
+    headband='#f4f0e7', racket_face='#f6d7e6', racket_frame='#b7a1e6', racket_hole='#b99bb0',
+)
+
+# ---------------------------------------------------------------------------
+# Personajes: lo que cambia sobre el mismo modelo y los mismos clips.
+#   piezas    piezas opcionales que lleva
+#   escala    tamaño general (multiplica a la escala con la que el juego dibuja al personaje)
+#   huesos    por hueso, s = escala de su parte de la malla (x, y, z en ejes del hueso en reposo, que
+#             son los del personaje) y d = corrimiento de esa parte. La escala también estira la
+#             distancia a los huesos hijos; no se hereda. '.*' vale para los dos lados.
+#   postura   giro extra por hueso, en grados: (inclinación adelante, giro a la izquierda, rolido)
+#   tempo     velocidad de los gestos; amplitud: cuánto se exagera el tren superior respecto de la espera
+#   mania     su manía, entre los clips compartidos
+# ---------------------------------------------------------------------------
+PERSONAJES = {
+    'jugador': dict(nombre='Jugador', paleta='jugador', piezas=['trenza'], escala=1.0, tempo=1.0, amplitud=1.0, mania='mania_zapatilla',
+                    huesos={}, postura={}),
+    'beto': dict(
+        nombre='Beto', paleta='beto', piezas=['gorra', 'ala', 'bigote'], escala=1.0, tempo=0.90, amplitud=0.88, mania='mania_gorra',
+        huesos={'spine': dict(s=(1.13, 1.38, 1.0), d=(0.0, -0.036, 0.0)), 'hips': dict(s=(1.07, 1.16, 1.0), d=(0.0, -0.012, 0.0)),
+                'chest': dict(s=(1.03, 1.08, 1.0)), 'thigh.*': dict(s=(0.90, 0.90, 1.0)), 'shin.*': dict(s=(0.88, 0.88, 1.0)),
+                'neck': dict(s=(1.10, 1.10, 1.0)), 'head': dict(s=(1.03, 1.03, 1.0))},
+        postura={'spine': (-5, 0, 0), 'chest': (2, 0, 0)},
+    ),
+    'romina': dict(
+        nombre='Romina', paleta='romina', piezas=['trenza'], escala=1.0, tempo=1.0, amplitud=1.14, mania='mania_zapatilla',
+        huesos={'clav.*': dict(s=(1.17, 1.08, 1.08)), 'chest': dict(s=(1.07, 1.05, 1.0)), 'upper_arm.*': dict(s=(1.0, 1.15, 1.15)),
+                'forearm.*': dict(s=(1.0, 1.08, 1.08)), 'thigh.*': dict(s=(1.06, 1.06, 1.0)), 'neck': dict(s=(1.10, 1.10, 1.0))},
+        postura={'chest': (-3, 0, 0)},
+    ),
+    'chela': dict(
+        nombre='Chela', paleta='chela', piezas=['ala'], escala=0.90, tempo=1.10, amplitud=0.94, mania='mania_saludo',
+        huesos={'head': dict(s=(1.10, 1.10, 1.08)), 'hips': dict(s=(1.12, 1.10, 1.0)), 'spine': dict(s=(1.14, 1.20, 1.0), d=(0.0, -0.012, 0.0)),
+                'chest': dict(s=(1.06, 1.10, 1.0)), 'thigh.*': dict(s=(1.08, 1.08, 1.0)), 'upper_arm.*': dict(s=(1.0, 1.06, 1.06))},
+        postura={'chest': (5, 0, 0), 'neck': (-4, 0, 0)},
+    ),
+}

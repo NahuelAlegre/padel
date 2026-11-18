@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Personajes de pádel</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&display=swap">
+<link rel="stylesheet" href="lib/revision.css">
+</head>
+<body>
+<div id="rev">
+  <div id="escenario">
+    <canvas id="lienzo" aria-label="Personaje animado en 3D toon"></canvas>
+    <div id="celdas" aria-hidden="true"></div>
+    <div id="ficha">
+      <div id="ficha-nombre"></div>
+      <div id="ficha-datos"></div>
+    </div>
+    <div id="medidor" aria-live="off"></div>
+    <button id="pausa" type="button" aria-pressed="false" aria-label="Pausar">Pausa</button>
+    <div id="carga">Cargando el personaje…</div>
+  </div>
+  <div id="tablero">
+    <div class="rv-fila" id="elenco" role="group" aria-label="Personaje"></div>
+    <div class="rv-fila rv-solapas" id="grupos" role="group" aria-label="Tipo de animación"></div>
+    <div class="rv-clips" id="clips" role="group" aria-label="Animación"></div>
+    <div class="rv-ajustes">
+      <div class="rv-ajuste rv-ancho"><span>Vista</span><div class="rv-seg" id="vista" role="group" aria-label="Vista"></div></div>
+      <div class="rv-ajuste rv-ancho"><span>Cara</span><div class="rv-seg" id="cara" role="group" aria-label="Expresión de la cara"></div></div>
+      <div class="rv-ajuste"><span>Velocidad</span><div class="rv-seg" id="velocidad" role="group" aria-label="Velocidad"></div></div>
+      <div class="rv-ajuste"><span>Rumbo</span><div class="rv-seg" id="rumbo" role="group" aria-label="Dirección de la corrida"></div></div>
+      <div class="rv-ajuste"><span>Pies</span><div class="rv-seg" id="pies" role="group" aria-label="Tamaño de las zapatillas"></div></div>
+    </div>
+  </div>
+</div>
+<script src="lib/base.js"></script>
+<script src="lib/personaje.js"></script>
+<script src="lib/gl.js"></script>
+<script src="lib/vida.js"></script>
+<script src="lib/revision.js"></script>
+</body>
+</html>

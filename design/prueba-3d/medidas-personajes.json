@@ -1,0 +1,78 @@
+{
+  "fecha": "2026-11-18T12:51:42.238Z",
+  "equipo": "PC de escritorio (Ryzen 7 8700G), Chrome sin ventana, celular emulado de 390 x 844 a DPR 2",
+  "peso": {
+    "porTipo": {
+      "página y código": 42609,
+      "tipografía (externa)": 34273,
+      "modelo, caras y animaciones": 115217
+    },
+    "total": 192099,
+    "sinTipografia": 157826
+  },
+  "gpu": "ANGLE (AMD, AMD Radeon 780M Graphics (0x000015BF) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "primerCuadro": {
+    "sin límites": 79,
+    "CPU 4x": 149
+  },
+  "cuadro": {
+    "un personaje, con caras": {
+      "js": {
+        "media": 0.499,
+        "p50": 0.4,
+        "p95": 1,
+        "max": 12.1,
+        "n": 1658
+      },
+      "actualizacionesDeCaraPorCuadro": 0.15
+    },
+    "un personaje, sin caras": {
+      "js": {
+        "media": 0.359,
+        "p50": 0.4,
+        "p95": 0.7,
+        "max": 1.8,
+        "n": 1683
+      },
+      "actualizacionesDeCaraPorCuadro": 0
+    },
+    "los 24 clips a la vez, con caras": {
+      "js": {
+        "media": 2.213,
+        "p50": 2.2,
+        "p95": 2.7,
+        "max": 3.5,
+        "n": 1681
+      },
+      "actualizacionesDeCaraPorCuadro": 8.56
+    },
+    "los 24 clips a la vez, sin caras": {
+      "js": {
+        "media": 2.025,
+        "p50": 2,
+        "p95": 2.5,
+        "max": 3.2,
+        "n": 1681
+      },
+      "actualizacionesDeCaraPorCuadro": 0
+    }
+  },
+  "cara": {
+    "actualizaciones": 4000,
+    "microsegundosPorActualizacion": 21.65,
+    "vertices": 130,
+    "bytesSubidos": 780,
+    "expresiones": [
+      "parpadeo",
+      "esfuerzo",
+      "alegria",
+      "fastidio"
+    ],
+    "conCpu4x": "≈ 86.6 µs"
+  },
+  "gpuMs": {
+    "un personaje": 0.855,
+    "un personaje, sin caras": 0.871,
+    "los 24 clips a la vez": 3.264
+  }
+}

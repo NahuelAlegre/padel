@@ -224,7 +224,7 @@
   P3.scaleAt = (variant, y) => P3.lerp(variant.near, variant.far, P3.clamp((y + 8) / 16, 0, 1));
 
   /* ------------------------------------------------------------------
-     Peloteo guionado. Todo sale de una lista de golpes: quién, con qué clip, dónde se para
+     Peloteo guionado (versión de la ronda 1, la que usan los sprites). Todo sale de una lista de golpes: quién, con qué clip, dónde se para
      y cuándo es el impacto. El punto de impacto sale de la animación (centro de la pala en
      ese cuadro, con la escala del personaje), y la pelota vuela en parábolas entre impactos,
      piques y paredes. Es determinista: sample(t) no guarda estado.
@@ -246,9 +246,8 @@
     return out;
   }
 
-  P3.buildRally = function (clips, variant) {
+  function buildRallyV1(clips, variant) {
     const C = Object.fromEntries(clips.map((c) => [c.name, c]));
-    const kN = variant.near, kF = variant.far;
     const who = [
       { name: 'jugador', yaw: 180, look: 1 },   /* 0: propio, de espaldas, mira hacia +y */
       { name: 'rival', yaw: 0, look: -1 },      /* 1: rival, de frente, mira hacia -y */
@@ -419,6 +418,216 @@
       /* fundido corto al reiniciar el peloteo */
       fade: (t) => min(1, t / 0.25, (DUR - t) / 0.25),
     };
+  }
+
+  /* ------------------------------------------------------------------
+     Peloteo guionado, segunda versión: usa los clips nuevos del personaje en tiempo real.
+       - Cada jugador espera, hace el split step para caer justo cuando el rival le pega, se mueve
+         y golpea. Después vuelve hacia el centro.
+       - Los pasos avanzan con la distancia recorrida y la zancada que declara cada clip
+         (fase = entrada + distancia / zancada), así que el pie apoyado no patina.
+       - La dirección del movimiento elige el clip: adelante, atrás o de costado. La diferencia
+         con la dirección exacta se resuelve girando la pelvis (twist).
+       - Las corridas largas hacia adelante arrancan y frenan con sus clips, también por distancia.
+     opts.hit(quién, clip) devuelve el centro de la pala en el impacto para ese personaje;
+     opts.scale[quién] es la escala propia del personaje (Chela es más baja).
+     ------------------------------------------------------------------ */
+  function buildRallyV2(clips, variant, opts) {
+    opts = opts || {};
+    const C = Object.fromEntries(clips.map((c) => [c.name, c]));
+    const own = opts.scale || [1, 1];
+    const who = [
+      { name: 'jugador', yaw: 180, look: 1 },   /* 0: propio, de espaldas, mira hacia +y */
+      { name: 'rival', yaw: 0, look: -1 },      /* 1: rival, de frente, mira hacia -y */
+    ];
+    const toWorld = (pl, root, local, k) => {
+      const s = pl.yaw === 180 ? -1 : 1;
+      return [root[0] + s * local[0] * k, root[1] + s * local[1] * k, local[2] * k];
+    };
+    const scaleOf = (i, y) => P3.scaleAt(variant, y) * own[i];
+    const hitOf = (i, name) => (opts.hit ? opts.hit(i, name) : C[name].hit);
+
+    const hits = [
+      { who: 0, clip: 'saque', root: [1.5, -7.9], t: 1.0 },
+      { who: 1, clip: 'derecha', root: [-2.3, 8.3], t: 2.4 },
+      { who: 0, clip: 'reves', root: [-2.2, -8.9], t: 4.42, label: 'Salida de pared' },
+      { who: 1, clip: 'globo', root: [2.6, 7.4], t: 5.95, label: 'Globo' },
+      { who: 0, clip: 'remate', root: [-0.6, -5.4], t: 7.75, label: '¡Remate!' },
+    ];
+    for (const h of hits) {
+      h.k = scaleOf(h.who, h.root[1]);
+      h.point = toWorld(who[h.who], h.root, hitOf(h.who, h.clip), h.k);
+      h.start = h.t - C[h.clip].contact;
+      h.end = h.start + C[h.clip].dur;
+    }
+    const g0 = BALL_R;
+    const serve = hits[0], sc = C.saque;
+    const tRel = serve.start + sc.release;
+    const hold0 = toWorld(who[0], serve.root, sc.ballHold[0], serve.k);
+    const hold1 = toWorld(who[0], serve.root, sc.ballHold[1], serve.k);
+    const dropT = tRel + (serve.t - tRel) * 0.6;
+    const way = [
+      [tRel, hold1, 'suelta'],
+      [dropT, [serve.point[0] - 0.02, serve.point[1] - 0.03, g0], 'pique'],
+      [serve.t, serve.point, 'golpe', 0],
+      [1.95, [-2.0, 4.4, g0], 'pique'],
+      [hits[1].t, hits[1].point, 'golpe', 1],
+      [3.45, [-2.6, -6.6, g0], 'pique'],
+      [3.85, [-3.0, -9.93, 1.0], 'vidrio'],
+      [hits[2].t, hits[2].point, 'golpe', 2],
+      [5.5, [1.3, 4.0, g0], 'pique'],
+      [hits[3].t, hits[3].point, 'golpe', 3],
+      [hits[4].t, hits[4].point, 'golpe', 4],
+      [8.12, [-1.4, 6.3, g0], 'pique'],
+      [8.48, [-1.9, 9.93, 2.3], 'vidrio'],
+      [9.4, [-1.5, 4.6, g0], 'pique'],
+      [9.95, [-1.35, 3.3, g0], 'pique'],
+      [10.35, [-1.3, 2.7, g0], 'pique'],
+    ];
+    const arcs = [];
+    for (let i = 0; i < way.length - 1; i++) arcs.push(arc(way[i][1], way[i][0], way[i + 1][1], way[i + 1][0]));
+    const events = way.map((w) => ({ t: w[0], pos: w[1], type: w[2], hit: w[3] }));
+    for (const e of events) if (e.type === 'golpe') { e.who = hits[e.hit].who; e.label = hits[e.hit].label || null; }
+    const marks = [], aims = [];
+    for (let i = 0; i < way.length - 1; i++) {
+      const a = way[i], b = way[i + 1];
+      if (a[2] !== 'golpe' || b[2] !== 'pique') continue;
+      const h = hits[a[3]];
+      if (h.who === 1 && b[1][1] < 0) marks.push({ t0: a[0], t1: b[0], x: b[1][0], y: b[1][1] });
+      if (h.who === 0) aims.push({ t0: h.start + 0.12, t1: a[0], x: b[1][0], y: b[1][1] });
+    }
+    const ownHits = hits.filter((h) => h.who === 0 && h.clip !== 'saque').map((h) => h.t);
+    const DUR = 10.9;
+    const land = C.split_step.aterrizaje, cut = C.split_step.corte;
+
+    /* recorridos: [desde, hasta, x, y]. Entre uno y otro el jugador se queda donde llegó. */
+    const walks = [
+      [[1.60, 2.02, 0.5, -7.5], [2.47, 3.72, -2.2, -8.9], [4.95, 5.55, -0.9, -7.7], [6.02, 7.05, -0.6, -5.4], [8.75, 9.25, -0.5, -5.9]],
+      [[2.95, 3.65, -0.4, 8.0], [4.49, 5.36, 2.6, 7.4], [6.52, 7.20, 1.0, 7.9], [7.82, 8.75, -0.9, 7.2]],
+    ];
+    const starts = [[1.5, -7.9], [-2.3, 8.3]];
+    const RUN = C.correr, ARR = C.arranque, FRE = C.frenada;
+    const moves = walks.map((list, i) => {
+      let at = starts[i];
+      return list.map(([t0, t1, x, y]) => {
+        const m = { t0, t1, a: at, b: [x, y], len: Math.hypot(x - at[0], y - at[1]) };
+        const s = who[i].yaw === 180 ? -1 : 1;
+        /* dirección en ejes del personaje: 0 = hacia adelante, positivo = hacia su izquierda */
+        let ang = atan2(s * (x - at[0]), -s * (y - at[1]));
+        const deg = (ang * 180) / PI;
+        if (abs(deg) <= 60) { m.clip = 'correr'; m.twist = ang; } else if (abs(deg) >= 125) {
+          m.clip = 'correr_atras'; m.twist = ang > 0 ? ang - PI : ang + PI;
+        } else if (deg > 0) { m.clip = 'lateral_izq'; m.twist = ang - PI / 2; } else { m.clip = 'lateral_der'; m.twist = ang + PI / 2; }
+        m.twist = P3.clamp(m.twist, -0.87, 0.87);
+        m.k = scaleOf(i, (at[1] + y) / 2);
+        /* corrida larga hacia adelante: con arranque y frenada */
+        m.da = ARR.raiz.total * m.k; m.df = FRE.raiz.total * m.k;
+        m.full = m.clip === 'correr' && m.len > (m.da + m.df) * 1.05;
+        at = [x, y];
+        return m;
+      });
+    });
+    /* clips con horario: golpes, festejo, lamento y split steps (estos se cortan cuando hay que moverse) */
+    const sched = [0, 1].map((i) => hits.filter((h) => h.who === i).map((h) => ({ clip: h.clip, start: h.start, end: h.end, stroke: true })));
+    sched[0].push({ clip: 'festejo', start: 9.45, end: 9.45 + C.festejo.dur });
+    sched[1].push({ clip: 'lamento', start: 9.30, end: 9.30 + C.lamento.dur });
+    for (const h of hits) {
+      const i = 1 - h.who, start = h.t - land;
+      const next = moves[i].find((m) => m.t0 >= start);
+      const busy = sched[i].some((s) => s.stroke && start < s.end && start + cut > s.start) || moves[i].some((m) => start < m.t1 && start + land > m.t0);
+      if (!busy) sched[i].push({ clip: 'split_step', start, end: min(start + C.split_step.dur, next ? next.t0 + 0.06 : 99) });
+    }
+    for (const s of sched) s.sort((a, b) => a.start - b.start);
+
+    /* tiempo de un clip de transición a partir de la distancia recorrida (tabla por cuadro) */
+    const fps = opts.fps || 30;
+    function timeAt(clip, d) {
+      const tab = clip.raiz.dist;
+      if (d <= 0) return clip.t0 || 0;
+      for (let f = 1; f < tab.length; f++) if (d <= tab[f]) return (clip.t0 || 0) + (f - 1 + (d - tab[f - 1]) / (tab[f] - tab[f - 1] || 1)) / fps;
+      return (clip.t0 || 0) + (tab.length - 1) / fps;
+    }
+
+    function playerAt(i, t, out) {
+      const pl = who[i], list = moves[i];
+      let m = null, x = starts[i][0], y = starts[i][1], last = null;
+      for (const mv of list) {
+        if (t >= mv.t1) { x = mv.b[0]; y = mv.b[1]; last = mv; } else { if (t >= mv.t0) m = mv; break; }
+      }
+      let d = 0;
+      if (m) {
+        const u = P3.smooth((t - m.t0) / (m.t1 - m.t0));
+        x = P3.lerp(m.a[0], m.b[0], u); y = P3.lerp(m.a[1], m.b[1], u);
+        d = m.len * u;
+        out.speed = (m.len * 6 * ((t - m.t0) / (m.t1 - m.t0)) * (1 - (t - m.t0) / (m.t1 - m.t0))) / (m.t1 - m.t0);
+      } else out.speed = 0;
+      out.x = x; out.y = y; out.yaw = pl.yaw; out.who = i; out.twist = 0;
+      out.k = scaleOf(i, y);
+      const st = sched[i].find((s) => t >= s.start && t < s.end);
+      if (st && (st.stroke || !m)) { out.clip = st.clip; out.time = t - st.start; return out; }
+      if (m) {
+        const c = C[m.clip];
+        out.twist = m.twist * P3.smooth(min(1, d / 0.25, (m.len - d) / 0.25));
+        if (m.full && d < m.da) { out.clip = 'arranque'; out.time = timeAt(ARR, d / m.k); return out; }
+        if (m.full && d > m.len - m.df) { out.clip = 'frenada'; out.time = timeAt(FRE, (d - (m.len - m.df)) / m.k); return out; }
+        const from = m.full ? ARR.enlace.fase : c.entrada, d0 = m.full ? m.da : 0;
+        out.clip = m.clip;
+        out.time = ((from + (d - d0) / (c.zancada * m.k)) % 1) * c.dur;
+        return out;
+      }
+      /* recién llegado de una corrida: termina de asentarse con el final de la frenada */
+      if (last && last.full && t - last.t1 < FRE.dur - FRE.libre) { out.clip = 'frenada'; out.time = FRE.libre + (t - last.t1); return out; }
+      if (st) { out.clip = st.clip; out.time = t - st.start; return out; }
+      out.clip = 'listo'; out.time = t % C.listo.dur;
+      return out;
+    }
+
+    const ballTmp = [0, 0, 0];
+    function ballAt(t, out) {
+      out.visible = true;
+      out.held = false;
+      if (t < way[0][0]) {
+        const u = P3.clamp((t - serve.start) / (tRel - serve.start), 0, 1);
+        out.x = P3.lerp(hold0[0], hold1[0], u); out.y = P3.lerp(hold0[1], hold1[1], u); out.z = P3.lerp(hold0[2], hold1[2], u);
+        out.held = true;
+        out.speed = 0; out.vx = out.vy = out.vz = 0;
+        return out;
+      }
+      let a = arcs[arcs.length - 1];
+      for (let i = 0; i < arcs.length; i++) if (t < arcs[i].t1) { a = arcs[i]; break; }
+      if (t >= a.t1) { out.x = a.p0[0]; out.visible = t < a.t1 + 0.3; arcAt(a, a.t1, ballTmp); } else arcAt(a, t, ballTmp);
+      out.x = ballTmp[0]; out.y = ballTmp[1]; out.z = max(BALL_R, ballTmp[2]);
+      const u = min(t, a.t1) - a.t0;
+      out.speed = Math.hypot(a.v[0], a.v[1], a.v[2] - P3.GRAVITY * u);
+      out.vx = a.v[0]; out.vy = a.v[1]; out.vz = a.v[2] - P3.GRAVITY * u;
+      return out;
+    }
+
+    const within = (list, t, out) => {
+      const m = list.find((e) => t >= e.t0 && t < e.t1);
+      if (!m) return null;
+      out.x = m.x; out.y = m.y; out.k = (t - m.t0) / (m.t1 - m.t0); out.left = m.t1 - t;
+      return out;
+    };
+    return {
+      duration: DUR, events, hits, arcs, who, moves, sched,
+      player: playerAt, ball: ballAt,
+      mark: (t, out) => within(marks, t, out),
+      aim: (t, out) => within(aims, t, out),
+      timing: (t) => {
+        let k = 0;
+        for (const tc of ownHits) { const d = tc - t; if (d >= 0 && d < 0.18) k = max(k, P3.smooth(1 - d / 0.18)); else if (d < 0 && d > -0.07) k = max(k, 1 + d / 0.07); }
+        return k;
+      },
+      fade: (t) => min(1, t / 0.25, (DUR - t) / 0.25),
+    };
+  }
+
+  /* Con los clips nuevos (tiempo real) se usa el peloteo nuevo; con los de la ronda 1 (sprites), el original. */
+  P3.buildRally = function (clips, variant, opts) {
+    const names = clips.map((c) => c.name);
+    const v2 = ['split_step', 'correr_atras', 'arranque', 'frenada', 'lamento'].every((n) => names.includes(n)) && clips.find((c) => c.name === 'correr').zancada;
+    return v2 ? buildRallyV2(clips, variant, opts) : buildRallyV1(clips, variant);
   };
 
   /* Reloj del peloteo: avanza con el tiempo real, con pausa y velocidad ajustable. */

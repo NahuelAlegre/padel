@@ -1,0 +1,265 @@
+{
+ "partes": [
+  {
+   "nombre": "Malla base (cuerpo, ropa, pala y cara)",
+   "bytes": 99260,
+   "gzip": 51606,
+   "brotli": 31587,
+   "nota": "4205 vértices, 5330 triángulos"
+  },
+  {
+   "nombre": "Pieza: trenza",
+   "bytes": 6488,
+   "gzip": 3536,
+   "brotli": 2450,
+   "nota": "302 vértices, 276 triángulos"
+  },
+  {
+   "nombre": "Pieza: gorra",
+   "bytes": 2284,
+   "gzip": 1357,
+   "brotli": 959,
+   "nota": "85 vértices, 154 triángulos"
+  },
+  {
+   "nombre": "Pieza: ala",
+   "bytes": 1664,
+   "gzip": 879,
+   "brotli": 704,
+   "nota": "74 vértices, 80 triángulos"
+  },
+  {
+   "nombre": "Pieza: bigote",
+   "bytes": 208,
+   "gzip": 173,
+   "brotli": 175,
+   "nota": "10 vértices, 8 triángulos"
+  },
+  {
+   "nombre": "Caras: 4 expresiones",
+   "bytes": 3120,
+   "gzip": 1566,
+   "brotli": 1255,
+   "nota": "130 vértices que se mueven"
+  },
+  {
+   "nombre": "Clips: espera activa",
+   "bytes": 6180,
+   "gzip": 1653,
+   "brotli": 1469,
+   "nota": "1 clips, 30 cuadros"
+  },
+  {
+   "nombre": "Clips: locomoción",
+   "bytes": 20394,
+   "gzip": 8801,
+   "brotli": 7669,
+   "nota": "7 clips, 99 cuadros"
+  },
+  {
+   "nombre": "Clips: golpes",
+   "bytes": 62006,
+   "gzip": 30164,
+   "brotli": 25426,
+   "nota": "10 clips, 301 cuadros"
+  },
+  {
+   "nombre": "Clips: reacciones",
+   "bytes": 22660,
+   "gzip": 6264,
+   "brotli": 5400,
+   "nota": "3 clips, 110 cuadros"
+  },
+  {
+   "nombre": "Clips: manías",
+   "bytes": 10918,
+   "gzip": 4700,
+   "brotli": 4124,
+   "nota": "3 clips, 53 cuadros"
+  },
+  {
+   "nombre": "Metadatos (JSON: huesos, paletas, personajes, clips)",
+   "bytes": 18352,
+   "gzip": 3741,
+   "brotli": 3177,
+   "nota": ""
+  }
+ ],
+ "total": {
+  "nombre": "Archivo completo",
+  "bytes": 253568,
+  "gzip": 114995,
+  "brotli": 83490,
+  "nota": "4676 vértices, 5848 triángulos, 24 clips"
+ },
+ "clips": [
+  {
+   "clip": "listo",
+   "grupo": "base",
+   "cuadros": 30,
+   "bytes": 6180,
+   "gzip": 1653
+  },
+  {
+   "clip": "correr",
+   "grupo": "locomocion",
+   "cuadros": 13,
+   "bytes": 2678,
+   "gzip": 1586
+  },
+  {
+   "clip": "correr_atras",
+   "grupo": "locomocion",
+   "cuadros": 12,
+   "bytes": 2472,
+   "gzip": 1187
+  },
+  {
+   "clip": "lateral_izq",
+   "grupo": "locomocion",
+   "cuadros": 12,
+   "bytes": 2472,
+   "gzip": 1187
+  },
+  {
+   "clip": "lateral_der",
+   "grupo": "locomocion",
+   "cuadros": 12,
+   "bytes": 2472,
+   "gzip": 1181
+  },
+  {
+   "clip": "split_step",
+   "grupo": "locomocion",
+   "cuadros": 25,
+   "bytes": 5150,
+   "gzip": 1757
+  },
+  {
+   "clip": "arranque",
+   "grupo": "locomocion",
+   "cuadros": 10,
+   "bytes": 2060,
+   "gzip": 1258
+  },
+  {
+   "clip": "frenada",
+   "grupo": "locomocion",
+   "cuadros": 15,
+   "bytes": 3090,
+   "gzip": 1565
+  },
+  {
+   "clip": "saque",
+   "grupo": "golpe",
+   "cuadros": 42,
+   "bytes": 8652,
+   "gzip": 3906
+  },
+  {
+   "clip": "derecha",
+   "grupo": "golpe",
+   "cuadros": 31,
+   "bytes": 6386,
+   "gzip": 3574
+  },
+  {
+   "clip": "reves",
+   "grupo": "golpe",
+   "cuadros": 31,
+   "bytes": 6386,
+   "gzip": 3299
+  },
+  {
+   "clip": "volea",
+   "grupo": "golpe",
+   "cuadros": 20,
+   "bytes": 4120,
+   "gzip": 2154
+  },
+  {
+   "clip": "volea_reves",
+   "grupo": "golpe",
+   "cuadros": 20,
+   "bytes": 4120,
+   "gzip": 2144
+  },
+  {
+   "clip": "bandeja",
+   "grupo": "golpe",
+   "cuadros": 31,
+   "bytes": 6386,
+   "gzip": 3509
+  },
+  {
+   "clip": "remate",
+   "grupo": "golpe",
+   "cuadros": 39,
+   "bytes": 8034,
+   "gzip": 4172
+  },
+  {
+   "clip": "globo",
+   "grupo": "golpe",
+   "cuadros": 33,
+   "bytes": 6798,
+   "gzip": 3616
+  },
+  {
+   "clip": "estirada",
+   "grupo": "golpe",
+   "cuadros": 27,
+   "bytes": 5562,
+   "gzip": 2903
+  },
+  {
+   "clip": "estirada_reves",
+   "grupo": "golpe",
+   "cuadros": 27,
+   "bytes": 5562,
+   "gzip": 2952
+  },
+  {
+   "clip": "espera",
+   "grupo": "reaccion",
+   "cuadros": 60,
+   "bytes": 12360,
+   "gzip": 1828
+  },
+  {
+   "clip": "festejo",
+   "grupo": "reaccion",
+   "cuadros": 25,
+   "bytes": 5150,
+   "gzip": 2466
+  },
+  {
+   "clip": "lamento",
+   "grupo": "reaccion",
+   "cuadros": 25,
+   "bytes": 5150,
+   "gzip": 2119
+  },
+  {
+   "clip": "mania_gorra",
+   "grupo": "mania",
+   "cuadros": 14,
+   "bytes": 2884,
+   "gzip": 1151
+  },
+  {
+   "clip": "mania_zapatilla",
+   "grupo": "mania",
+   "cuadros": 17,
+   "bytes": 3502,
+   "gzip": 1794
+  },
+  {
+   "clip": "mania_saludo",
+   "grupo": "mania",
+   "cuadros": 22,
+   "bytes": 4532,
+   "gzip": 1955
+  }
+ ]
+}

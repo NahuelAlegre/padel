@@ -14,11 +14,16 @@ const carpeta = fileURLToPath(new URL('..', import.meta.url));
 globalThis.window = globalThis;
 await import('../lib/base.js');
 const P3 = globalThis.P3;
-const clips = JSON.parse(readFileSync(join(carpeta, 'assets/sprites/sprites.json'), 'utf8')).clips;
+// Dos peloteos: el de la ronda 1 (lo usa la versión de sprites) y el nuevo, con los clips del binario.
+const { cargarPersonaje } = await import('./personaje-node.mjs');
+const PELOTEOS = [['sprites (peloteo de la ronda 1)', JSON.parse(readFileSync(join(carpeta, 'assets/sprites/sprites.json'), 'utf8')).clips],
+  ['tiempo real (peloteo nuevo)', cargarPersonaje().ch.meta.clips]];
 const C = P3.CAMERA;
 const fmt = (v, d = 1) => v.toFixed(d).replace('.', ',');
 let fallas = 0;
 
+for (const [peloteo, clips] of PELOTEOS) {
+console.log('== ' + peloteo);
 for (const [vw, vh] of [[390, 844], [360, 800], [412, 915], [390, 700]]) {
   const lay = P3.layout(vw, vh);
   const top = lay.cy - 422 - lay.visH / 2, bot = lay.cy - 422 + lay.visH / 2 - C.bar;
@@ -74,6 +79,7 @@ for (const [vw, vh] of [[390, 844], [360, 800], [412, 915], [390, 700]]) {
       + ` · paneo máx. ${fmt(m.velPan, 2)} m/s y ${fmt(m.acelPan, 1)} m/s², zoom máx. ${fmt(m.velZoom, 2)}/s · quieta el ${Math.round((100 * m.quieta) / m.cuadros)} % del tiempo`);
     for (const l of m.malos) console.log('   fuera de cuadro:', l);
   }
+}
 }
 console.log(fallas ? `${fallas} combinaciones no cumplen` : 'Todas las combinaciones cumplen las reglas.');
 process.exitCode = fallas ? 1 : 0;

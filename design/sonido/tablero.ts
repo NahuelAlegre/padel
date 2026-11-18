@@ -212,16 +212,17 @@ function toggleAmbience(style: AmbienceStyleId): number {
   // The bed takes a moment to render on a phone: say so first, then render.
   setStatus('Preparando el ambiente…');
   renderAmbienceState();
-  setTimeout(() => {
+  // The bed, then the birds and the next court, a piece at a time; it starts as soon as the bed is ready.
+  const more = () => {
     if (ambience !== club) return;
-    club.start(0.9);
-    setStatus(store.kind === 'shared' ? 'Tus elecciones se guardan solas' : 'Se guardan en este navegador');
-    // The birds and the next court, a piece at a time.
-    const more = () => {
-      if (ambience === club && club.prepare()) setTimeout(more, 0);
-    };
-    more();
-  }, 60);
+    const going = club.prepare();
+    if (club.ready && !club.playing) {
+      club.start(0.9);
+      setStatus(store.kind === 'shared' ? 'Tus elecciones se guardan solas' : 'Se guardan en este navegador');
+    }
+    if (going) setTimeout(more, 0);
+  };
+  setTimeout(more, 60);
   return 0;
 }
 

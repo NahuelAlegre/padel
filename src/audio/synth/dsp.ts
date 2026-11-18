@@ -491,6 +491,27 @@ export interface RoomOptions {
 const ROOM_DELAYS = [0.0297, 0.0371, 0.0411, 0.0437, 0.0503, 0.0571, 0.0617, 0.0683];
 
 export function room(sr: number, input: Signal, opts: RoomOptions, tail = opts.rt60): [Signal, Signal] {
+  return finish(roomSteps(sr, input, opts, tail));
+}
+
+/** Samples a long piece of work does between pauses: a couple of milliseconds on a phone. */
+export const STEP_SAMPLES = 8192;
+
+/**
+ * Work that can stop and go on: each `yield` is a moment where the page may
+ * draw a frame or answer a touch. `finish` runs it straight through.
+ */
+export type Steps<T> = Generator<void, T, void>;
+
+export function finish<T>(steps: Steps<T>): T {
+  for (;;) {
+    const r = steps.next();
+    if (r.done) return r.value;
+  }
+}
+
+/** `room`, pausing every `STEP_SAMPLES` samples. */
+export function* roomSteps(sr: number, input: Signal, opts: RoomOptions, tail = opts.rt60): Steps<[Signal, Signal]> {
   const n = input.length + Math.ceil(tail * sr);
   const left = new Float32Array(n);
   const right = new Float32Array(n);
@@ -505,6 +526,7 @@ export function room(sr: number, input: Signal, opts: RoomOptions, tail = opts.r
   // Each line hears the input with its own sign, so the lines start apart.
   const signs = [1, -1, 1, 1, -1, 1, -1, -1];
   for (let i = 0; i < n; i++) {
+    if (i > 0 && i % STEP_SAMPLES === 0) yield;
     const x = i - pre >= 0 && i - pre < input.length ? input[i - pre]! : 0;
     for (let j = 0; j < 8; j++) outs[j] = lines[j]![idx[j]!]!;
     // Fast Hadamard transform of order 8, scaled to stay unitary.

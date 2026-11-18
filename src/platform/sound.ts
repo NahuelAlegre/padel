@@ -22,9 +22,11 @@ const SLICE_MS = 6;
 /**
  * Full volume, for each bus. Set so that the default levels (half the effects,
  * a quarter of the club) sound quiet: the person turns it up if they want.
+ * The club was halved and a bit more after the first test on a phone: it was
+ * too present. Even at 100 % it stays under the hits.
  */
-const EFFECTS_FULL = 0.7;
-const AMBIENCE_FULL = 1.4;
+export const EFFECTS_FULL = 0.7;
+export const AMBIENCE_FULL = 0.6;
 /** A far sound: this much quieter and duller, with more of the court's air. */
 const FAR_GAIN = 0.55;
 const FAR_LOWPASS = 3200;

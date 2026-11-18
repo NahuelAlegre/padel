@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { allTakes, CUES, loudness, nearestLevel, renderTake, SFX_RATE } from '../src/audio/bank';
+import { allTakes, CHOSEN, CUES, loudness, nearestLevel, renderTake, SFX_RATE } from '../src/audio/bank';
 import { catalogue } from '../src/audio/catalogue';
 import { hitIntensity, SoundDirector } from '../src/audio/director';
 import { AMBIENCE_STYLES, bed } from '../src/audio/synth/ambience';
-import { peak, rms, type Signal } from '../src/audio/synth/dsp';
+import { filter, peak, rms, type Signal } from '../src/audio/synth/dsp';
 import { racketHit, RACKET_STYLES } from '../src/audio/synth/impacts';
 import { Rng } from '../src/core/rng';
 import { AudioEngine, MAX_VOICES } from '../src/platform/audio';
+import { AMBIENCE_RATE, ClubAmbience, clubEvent, EVENT_LEVEL, type ClubEvent } from '../src/platform/club';
 import { silentSound } from '../src/platform/memory';
+import { AMBIENCE_FULL, EFFECTS_FULL } from '../src/platform/sound';
 import type { Sound, SoundCue, SoundPlace } from '../src/platform/types';
 import { Match, type SimEvent } from '../src/sim/match';
 import { defaultSettings, readSettings } from '../src/ui/settings';
@@ -246,6 +248,73 @@ describe('el motor de audio', () => {
     engine.unlock();
     engine.setMuted(true);
     expect(engine.play(engine.buffer([new Float32Array(100)]))).toBeNull();
+  });
+});
+
+describe('el club', () => {
+  /**
+   * How loud something sounds on a phone, in dB: what a small speaker plays
+   * (nothing under ~450 Hz), the loudest 100 ms. A held whistle and a hit that
+   * is over in a few milliseconds can be compared this way; their peaks cannot.
+   */
+  function onPhone(x: Signal, sr: number, gain: number): number {
+    const y = x.map((v) => v * gain);
+    filter(sr, y, 'highpass', 450, 0.707);
+    filter(sr, y, 'highpass', 450, 0.707);
+    const win = Math.round(sr * 0.1);
+    let loudest = 0;
+    for (let i = 0; i + win <= y.length; i += Math.round(win / 4)) loudest = Math.max(loudest, rms(y, i, i + win));
+    return 20 * Math.log10(loudest + 1e-12);
+  }
+
+  const settings = defaultSettings(false);
+  const kinds: ClubEvent[] = ['thrush', 'kiskadee', 'sparrows', 'dove', 'rally', 'clink'];
+  /** The softest of the hardest hits, close, at the default volume. */
+  const hardHit = Math.min(
+    ...[0, 1, 2].map((take) => {
+      const top = CUES.hit.levels.length - 1;
+      return onPhone(renderTake({ cue: 'hit', level: top, take }), SFX_RATE, settings.effects * EFFECTS_FULL * CUES.hit.gain * loudness(1));
+    }),
+  );
+  /** The loudest each kind of event gets, at an ambience volume. */
+  const loudestEvent = (kind: ClubEvent, ambience: number): number =>
+    Math.max(...[0, 1].map((take) => onPhone(clubEvent(kind, 1000 + take * 17)[0], AMBIENCE_RATE, ambience * AMBIENCE_FULL * EVENT_LEVEL[kind] * 1.1)));
+
+  it('queda de fondo: los pájaros, el vaso y la otra cancha, muy por debajo de un golpe', () => {
+    for (const kind of kinds) expect(loudestEvent(kind, settings.ambience), kind).toBeLessThan(hardHit - 10);
+    const [bedLeft] = bed(AMBIENCE_RATE, 7, 4, AMBIENCE_STYLES[CHOSEN.ambience]);
+    expect(onPhone(bedLeft, AMBIENCE_RATE, settings.ambience * AMBIENCE_FULL)).toBeLessThan(hardHit - 10);
+  });
+
+  it('y con el ambiente al 100 %, todavía por debajo de los golpes', () => {
+    for (const kind of kinds) expect(loudestEvent(kind, 1), kind).toBeLessThan(hardHit);
+  });
+
+  it('los pájaros cantan de vez en cuando, no todo el tiempo', () => {
+    expect(AMBIENCE_STYLES[CHOSEN.ambience].birds).toBeLessThanOrEqual(3);
+  });
+
+  it('se prepara de a pasos chicos, y nunca en el momento de un toque', () => {
+    let loops = 0;
+    const engine = { ready: true, buffer: () => ({}), loop: () => (loops++, () => {}), play: () => null } as unknown as AudioEngine;
+    const club = new ClubAmbience(engine, CHOSEN.ambience);
+    // Asked to start before its bed is ready, it waits: nothing is rendered there and then.
+    club.start();
+    expect(club.playing).toBe(false);
+    expect(club.ready).toBe(false);
+    let steps = 0;
+    while (!club.ready) {
+      club.prepare();
+      steps++;
+    }
+    // The bed alone is many small steps, not one long one.
+    expect(steps).toBeGreaterThan(15);
+    club.start();
+    expect(club.playing).toBe(true);
+    expect(loops).toBe(1);
+    club.stop();
+    while (club.prepare()) steps++;
+    expect(steps).toBeGreaterThan(100);
   });
 });
 

@@ -18,7 +18,7 @@
       close: q.get('cerca') === '1',
       paused: false,
       fps: q.has('fps') ? q.get('fps') === '1' : store.get('fps', true),
-      open: store.get('open', false),      /* arranca plegada: pantalla limpia, los ajustes a un toque */
+      open: store.get('abierto', false),   /* arranca plegada: pantalla limpia, los ajustes a un toque */
     };
     const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
     const listeners = [];
@@ -83,8 +83,9 @@
     const note = el('p', 'p3-note', opts.note || '');
     panel.appendChild(note);
 
-    const setOpen = (v) => { state.open = v; store.set('open', v); bar.classList.toggle('closed', !v); toggle.textContent = v ? 'Ocultar' : 'Ajustes'; toggle.setAttribute('aria-expanded', v ? 'true' : 'false'); };
-    toggle.addEventListener('click', () => setOpen(!state.open));
+    /* solo se recuerda si la persona la abrió o la cerró a mano */
+    const setOpen = (v, remember) => { state.open = v; if (remember) store.set('abierto', v); bar.classList.toggle('closed', !v); toggle.textContent = v ? 'Ocultar' : 'Ajustes'; toggle.setAttribute('aria-expanded', v ? 'true' : 'false'); };
+    toggle.addEventListener('click', () => setOpen(!state.open, true));
     setOpen(q.has('panel') ? q.get('panel') === '1' : state.open);
     root.appendChild(bar);
 

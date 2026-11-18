@@ -17,6 +17,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "sim": "vitest run --config vitest.sim.config.ts",
+    "art": "python scripts/art.py",
     "perf": "node scripts/perf.mjs",
     "smoke": "node scripts/smoke.mjs"
   },

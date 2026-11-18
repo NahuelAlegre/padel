@@ -7,12 +7,15 @@
  * Opens the production build in a headless Chrome set up as a portrait phone
  * with a touch screen and goes through what a person would:
  *
- *   - the first visit, straight onto the court, with the rival saying hello;
+ *   - the first visit, straight onto the court, in 3D, with the rival saying hello;
  *   - a whole match with two thumbs: one on the stick, the other holding,
  *     aiming and letting go, while the rival gives its shots away, has its
- *     tics and says its lines;
- *   - the start screen, the options, and a few points with one hand:
- *     dragging to move and flicking to hit;
+ *     tics and says its lines. All along it watches the screen stay clean
+ *     and the camera keep everything that matters in view;
+ *   - the start screen, the options, and a few points with one hand, the
+ *     still camera and every aid on;
+ *   - losing the graphics context in the middle of a point and getting it
+ *     back, and a device with no WebGL2 at all: the game goes on in 2D;
  *   - closing the game in the middle of a match and picking it up again;
  *   - pause, the notch, a computer with mouse and keyboard, and the build
  *     opened straight from disk, as an app shell would load it.
@@ -23,6 +26,7 @@
  * Options:
  *   --out .smoke       folder for the screenshots
  *   --throttle 4       CPU slowdown factor (default 1)
+ *   --nogpu            run the browser without a graphics card
  */
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -37,6 +41,8 @@ const HEIGHT = 800;
 const STICK = { x: WIDTH * 0.25, y: HEIGHT * 0.86 };
 const AIM = { x: WIDTH * 0.75, y: HEIGHT * 0.86 };
 const STICK_RADIUS = 46;
+/** The shots that get their name on screen with the minimal aids. */
+const SPECIAL = new Set(['Bandeja', 'Víbora', 'Salida de pared', '¡Remate!', 'Contrapared']);
 
 const checks = [];
 function check(name, ok, detail = '') {
@@ -50,7 +56,7 @@ function section(title) {
 async function main() {
   mkdirSync(out, { recursive: true });
   const preview = await startPreview();
-  const phone = await openPhone({ width: WIDTH, height: HEIGHT, dpr: 3 });
+  const phone = await openPhone({ width: WIDTH, height: HEIGHT, dpr: 3, gpu: !option('nogpu', false) });
   await phone.watchNetwork();
   const shot = (name) => phone.screenshot(join(out, `${name}.png`));
 
@@ -84,22 +90,92 @@ async function main() {
         tell: g.scene.players[1]?.tell?.pose ?? null,
         act: g.scene.players[1]?.act?.clip ?? null,
         bubble: document.querySelector('#bubble.show')?.textContent ?? null,
+        // How it is being drawn, and what is on screen besides the world.
+        look: g.renderer.look,
+        cam: [g.renderer.director.follow.pan, g.renderer.director.follow.zoom],
+        aids: (() => {
+          const f = g.renderer.director.frame;
+          return {
+            glow: f.ball.glow,
+            eta: g.scene.contact ? g.scene.contact.eta : null,
+            bounce: f.bounce ? [f.bounce.x, f.bounce.y] : null,
+            ring: f.ring !== null,
+            steps: f.guide !== null,
+            timing: f.timing !== null,
+            aim: f.aim !== null,
+            // The mark of a shot that is already armed: the thumb has let go.
+            armed: f.aim !== null && g.scene.aim !== null && g.scene.aim.armed,
+            label: g.renderer.director.label ? g.renderer.director.label.text : null,
+            hint: document.querySelector('#hint').textContent,
+          };
+        })(),
+        // Where the things that matter fall on screen.
+        view: (() => {
+          const at = { x: 0, y: 0 };
+          const on = (x, y, z) => { g.renderer.project(x, y, z, at); return [at.x, at.y]; };
+          return {
+            feet: on(me.x, me.y, 0),
+            head: on(me.x, me.y, 2.2),
+            ball: m.rally.live ? on(m.ball.x, m.ball.y, m.ball.z) : null,
+            ballInCourt: Math.abs(m.ball.x) <= 5.2 && Math.abs(m.ball.y) <= 10.2,
+            glass: on(0, -10, 0),
+            rival: on(rival.x, rival.y, 2.8),
+          };
+        })(),
       };
     })()`);
+  /** Adds what one look at the screen says to a running tally. */
+  const tally2 = () => ({ samples: 0, not3d: 0, ring: 0, steps: 0, timing: 0, glow: 0, glowFar: 0, bounce: 0, bounceFar: 0, aim: 0, aimNoThumb: 0, labels: new Set(), hints: new Set(), panMax: 0, zoomMin: 9, zoomMax: 0, out: 0, ballOut: 0, glassLow: 0, moved: 0 });
+  const note = (t, state) => {
+    t.samples++;
+    if (state.look !== '3d') t.not3d++;
+    const a = state.aids;
+    if (a.ring) t.ring++;
+    if (a.steps) t.steps++;
+    if (a.timing) t.timing++;
+    if (a.glow > 0) {
+      t.glow++;
+      if (a.eta === null || a.eta > 0.2 || a.eta < -0.09) t.glowFar++;
+    }
+    if (a.bounce) {
+      t.bounce++;
+      if (a.bounce[1] > 0) t.bounceFar++;
+    }
+    if (a.aim) {
+      t.aim++;
+      if (a.armed) t.aimNoThumb++;
+    }
+    if (a.label) t.labels.add(a.label);
+    if (a.hint) t.hints.add(a.hint);
+    const [pan, zoom] = state.cam;
+    t.panMax = Math.max(t.panMax, Math.abs(pan));
+    t.zoomMin = Math.min(t.zoomMin, zoom);
+    t.zoomMax = Math.max(t.zoomMax, zoom);
+    if (pan !== 0 || zoom !== 1) t.moved++;
+    const v = state.view;
+    const inside = (p) => p[0] >= 0 && p[0] <= WIDTH && p[1] >= 0 && p[1] <= HEIGHT;
+    if (!inside(v.feet) || !inside(v.head) || !inside(v.rival)) t.out++;
+    if (v.ball && v.ballInCourt && !inside(v.ball)) t.ballOut++;
+    if (v.glass[1] > HEIGHT - 20) t.glassLow++;
+  };
   const reaches = async (expected, timeoutMs = 2500) => {
     for (const deadline = Date.now() + timeoutMs; Date.now() < deadline; await sleep(20)) {
       if ((await look()).state === expected) return true;
     }
     return false;
   };
-  const buttonAt = (label) =>
+  /** A button by its text. `group` narrows it to the options of one setting, for labels that repeat. */
+  const buttonAt = (label, group = '', reveal = false) =>
     phone.evaluate(`(() => {
       const wanted = ${JSON.stringify(label)};
-      const button = [...document.querySelectorAll('button')].find((b) => {
+      const scope = ${JSON.stringify(group)} ? document.querySelector('[data-key="' + ${JSON.stringify(group)} + '"]') : document;
+      if (!scope) return null;
+      const button = [...scope.querySelectorAll('button')].find((b) => {
         const own = [...b.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim();
         return own === wanted || b.getAttribute('aria-label') === wanted;
       });
       if (!button) return null;
+      if (${reveal}) button.scrollIntoView({ block: 'center' });
       const r = button.getBoundingClientRect();
       const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
       return {
@@ -109,12 +185,13 @@ async function main() {
         visible: r.top >= 0 && r.bottom <= innerHeight && button.contains(top),
         focused: document.activeElement === button,
         primary: button.classList.contains('primary'),
+        pressed: button.getAttribute('aria-pressed') === 'true',
       };
     })()`);
-  const tapButton = async (label) => {
+  const tapButton = async (label, group = '') => {
     let at = null;
     for (const deadline = Date.now() + 2500; Date.now() < deadline; await sleep(25)) {
-      at = await buttonAt(label);
+      at = await buttonAt(label, group, true);
       if (at?.visible) break;
     }
     if (!at) throw new Error(`No hay un botón "${label}" en pantalla`);
@@ -286,12 +363,18 @@ async function main() {
     check('abre directo en la cancha, con el saque listo', s.state === 'playing' && s.serving, `${Math.round(opened)} ms desde que empezó a cargar`);
     check('sin menú ni pantalla de título en el medio', s.screen === null);
     check('el primer peloteo es el tutorial', s.tutorial === true && s.introDone === false);
+    for (const deadline = Date.now() + 4000; Date.now() < deadline && (await look()).look !== '3d'; ) await sleep(50);
+    const timings = await phone.evaluate('window.padel.renderer.timings');
+    s = await look();
+    check('se ve en 3D', s.look === '3d', `primer cuadro a los ${Math.round(timings.firstFrame)} ms de crear el renderer, en 3D a los ${Math.round(timings.first3d)} ms`);
+    const ghost = await phone.evaluate('window.padel.scene.tutorial');
+    check('el tutorial no tiene texto: lo muestran los pulgares fantasma', s.aids.hint === '' && ghost?.step === 'serve', `texto de ayuda: "${s.aids.hint}"`);
     await sleep(300);
     s = await look();
     check('el rival saluda con un globito que no frena nada', s.bubble === '¡Hola! Soy Beto, el profe.' && s.serving, s.bubble ?? 'sin globito');
     const hello = await phone.evaluate(`(() => {
       const g = window.padel, who = g.match.players[1], at = { x: 0, y: 0 };
-      g.renderer.project(who.x, who.y, 2.4, at);
+      g.renderer.project(who.x, who.y, 3.0, at);
       const r = document.querySelector('#bubble').getBoundingClientRect();
       return { head: at, left: r.left, right: r.right, bottom: r.bottom, top: r.top };
     })()`);
@@ -316,6 +399,7 @@ async function main() {
     const tells = new Set();
     const tics = new Set();
     const said = new Set();
+    const seen = tally2();
     let helloClosed = null;
     let tellShot = false;
     await playTwoThumbs({
@@ -341,6 +425,7 @@ async function main() {
       },
       until: async (state) => {
         if (state.state === 'over') return true;
+        if (state.state === 'playing') note(seen, state);
         if (state.tell) {
           tells.add(state.tell);
           if (!tellShot) {
@@ -400,8 +485,26 @@ async function main() {
     check('hubo saques propios', all.some((e) => e.type === 'hit' && e.team === 0 && e.kind === 'serve'));
     check('el tutorial termina solo después del primer golpe bueno', s.introDone === true);
     check('el saque cierra el saludo: nadie espera a que termine', helloClosed === true);
-    check('el rival delata su golpe antes de pegar: Beto señala', tells.has('pointAim'), [...tells].join(', '));
+    check('el rival decide su golpe antes de pegar y lo delata', tells.has('pointAim'), [...tells].join(', '));
     check('entre puntos tiene sus manías', tics.size > 0, [...tics].join(', '));
+
+    section('Pantalla limpia (ayudas mínimas, como viene)');
+    check('todo el partido se vio en 3D', seen.not3d === 0 && seen.samples > 200, `${seen.samples} miradas`);
+    check('sin anillo bajo tu jugador, sin huellas y sin anillo de timing', seen.ring + seen.steps + seen.timing === 0);
+    check('una sola señal de timing: la pelota se enciende en el último instante', seen.glow > 0 && seen.glowFar === 0, `encendida en ${seen.glow} de ${seen.samples} miradas`);
+    check('la marca de pique, solo en tu lado', seen.bounce > 0 && seen.bounceFar === 0, `${seen.bounce} miradas con marca`);
+    check('la marca de objetivo, solo mientras el pulgar apunta', seen.aim > 0 && seen.aimNoThumb === 0, `${seen.aim} miradas con marca, ${seen.aimNoThumb} con el pulgar ya suelto`);
+    const plain = [...seen.labels].filter((label) => !SPECIAL.has(label));
+    check('solo se nombran los golpes especiales', plain.length === 0, [...seen.labels].join(', ') || 'ninguno esta vez');
+    check('ningún texto de ayuda en todo el partido', seen.hints.size === 0, [...seen.hints].join(' | '));
+    const assist = await phone.evaluate('window.padel.profile.assist');
+    check('las ayudas mínimas se fueron apagando con los aciertos', assist < 1, `queda ${Math.round(assist * 100)} % de lo que se apaga`);
+
+    section('Cámara que acompaña');
+    check('se mueve, y siempre dentro de sus límites', seen.moved > seen.samples * 0.3 && seen.zoomMin >= 1 && seen.zoomMax <= 1.3 && seen.panMax < 3.2, `zoom ${seen.zoomMin.toFixed(2)} a ${seen.zoomMax.toFixed(2)}, paneo hasta ${seen.panMax.toFixed(2)} m`);
+    check('tu jugador y el rival, siempre enteros en pantalla', seen.out === 0);
+    check('la pelota en juego, siempre en pantalla', seen.ballOut === 0);
+    check('tu vidrio de fondo, siempre a la vista', seen.glassLow === 0);
     console.log('        dijo:   ', [...said].join(' · ') || '(nada más que el saludo)');
     console.log('\n        timing: ', tally(mine, 'quality'));
     console.log('        golpes: ', tally(mine, 'kind'));
@@ -430,9 +533,16 @@ async function main() {
     await tapButton('Una mano');
     check('se puede cambiar de esquema desde las opciones', (await phone.evaluate('window.padel.settings.scheme')) === 'one');
     check('el movimiento asistido viene apagado', (await phone.evaluate('window.padel.settings.assistedMovement')) === false);
-    await tapButton('Ninguna');
+    await tapButton('Ninguna', 'lines');
     check('las frases del rival se pueden apagar', (await phone.evaluate('window.padel.settings.lines')) === 'none');
-    await tapButton('Muchas');
+    await tapButton('Muchas', 'lines');
+    check('las ayudas vienen en "Mínimas"', !!(await buttonAt('Mínimas', 'aids', true))?.pressed);
+    await tapButton('Completas', 'aids');
+    check('y se pueden pedir completas', (await phone.evaluate('window.padel.settings.aids')) === 'full');
+    check('la cámara viene en "Acompaña"', !!(await buttonAt('Acompaña', 'camera', true))?.pressed);
+    await shot('07b-opciones-camara');
+    await tapButton('Fija', 'camera');
+    check('y se puede elegir "Fija"', (await phone.evaluate('window.padel.settings.camera')) === 'fixed');
     await tapButton('Volver');
 
     // ------------------------------------------------------------ one hand
@@ -441,16 +551,46 @@ async function main() {
     check('"Partida rápida" empieza a un toque', await reaches('playing'));
     await sleep(200);
     check('al que ya conoce lo saluda distinto', (await look()).bubble === '¡Volviste! Me alegra.', (await look()).bubble ?? 'sin globito');
+
+    // The graphics context goes away in the middle of the game, and comes back.
+    section('Sin 3D: nadie se queda sin jugar');
+    await phone.evaluate(`(() => {
+      const gl = document.querySelector('#world').getContext('webgl2');
+      window.__lose = gl.getExtension('WEBGL_lose_context');
+      window.__lose.loseContext();
+    })()`);
+    await sleep(300);
+    s = await look();
+    check('si se pierde el contexto gráfico, el juego sigue en 2D', s.look === '2d' && s.state === 'playing');
+    const clock = s.time;
+    await sleep(400);
+    check('y el partido no se frena', (await look()).time > clock + 0.2);
+    await shot('07c-respaldo-2d');
+    await phone.evaluate('window.__lose.restoreContext()');
+    await sleep(500);
+    check('cuando el contexto vuelve, vuelve el 3D', (await look()).look === '3d', `pérdidas: ${await phone.evaluate('window.padel.renderer.losses')}`);
+    await shot('07d-de-vuelta-en-3d');
+
+    section('Una mano, cámara fija y ayudas completas');
     await watchEvents();
+    const full = tally2();
     await playOneHand({
       maxMs: 150_000,
-      until: async (state) => state.state === 'over' || myHits(await events()).length >= 6,
+      until: async (state) => {
+        if (state.state === 'playing') note(full, state);
+        return state.state === 'over' || myHits(await events()).length >= 6;
+      },
     });
     all = await events();
     mine = myHits(all);
     await shot('08-una-mano');
     check('el deslizamiento rápido pega', mine.length >= 3, `${mine.length} golpes`);
     check('y el saque sale con un solo deslizamiento', all.some((e) => e.type === 'hit' && e.team === 0 && e.kind === 'serve'));
+    check('con la cámara fija no se mueve nada', full.moved === 0 && full.samples > 50, `${full.samples} miradas`);
+    check('y la cancha entera entra igual', full.out === 0 && full.ballOut === 0 && full.glassLow === 0);
+    check('con las ayudas completas vuelven el anillo propio, el de timing y las huellas', full.ring === full.samples && full.timing > 0 && full.steps > 0);
+    check('y cada golpe dice su nombre', full.labels.size > 0, [...full.labels].join(', '));
+    await phone.evaluate(`(() => { const g = window.padel; g.settings.aids = 'minimal'; g.settings.camera = 'follow'; g.applySettings(); })()`);
     console.log('\n        timing: ', tally(mine, 'quality'), '  golpes:', tally(mine, 'kind'));
 
     // A slow drag is only movement: letting go must not hit.
@@ -487,6 +627,8 @@ async function main() {
     s = await look();
     await shot('09-volver');
     check('la segunda visita abre en el inicio, no en la cancha', s.state === 'menu' && s.screen === 'menu');
+    const behind = await phone.evaluate(`(() => { const r = window.padel.renderer; return { look: r.look, drawn: r.timings.first3d >= 0 }; })()`);
+    check('con el club de fondo, en 3D, aunque el partido no esté corriendo', behind.look === '3d' && behind.drawn);
     const goOn = await buttonAt('Seguir el partido');
     check('el partido a medias se puede seguir', !!goOn?.visible);
     check('"Partida rápida" sigue siendo el botón principal', !!(await buttonAt('Partida rápida'))?.primary);
@@ -504,6 +646,16 @@ async function main() {
     })()`);
     check('al pasar a segundo plano se pausa sola', await reaches('paused'));
 
+    // ------------------------------------------------------------ no WebGL2
+    await phone.goto(`${preview.url}?2d`);
+    await sleep(400);
+    await tapButton('Partida rápida');
+    await reaches('playing');
+    await sleep(500);
+    const flat = await phone.evaluate(`(() => { const r = window.padel.renderer; return { look: r.look, court: r.court !== null, time: window.padel.match.time }; })()`);
+    await shot('09b-sin-webgl2');
+    check('un dispositivo sin WebGL2 juega en 2D, con la cancha de siempre', flat.look === '2d' && flat.court && flat.time > 0.2);
+
     // ------------------------------------------------------------ notch
     section('Zonas seguras (notch y barra de inicio)');
     const insets = { top: 47, bottom: 34, left: 0, right: 0 };
@@ -515,18 +667,19 @@ async function main() {
       await sleep(300);
       const layout = await phone.evaluate(`(() => {
         const rect = (q) => document.querySelector(q).getBoundingClientRect();
-        const g = window.padel;
+        const g = window.padel, at = { x: 0, y: 0 };
+        const y = (cx, cy, cz) => { g.renderer.project(cx, cy, cz, at); return at.y; };
         return {
-          score: rect('.score').top, pause: rect('#pause').top, hint: innerHeight - rect('#hint').bottom,
-          courtTop: g.renderer.camera.bounds.top, courtBottom: g.renderer.camera.bounds.bottom,
+          score: rect('.score').top, scoreBottom: rect('.score').bottom, pause: rect('#pause').top, hint: innerHeight - rect('#hint').bottom,
+          farWall: y(0, 10, 4), nearGlass: y(0, -10, 0),
           safe: g.platform.display.safeArea(),
         };
       })()`);
       await shot('10-con-notch');
       check('el juego lee la zona segura del dispositivo', layout.safe.top === insets.top && layout.safe.bottom === insets.bottom);
       check('el marcador y la pausa quedan debajo del notch', layout.score >= insets.top && layout.pause >= insets.top, `a ${Math.round(layout.score)} px`);
-      check('la cancha también baja', layout.courtTop >= insets.top + 78 - 1, `empieza a ${Math.round(layout.courtTop)} px`);
-      check('la zona del pulgar queda arriba de la barra de inicio', layout.hint >= insets.bottom && layout.courtBottom <= HEIGHT * 0.88 - insets.bottom + 1);
+      check('la cancha queda entera debajo del marcador', layout.farWall >= layout.scoreBottom, `el fondo empieza a ${Math.round(layout.farWall)} px, el marcador termina a ${Math.round(layout.scoreBottom)}`);
+      check('y tu vidrio queda arriba de la barra de inicio y de los pulgares', layout.hint >= insets.bottom && layout.nearGlass <= HEIGHT - insets.bottom - 60, `a ${Math.round(HEIGHT - layout.nearGlass)} px del borde`);
       await phone.setSafeArea({ top: 0, bottom: 0, left: 0, right: 0 });
     } else {
       console.log('        (este navegador no permite emular la zona segura: sin verificar)');
@@ -569,6 +722,10 @@ async function main() {
     check('no pide nada fuera de su propio paquete', outside.length === 0, outside.slice(0, 2).join(' '));
     const assets = phone.requests.filter((url) => url.startsWith(preview.url)).map((url) => url.slice(preview.url.length) || 'index.html');
     console.log('        archivos pedidos:', [...new Set(assets)].join(', '));
+    check(
+      'baja la cancha en AVIF y el personaje comprimido, una sola vez cada uno',
+      assets.includes('art/court/piso.avif') && assets.includes('art/character.bin.gz') && !assets.some((file) => file.endsWith('.webp') || file.endsWith('.bin')),
+    );
 
     await phone.setScreen(WIDTH, HEIGHT, 3);
     const fileUrl = pathToFileURL(join(root, 'dist', 'index.html')).href;
@@ -582,8 +739,10 @@ async function main() {
     if (local) {
       await phone.evaluate(`window.padel.start('demo')`);
       await sleep(1500);
-      const running = await phone.evaluate(`({ state: window.padel.state, time: window.padel.match.time })`);
+      const running = await phone.evaluate(`({ state: window.padel.state, time: window.padel.match.time, look: window.padel.renderer.look, court: window.padel.renderer.court !== null })`);
       check('y juega', running.state === 'playing' && running.time > 0.5, `${running.time.toFixed(1)} s de partido`);
+      // A page opened from disk cannot read the character file: it gets the 2D look, with the real court.
+      check('desde un archivo se ve en 2D, con la cancha de siempre', running.look === '2d' && running.court);
       await shot('12-desde-archivo');
     }
 

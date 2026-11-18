@@ -198,9 +198,8 @@ describe('gesto delator: la IA decide antes y lo muestra', () => {
     });
     const scene = createScene();
     const options: SceneOptions = {
-      bounceMarker: true,
-      timingAid: true,
-      positionGuide: true,
+      aids: 'full',
+      aidStrength: 1,
       reduceMotion: false,
       debug: false,
       cueLead: 0,

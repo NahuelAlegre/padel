@@ -1,4 +1,10 @@
-import type { Analytics, AnalyticsValue, Haptics, KeyValueStore, Sound } from './types';
+import type { Analytics, AnalyticsValue, Assets, Haptics, KeyValueStore, Sound } from './types';
+
+/** Nothing to load: for tests, and for a shell with no files. The game falls back to what it can draw by itself. */
+export const noAssets: Assets = {
+  image: () => Promise.reject(new Error('No assets here')),
+  bytes: () => Promise.reject(new Error('No assets here')),
+};
 
 /** Storage that lasts as long as the page: the fallback when nothing better works, and the one tests use. */
 export function createMemoryStore(initial: Record<string, string> = {}): KeyValueStore {

@@ -90,6 +90,46 @@ describe('guardado local', () => {
     expect(data.match).toBeNull();
   });
 
+  it('por defecto la pantalla está limpia y la cámara acompaña', () => {
+    const settings = defaultSettings(false);
+    expect(settings.aids).toBe('minimal');
+    expect(settings.camera).toBe('follow');
+    // Whoever has never played gets all of the little help there is.
+    expect(emptyProfile().assist).toBe(1);
+  });
+
+  it('quien ya jugó la versión anterior queda con las ayudas mínimas y la cámara que acompaña', async () => {
+    // What the first published prototype saved: every aid on, and a camera that no longer exists.
+    const store = createMemoryStore({
+      'padel.settings.v2':
+        '{"scheme":"one","stickSide":"right","assistedMovement":false,"rival":"romina","speed":0.8,"bounceMarker":true,' +
+        '"timingAid":true,"positionGuide":true,"lines":"few","reduceMotion":false,"vibration":false,"camera":"mid","quality":"auto","fullscreen":false,"showFps":false}',
+      'padel.profile.v1': '{"introDone":true,"opens":3,"matchesStarted":2,"hits":{"perfect":4,"good":9,"early":2,"late":1}}',
+    });
+    const data = await loadData(store, false);
+    expect(data.settings.aids).toBe('minimal');
+    expect(data.settings.camera).toBe('follow');
+    // Everything else they chose is kept.
+    expect(data.settings).toMatchObject({ scheme: 'one', stickSide: 'right', rival: 'romina', speed: 0.8, lines: 'few', vibration: false });
+    expect(data.profile.introDone).toBe(true);
+    expect(data.profile.assist).toBe(1);
+  });
+
+  it('las ayudas y la cámara elegidas se guardan, y cuánto queda de las ayudas también', async () => {
+    const store = createMemoryStore();
+    saveSettings(store, { ...defaultSettings(false), aids: 'full', camera: 'fixed' });
+    saveProfile(store, { ...emptyProfile(), assist: 0.4 });
+    await settle();
+    const data = await loadData(store, false);
+    expect(data.settings.aids).toBe('full');
+    expect(data.settings.camera).toBe('fixed');
+    expect(data.profile.assist).toBeCloseTo(0.4, 9);
+    // A value that makes no sense is not trusted.
+    saveProfile(store, { ...emptyProfile(), assist: 7 });
+    await settle();
+    expect((await loadData(store, false)).profile.assist).toBe(1);
+  });
+
   it('descarta un partido guardado con otra versión de la física', async () => {
     const store = createMemoryStore();
     saveMatch(store, { ...matchInProgress(), version: PHYSICS_VERSION + 1 });

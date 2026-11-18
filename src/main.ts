@@ -27,6 +27,7 @@ async function boot(): Promise<void> {
   // Developer switches. On the web they come from the query string:
   //   ?demo   the computer plays itself     ?loop   the demo starts over when it ends
   //   ?fps    frame counter and timing errors     ?record   keep the inputs for a replay
+  //   ?2d     never use the 3D look: what a device without WebGL2 gets
   if (platform.launch.flag('fps')) game.settings.showFps = true;
   game.loopDemo = platform.launch.flag('loop');
   if (platform.launch.flag('demo')) game.start('demo');

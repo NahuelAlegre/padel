@@ -10,6 +10,7 @@ import { pointAt } from '../sim/trajectory';
 import type { ShotIntent } from '../sim/types';
 import {
   createPointerFeedback,
+  type AidLevel,
   type PointerFeedback,
   type Scene,
   type SceneAct,
@@ -20,12 +21,13 @@ import {
 } from '../render/scene';
 
 export interface SceneOptions {
-  bounceMarker: boolean;
-  timingAid: boolean;
-  positionGuide: boolean;
+  /** How much help is on screen. */
+  aids: AidLevel;
+  /** 0..1: with the minimal aids, how much of them is left. They fade as the person gets it right. */
+  aidStrength: number;
   reduceMotion: boolean;
   debug: boolean;
-  /** How much earlier than the real contact the timing ring closes, in seconds. */
+  /** How much earlier than the real contact the timing signal peaks, in seconds. */
   cueLead: number;
   tutorial: SceneTutorial | null;
   /** Who each player of the match is, by position in `match.players`. Null for nobody in particular. */
@@ -37,8 +39,11 @@ export interface SceneOptions {
 export function createScene(pointer: PointerFeedback = createPointerFeedback()): Scene {
   return {
     time: 0,
-    ball: { x: 0, y: 0, z: 0, visible: true },
+    ball: { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, visible: true, held: false, live: false },
     players: [],
+    serving: -1,
+    aids: 'minimal',
+    aidStrength: 1,
     bounce: null,
     contact: null,
     aim: null,
@@ -75,6 +80,15 @@ const context: ShotContext = {
  * `alpha` is how far into the current step the frame falls (0..1): the
  * simulation runs at a fixed rate and the screen at its own, so positions
  * are blended to keep the motion smooth at any refresh rate.
+ *
+ * This is also where the screen is kept clean. What help exists at each level
+ * is decided here, once, for any renderer:
+ *
+ *   minimal   one timing signal, the first bounce of a ball coming to the
+ *             person's side, and where the thumb is aiming while it is down
+ *   full      everything: every bounce, the timing windows, where to stand,
+ *             the aim with its scatter, for whoever wants or needs it
+ *   none      nothing
  */
 export function fillScene(
   scene: Scene,
@@ -84,21 +98,31 @@ export function fillScene(
   options: SceneOptions,
 ): void {
   const time = match.time - (1 - alpha) * SIM_DT;
+  const level = options.aids;
   scene.time = time;
   scene.reduceMotion = options.reduceMotion;
   scene.debug = options.debug;
   scene.tutorial = options.tutorial;
+  scene.aids = level;
+  scene.aidStrength = level === 'minimal' ? options.aidStrength : 1;
   scene.heat = match.config.rules.heatMax > 0 ? match.heat / match.config.rules.heatMax : 0;
 
+  const held = match.phase === 'serve';
   scene.ball.x = lerp(match.ballPrev.x, match.ball.x, alpha);
   scene.ball.y = lerp(match.ballPrev.y, match.ball.y, alpha);
   scene.ball.z = lerp(match.ballPrev.z, match.ball.z, alpha);
+  scene.ball.vx = match.ball.vx;
+  scene.ball.vy = match.ball.vy;
+  scene.ball.vz = match.ball.vz;
   scene.ball.visible = true;
+  scene.ball.held = held;
+  scene.ball.live = match.rally.live;
+  scene.serving = held || match.phase === 'windup' ? match.serverId : -1;
 
   let human: Player | null = null;
+  let humanOut: ScenePlayer | null = null;
   for (let i = 0; i < match.players.length; i++) {
     const player = match.players[i]!;
-    if (player.isHuman && !human) human = player;
     let out: ScenePlayer | undefined = scene.players[i];
     const x = lerp(player.px, player.x, alpha);
     const y = lerp(player.py, player.y, alpha);
@@ -114,6 +138,7 @@ export function fillScene(
         stride: 0,
         anim: 'idle',
         animPhase: 0,
+        contactIn: Infinity,
         animSide: 1,
         restSide: 1,
         shot: 'drive',
@@ -125,6 +150,10 @@ export function fillScene(
         act: null,
       };
       scene.players[i] = out;
+    }
+    if (player.isHuman && !human) {
+      human = player;
+      humanOut = out;
     }
     // Distance covered since the last frame drives the run cycle.
     const moved = Math.hypot(x - out.x, y - out.y);
@@ -139,6 +168,7 @@ export function fillScene(
     const anim = player.anim;
     out.anim = anim.kind;
     out.animPhase = anim.duration > 0 ? (time - anim.t0) / anim.duration : 1;
+    out.contactIn = anim.kind === 'idle' ? Infinity : anim.contactAt - time;
     out.animSide = anim.side;
     out.restSide = (player.hand * teamDir(player.team)) as 1 | -1;
     out.shot = anim.shot;
@@ -164,14 +194,24 @@ export function fillScene(
   }
   scene.players.length = match.players.length;
 
-  // Where the ball lands next. After the first bounce the mark moves on to
-  // the next one, so it keeps following the ball when it comes off a wall.
   scene.bounce = null;
+  scene.contact = null;
+  scene.guide = null;
+  scene.aim = null;
   const trajectory = match.trajectory;
-  if (options.bounceMarker && match.rally.live && trajectory) {
+
+  // Where the ball lands next. For those who ask for everything, the mark
+  // moves on after the bounce and keeps following the ball off the walls.
+  // Otherwise it is only the first bounce of a ball coming to the person.
+  if (level !== 'none' && match.rally.live && trajectory) {
+    const coming = human !== null && match.rally.hitter !== human.team;
     for (let i = 0; i < trajectory.bounces.length; i++) {
       const next = trajectory.bounces[i]!;
       if (next.t <= time) continue;
+      if (level === 'minimal') {
+        const mine = human !== null && next.y * teamDir(human.team) < 0;
+        if (!coming || i !== 0 || !mine) break;
+      }
       bounce.x = next.x;
       bounce.y = next.y;
       bounce.eta = next.t - time;
@@ -181,14 +221,12 @@ export function fillScene(
     }
   }
 
-  scene.contact = null;
-  scene.guide = null;
-  scene.aim = null;
-  if (!human) return;
+  if (!human || !humanOut) return;
 
-  // Where and when the person meets the ball.
+  // Where and when the person meets the ball. How it is shown is up to the
+  // level: a glow on the ball in the last instant, or the ring with its windows.
   const plan = human.plan;
-  if (options.timingAid && plan) {
+  if (level !== 'none' && plan) {
     contact.x = plan.x;
     contact.y = plan.y;
     contact.z = plan.z;
@@ -200,7 +238,7 @@ export function fillScene(
 
   // Where it would be best to stand. Shown only while it is some way off.
   const advice = human.guide;
-  if (options.positionGuide && human.manual && advice) {
+  if (level === 'full' && human.manual && advice) {
     const away = Math.hypot(advice.stanceX - human.x, advice.stanceY - human.y);
     if (away > 0.45) {
       guide.x = advice.stanceX;
@@ -223,9 +261,13 @@ export function fillScene(
     armed = true;
   }
   if (!asked) return;
+  // The mark is where the thumb points. Once it has let go there is nothing
+  // left to decide, so the mark goes too, unless every aid was asked for.
+  const marked = level === 'full' || (level === 'minimal' && !armed);
 
   const serving = (match.phase === 'serve' || match.phase === 'windup') && match.serverId === human.id;
   if (serving) {
+    if (!marked) return;
     const target = serveTarget(human.team, match.serveBox(), asked, match.config);
     aim.x = target.x;
     aim.y = target.y;
@@ -259,11 +301,28 @@ export function fillScene(
     context.walls = 0;
   }
   const shot = resolveShot(context, asked, match.config);
-  aim.x = shot.targetX;
-  aim.y = shot.targetY;
-  aim.kind = shot.kind;
-  aim.forehand = shot.forehand;
-  aim.risk = shot.risk;
-  aim.armed = armed;
-  scene.aim = aim;
+  if (marked) {
+    aim.x = shot.targetX;
+    aim.y = shot.targetY;
+    aim.kind = shot.kind;
+    aim.forehand = shot.forehand;
+    aim.risk = level === 'full' ? shot.risk : 0;
+    aim.armed = armed;
+    scene.aim = aim;
+  }
+
+  // While the thumb is down the body already gets ready for the ball it can
+  // reach, as it will once the thumb lets go: the racket goes back for that
+  // shot. It is only how the player looks; nothing in the match has happened.
+  const resting = humanOut.anim === 'idle' || humanOut.animPhase >= 1;
+  if (!armed && plan && resting && match.rally.live && match.rally.hitter !== human.team) {
+    humanOut.anim = 'swing';
+    humanOut.animPhase = -1;
+    humanOut.contactIn = plan.t - time;
+    humanOut.shot = shot.kind;
+    humanOut.animSide = plan.x >= human.x ? 1 : -1;
+    humanOut.reachX = plan.x - humanOut.x;
+    humanOut.reachY = plan.y - humanOut.y;
+    humanOut.reachZ = plan.z;
+  }
 }

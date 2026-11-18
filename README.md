@@ -401,14 +401,22 @@ Los dedos de la prueba los maneja un programa que lee el estado del partido. Sir
 ## Pendientes conocidos
 
 - **Probarlo en un celular real.** Es lo más importante que falta. Las ventanas de timing, el adelanto del anillo, la compensación de latencia (30 ms), el tamaño del joystick y lo que separa "arrastrar" de "deslizar rápido" son un punto de partida razonado, no medido.
+- **El renderer gris es descartable.** El arte final probablemente sea 3D estilizado y lo reemplace entero detrás de `Renderer`. Lo que vale de esta rama es la simulación, los controles, las reglas y la IA; no conviene invertir más en cómo se ve el prototipo.
+
+Para la próxima ronda:
+
+- **Escenario horneado con shader.** La separación en tres capas y el punto de enganche están (ver "El escenario en tres capas"), pero nadie escribió el horneador de WebGL2.
+- **Modo incrustable.** No está hecho ni especificado en esta rama, y no se probó el juego dentro de un `iframe`. Lo que ya ayuda: no depende de la dirección de la página, sigue andando si el guardado está bloqueado y esconde la opción de pantalla completa donde no está permitida.
+- **El resto de la personalidad.** Hay tres de los diez personajes, con su estilo, gesto delator, manías, frases y memoria. Faltan sus reacciones al punto, el busto en el marcador, la tarjeta de presentación, la escalera del club y el rival sugerido. La dificultad de los tres se calibró contra un jugador simulado, no contra gente.
+
+El resto:
+
 - No hay sonido. El juego ya pide cada sonido por lo que pasó (`platform.sound.play('hit', fuerza)`); falta quien los haga sonar.
 - El resumen de fin de partido muestra solo el resultado: faltan los números del partido y un "Siguiente rival".
 - No hay botón para exportar o importar los datos guardados, ni pantalla de privacidad. No se envía nada a ningún lado.
 - El saque no tiene timing: entra casi siempre. Las faltas existen (hay segundo saque y doble falta), pero son raras.
 - La pelota no tiene efecto. Con eso, un remate bien colocado gana por tiempo y no porque "salga por tres".
-- Del elenco hay tres de diez personajes, y faltan sus reacciones al punto, el busto en el marcador, la tarjeta de presentación, la escalera del club y el rival sugerido. La dificultad de los tres se calibró contra un jugador simulado, no contra gente.
 - El globito del rival y el cartel del punto pueden pisarse cuando el rival está cerca de la red.
-- El escenario se puede hornear con WebGL2 (la interfaz está), pero nadie escribió todavía ese horneador.
 - Dobles funciona en la simulación, pero falta el encuadre y la interfaz para jugarlo.
 - La red no tiene postes con hueco ni puertas, y la pelota no choca con los jugadores.
 - `npm audit` marca una vulnerabilidad de severidad alta en `picomatch`, que llega por Vite y Vitest. Son herramientas de desarrollo: no entra en lo que se publica.

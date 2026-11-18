@@ -74,6 +74,24 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
   - Eventos de salida por `postMessage`: partido terminado, resultado.
   - Que tolere que la app anfitriona lo pause y lo reanude.
 
+## Dobles posicional y alcance creíble (idea del usuario, 2026-11-18; en pausa)
+
+El usuario notó que "el jugador puede golpear desde posiciones muy imposibles", tanto él como la IA. La causa es doble:
+- **Alcance**: la simulación deja pegar hasta 1,8 m del cuerpo a tiempo y 2,2 m tarde, y a la IA hasta 1,85 m. Una persona llega a 1,1–1,2 m parada y a unos 1,7 m con una zancada. Las pelotas se pueden pegar a 7,5 cm del piso.
+- **Animación**: el cuerpo se desliza hasta 90 cm hacia la pelota sin dar un paso, y se agacha como mucho 36 cm.
+
+Pidió **no mandarlo todavía**, porque lo piensa junto con los dobles:
+- "2 vs 2 me parece es el juego por defecto del padel, o al menos le da más diversión": un jugador en un extremo se la deja al compañero en vez de "ser un velocista".
+- Quiere **juego posicional**, que "la posición del jugador importe".
+- Siempre jugó a dobles.
+
+Cuando se retome, va como un solo diseño:
+- dobles como modo principal, con 1 contra 1 como opción;
+- compañero con IA que juega en pareja: subir y bajar juntos, el medio y los lados;
+- alcances de persona real con la animación a la par (zancada y flexión de verdad);
+- una cámara para cuatro jugadores;
+- recalibrar la profundidad.
+
 ## Más adelante
 
 - **Desafío por link, sin servidor**: semilla y resultado en la URL.
@@ -82,7 +100,7 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
   - Para no cerrarse la puerta desde ya: que la simulación dé **exactamente el mismo resultado en cualquier navegador y procesador**. Evitar en `src/sim/` funciones como `Math.sin`, `Math.cos`, `Math.pow` y `Math.exp`, que pueden variar entre motores, o usar versiones propias. Agregar un test que compare un partido grabado contra un resultado de referencia.
   - Un "controlador remoto" es solo otro tipo de controlador, junto al humano y la IA.
   - Desconexiones: pausa, reconexión y que la IA tome el lugar si el otro se va.
-- Modo dobles jugable (la simulación ya lo soporta), torneos y opciones de partido.
+- Modo dobles jugable: ver "Dobles posicional" arriba. Torneos y opciones de partido.
 - PWA, y después Capacitor para las tiendas.
 
 ## Referencia: señales del tablero (2026-11-18)

@@ -89,6 +89,8 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
     - Chela quedó más fácil: hoy cuesta lo mismo que Romina. Se la puede endurecer, pero sus puntos pasan a 17,6 s.
     - Golpes al aire: cada rival falla unas 2 veces por partido pelotas a las que llegó. Si parecen regalados, que conecten flojo (hay que recalibrar a Beto).
   - **Pendiente de animación** (revisión de la orquestadora): el festejo del robo casi no se distingue, el bloqueo de revés se confunde con una volea, los pies todavía patinan al pegar a la carrera (p90 de unos 11 cm por cuadro), y el apurado y el robo no tienen versión 2D.
+  - **Estudio de animaciones, publicado el 2026-11-19** (merge `2f619a2`): `?estudio` (o `?estudio=bloqueo`, `?estudio=no-llego`…) muestra 23 situaciones en loop, con cámara lenta, cuadro a cuadro, Zoom y Costado, lado, personaje y 2D. Detalle en `docs/estudio.md`. Pesa 8,5 KB comprimido, en un archivo aparte que no baja jugando. Lo pidió el usuario para revisar las animaciones sin jugar.
+    - Mejoras posibles: que abra en Zoom (con la cámara del juego el personaje se ve chico), que el fondo de Costado no se vea estirado y medir cuánto tarda en abrir en un celular.
 - **Decisiones del usuario, después de probarlo**: partida rápida en dobles, alcance real para todos, el 1 contra 1 como «Cruzado» (media cancha en diagonal), revés y Beto por defecto, cuánto se desordena la pareja rival.
 - **Pendiente** (revisión de la orquestadora):
   - ~~Fase 2, animación~~: publicada el 2026-11-19 (ver arriba).

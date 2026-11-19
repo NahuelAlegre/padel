@@ -19,6 +19,7 @@
     "sim": "vitest run --config vitest.sim.config.ts",
     "art": "python scripts/art.py",
     "perf": "node scripts/perf.mjs",
+    "frames": "node scripts/frames.mjs",
     "smoke": "node scripts/smoke.mjs",
     "sounds": "node scripts/sounds.mjs",
     "sound-board": "node scripts/sound-board.mjs"

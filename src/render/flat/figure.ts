@@ -1,6 +1,6 @@
 import type { CallKind } from '../../sim/pair';
 import type { MannerismClip, TellPose } from '../../characters/types';
-import { clamp, lerp } from '../../core/math';
+import { clamp, lerp, smoothstep } from '../../core/math';
 import type { ScenePlayer } from '../scene';
 
 type Ctx = CanvasRenderingContext2D;
@@ -245,8 +245,9 @@ function setAct(clip: MannerismClip, t: number, duration: number): void {
   }
 }
 
-/** Limbs are capsules: [x0, y0, x1, y1, width] in screen pixels. */
-const limbs = new Float32Array(5 * 5);
+/** Limbs are capsules: [x0, y0, x1, y1, width] in screen pixels. Two for each leg, the torso and the arms. */
+const LIMBS = 7;
+const limbs = new Float32Array(LIMBS * 5);
 
 function setLimb(index: number, x0: number, y0: number, x1: number, y1: number, width: number): void {
   const o = index * 5;
@@ -258,7 +259,7 @@ function setLimb(index: number, x0: number, y0: number, x1: number, y1: number, 
 }
 
 function strokeLimbs(ctx: Ctx, extra: number): void {
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < LIMBS; i++) {
     const o = i * 5;
     ctx.lineWidth = limbs[o + 4]! + extra;
     ctx.beginPath();
@@ -272,14 +273,64 @@ function strokeLimbs(ctx: Ctx, extra: number): void {
 const RACKET = 0.45;
 /** How far the hand gets from the shoulder with the arm stretched. */
 const ARM = 0.72;
+/** Thigh and shin, in metres: when the hips come down the knees bend, out to the sides. */
+const THIGH = 0.44;
+const SHIN = 0.41;
+/**
+ * The body going to the ball, as the 3D one does: the hips sink for a low
+ * ball, down to `LOWEST` metres off the floor at most; for one further to the
+ * side than the arm takes (`ARM_EASY` from the middle of the body), the foot
+ * on that side steps toward it, up to `STEP`, and the hips go after the step.
+ */
+const LOWEST = 0.46;
+const ARM_EASY = 0.78;
+const STEP = 0.45;
+
+/** How much of the body's way to the ball is taken `eta` seconds before the contact (negative after it). */
+function bodyWeight(eta: number): number {
+  if (!Number.isFinite(eta)) return 0;
+  if (eta >= 0) return 1 - smoothstep(0.1, 0.45, eta);
+  return 1 - smoothstep(0.15, 0.5, -eta);
+}
+
+/** How much of the step toward the ball is taken: it lands a moment before the contact and comes back after it. */
+function stepWeight(eta: number): number {
+  if (!Number.isFinite(eta)) return 0;
+  if (eta >= 0) return 1 - smoothstep(0.08, 0.32, eta);
+  return 1 - smoothstep(0.22, 0.45, -eta);
+}
+
+const knee = { x: 0, y: 0 };
+
+/** Where the knee of a leg is, between the hip and the foot, bent out to the side `out` says (-1 left, 1 right). */
+function bendKnee(hx: number, hy: number, fx: number, fy: number, out: number): void {
+  const dx = fx - hx;
+  const dy = fy - hy;
+  const d = Math.max(1e-4, Math.hypot(dx, dy));
+  const reach = Math.min(d, THIGH + SHIN - 1e-3);
+  const along = (THIGH * THIGH - SHIN * SHIN + reach * reach) / (2 * reach);
+  const side = Math.sqrt(Math.max(0, THIGH * THIGH - along * along));
+  const ux = dx / d;
+  const uy = dy / d;
+  let px = -uy;
+  let py = ux;
+  if (px * out < 0) {
+    px = -px;
+    py = -py;
+  }
+  knee.x = hx + ux * along + px * side;
+  knee.y = hy + uy * along + py * side;
+}
 
 /**
  * Draws a player as a simple rounded figure: legs that run, a torso that
  * leans into the movement and a racket arm that follows the stroke.
  *
- * The game lets a player hit a ball that is some way off, so at contact the
- * racket is taken to where the ball really is: the arm stretches and, when
- * that is not enough, the body leans after it.
+ * At contact the racket is taken to where the ball really is, and the body
+ * goes to it the way the 3D one does: the hips sink for a low ball, with the
+ * knees bending; for one far to the side the foot on that side steps toward
+ * it and the hips go after the step; the arm stretches and, when that is not
+ * enough, the trunk leans after it.
  *
  * A character adds two things on top, both small and both whole-body so they
  * read at the size of a rival: the windup that gives its shot away, and a tic
@@ -290,7 +341,11 @@ const ARM = 0.72;
  *
  * (sx, sy) is the point between the feet on screen and `scale` the pixels per
  * metre of the figure. (ballX, ballY) is where the ball of the current stroke
- * is met, in the same metres, measured from the feet: x to the right, y up.
+ * is met, in the same metres, measured from the feet: x to the right, y up, as
+ * it is seen on screen. `height` is how high it really is off the floor, in
+ * the figure's metres: seen from a camera that looks down, a ball further
+ * ahead looks higher than it is, and it is the real height that the knees bend
+ * for.
  */
 export function drawFigure(
   ctx: Ctx,
@@ -300,6 +355,7 @@ export function drawFigure(
   player: ScenePlayer,
   ballX: number,
   ballY: number,
+  height: number,
   body: string,
   edge: string,
 ): void {
@@ -330,7 +386,20 @@ export function drawFigure(
   else if (act && resting) setAct(act.clip, act.t, act.duration);
   const w = overlay.weight;
 
-  const drop = overlay.crouch * w;
+  // The body goes to the ball as the 3D one does: the hips sink for a low one, and for one far to the side
+  // the foot on that side steps toward it and the hips go after the step. Never the whole figure sliding.
+  const reaching = (player.anim === 'swing' || player.anim === 'serve') && !resting;
+  const eta = player.animPhase < 0 && player.contactIn < 0 ? 0 : player.contactIn;
+  const set = reaching && player.anim !== 'serve' ? bodyWeight(eta) : 0;
+  const sink = clamp((0.86 - height) * 0.9, 0, 0.9 - LOWEST) * set;
+  const toward = ballX >= 0 ? 1 : -1;
+  const out = Math.max(0, Math.abs(ballX) - ARM_EASY);
+  const stepping = reaching && player.anim !== 'serve' ? stepWeight(eta) * (1 - run) : 0;
+  const step = Math.min(STEP, out * 1.1) * stepping;
+  const shift = toward * Math.min(out, 0.1 + 0.6 * step) * set;
+  lean += shift;
+
+  const drop = overlay.crouch * w + sink;
   const shoulderY = 1.42 - bob - drop;
   if (overlay.racket && w > 0) {
     pose.hx = lerp(pose.hx, overlay.racket.hx, w);
@@ -372,11 +441,29 @@ export function drawFigure(
   const Y = (m: number): number => sy - m * scale;
 
   const hipY = 0.9 - bob - drop;
-  const hipX = lean * 0.3;
+  const hipX = (lean - shift) * 0.3 + shift;
   const apart = 0.115 + overlay.stance * w;
-  setLimb(0, X(hipX - 0.085), Y(hipY), X(-apart + spread), Y(0.06 + Math.max(0, sin) * lift), 0.13 * scale);
-  setLimb(1, X(hipX + 0.085), Y(hipY), X(apart - spread), Y(0.06 + Math.max(0, -sin) * lift), 0.13 * scale);
-  setLimb(2, X(hipX), Y(hipY + 0.06), X(lean), Y(shoulderY - 0.08), 0.36 * scale);
+  // The foot on the side of the ball steps out to it: on the way it is off the floor.
+  const up = 4 * stepping * (1 - stepping) * Math.min(0.1, 0.03 + 0.2 * step);
+  const leftX = -apart + spread - (toward < 0 ? step : 0);
+  const rightX = apart - spread + (toward > 0 ? step : 0);
+  const leftY = 0.06 + Math.max(0, sin) * lift + (toward < 0 ? up : 0);
+  const rightY = 0.06 + Math.max(0, -sin) * lift + (toward > 0 ? up : 0);
+  // Knees bend out to the sides when the hips come down; running, the leg is seen straight from behind.
+  const thigh = 0.14 * scale;
+  const shin = 0.12 * scale;
+  for (const [index, hx, fx, fy, side] of [
+    [0, hipX - 0.085, leftX, leftY, -1],
+    [2, hipX + 0.085, rightX, rightY, 1],
+  ] as const) {
+    bendKnee(hx, hipY, fx, fy, side);
+    const bend = 1 - run;
+    const kx = lerp((hx + fx) / 2, knee.x, bend);
+    const ky = lerp((hipY + fy) / 2, knee.y, bend);
+    setLimb(index, X(hx), Y(hipY), X(kx), Y(ky), thigh);
+    setLimb(index + 1, X(kx), Y(ky), X(fx), Y(fy), shin);
+  }
+  setLimb(4, X(hipX), Y(hipY + 0.06), X(lean), Y(shoulderY - 0.08), 0.36 * scale);
   // Free arm, then racket arm.
   let freeX = lean - side * 0.3;
   let freeY = 1.0 - bob - drop;
@@ -385,8 +472,8 @@ export function drawFigure(
     freeX = lerp(freeX, targetX, w);
     freeY = lerp(freeY, overlay.freeY - drop, w);
   }
-  setLimb(3, X(lean - side * 0.17), Y(shoulderY - 0.04), X(freeX), Y(freeY), 0.09 * scale);
-  setLimb(4, X(lean + side * 0.17), Y(shoulderY - 0.04), X(handX), Y(handY), 0.09 * scale);
+  setLimb(5, X(lean - side * 0.17), Y(shoulderY - 0.04), X(freeX), Y(freeY), 0.09 * scale);
+  setLimb(6, X(lean + side * 0.17), Y(shoulderY - 0.04), X(handX), Y(handY), 0.09 * scale);
 
   const headRadius = 0.135 * scale;
   const headCx = X(lean * 1.2 + overlay.head * w);

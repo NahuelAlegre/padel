@@ -38,10 +38,13 @@ import { bendLimb, worldRotations, type Limb } from './reach';
  *     back and waits there; the swing itself keeps its own pace.
  *   - The upper body can be in a stroke while the legs keep running: a player
  *     may be moved while it aims.
- *   - The ball is where the simulation says, not where the clip expects it.
- *     Around the contact the body takes a step toward it, sinks for a low
- *     one with its feet still on the floor, and the arm takes the racket
- *     the rest of the way.
+ *   - The ball is where the simulation says, not where the clip expects it,
+ *     and the body gets there the way a person does: never by sliding over
+ *     the floor. Around the contact the hips sink for a low ball, down to a
+ *     knee near the floor; for one further away the front foot steps toward
+ *     it while the back one stays planted, and the hips go after the step;
+ *     a jump is made smaller for a ball that is not so high. The arm takes
+ *     the racket the rest of the way.
  *   - Just before the rival hits, somebody standing takes a little hop.
  *   - A character adds its own on top: how it stands and how wide it
  *     gestures, the windup that gives its shot away, a short tic between
@@ -84,18 +87,45 @@ const STROKE_OUT = 0.2;
  * is, in no less than this. It reads as a quick swing, not as a jump.
  */
 const QUICKEST = 0.035;
-/** How far the body may step toward a ball it would not reach from where it stands, in metres. */
-const MAX_LUNGE = 0.9;
 /** A player that moved further than this between two frames did not run there: it was put there. */
 const TELEPORT = 1.5;
 /**
- * A ball lower than the clip expects: how much lower it can be before the
- * body starts to sink for it, and how far it sinks, in metres at life size.
+ * How the body gets to a ball that is not where the clip meets it. In
+ * metres at life size, in the character's own axes.
+ *
+ * The arm takes a little by itself; for more, the hips go toward the ball
+ * with the feet where they are; for more than that, the front foot steps
+ * toward it and the hips go after the step. What not even that reaches, the
+ * whole figure goes after, and the feet follow it with steps: with the reach
+ * of a real person that is next to nothing.
  */
-const CROUCH_FREE = 0.1;
-const MAX_CROUCH = 0.36;
-/** How far the arm takes the racket from where the clip has it, in metres at life size. */
-const MAX_ARM = 0.5;
+const BODY = {
+  /** What the arm takes before the body moves at all, and the most it takes. */
+  armEasy: 0.16,
+  arm: 0.42,
+  /** Of that, how much is across the floor: past it the figure slides. */
+  armAcross: 0.34,
+  /** How far the hips go toward the ball with the feet where they are; running, leaning into it, a little more. */
+  shift: 0.12,
+  shiftRun: 0.24,
+  /** How much of a step the hips go after. */
+  follow: 0.6,
+  /** The longest step toward the ball beyond the clip's own, for a stroke and for one at full stretch. */
+  step: 0.45,
+  stepStretch: 0.5,
+  /** The feet are never closer than this. */
+  apart: 0.3,
+  /** A ball lower than the clip expects by this much the arm takes; for more, the hips sink. */
+  lowFree: 0.04,
+  /** The lowest the hips go: the knees bent all the way, the back one near the floor. Hips at rest are at 0.95. */
+  lowest: 0.4,
+  /** A ball higher than the clip expects: the knees straighten up to this much before the arm takes the rest. */
+  rise: 0.14,
+  riseFree: 0.06,
+};
+/** The step toward the ball is taken this long before the contact, and taken back this long after it. Seconds. */
+const STEP_BEFORE = 0.34;
+const STEP_BACK = 0.4;
 /** A call to the partner gives the arm back this long before the player's own contact, in seconds. */
 const CALL_CLEAR = 0.3;
 /** Seconds a gesture of a character takes to show, and to go away. */
@@ -120,17 +150,42 @@ const HEIGHTS = {
   /** From here up a volley is the one at the shoulder; below, a low one with the stroke of a drive. */
   volley: 1.05,
   /** From here up a ball that has bounced is taken like a volley. */
-  shoulder: 1.25,
+  shoulder: 1.1,
   /** Up to here a ball far to the side is reached for at full stretch. */
   stretch: 1.2,
 };
-/** How far to the side of the body a ball has to be for the stroke at full stretch, in metres at life size. */
-const STRETCH_FROM = 1.0;
+/**
+ * The stroke at full stretch is for a ball beyond what a person reaches
+ * standing: further than `STANDING_REACH` metres from the feet on the court
+ * (the reach of a real person, `config.player.real.reach`), or further than
+ * `STRETCH_FROM` to the side in the character's own metres, whatever size it
+ * is drawn at. Either way the ball has to be mostly to the side, at least
+ * `STRETCH_ASIDE` of the character's metres: for one far ahead the front foot
+ * steps forward instead.
+ */
+const STANDING_REACH = 1.15;
+const STRETCH_FROM = 0.95;
+const STRETCH_ASIDE = 0.55;
+/** Near the contact a stroke is not changed for another of the same side: the body gets to the ball instead. Seconds. */
+const STROKE_SETTLED = 0.15;
+/**
+ * A foot on the floor stays where it is on the court. When the pose wants it
+ * further than this from there, in metres on the court, it steps; near a
+ * contact, only for more than the second. Running, the feet are the run's:
+ * they stay where they are only below the first speed, in metres per second,
+ * and not at all from the second.
+ */
+const FOOT_DRIFT = 0.08;
+const FOOT_DRIFT_SET = 0.16;
+const PLANTED_UNTIL = 0.8;
+const PLANTED_FROM = 1.3;
+/** How close to the floor the joint of a knee gets, in metres at life size: with the kneecap, a knee nearly on it. */
+const KNEE_FLOOR = 0.08;
 
 /** Bones that belong to the legs: they follow the ground when the player moves. */
 const LEG_BONES = ['thigh.L', 'shin.L', 'foot.L', 'toe.L', 'thigh.R', 'shin.R', 'foot.R', 'toe.R'];
-/** Strokes in which the body does not sink for a lower ball: over the head and in the serve, the arm bends instead. */
-const NO_CROUCH: ReadonlySet<string> = new Set(['remate', 'bandeja', 'saque']);
+/** Strokes played over the head. */
+const OVERHEAD: ReadonlySet<string> = new Set(['bandeja', 'remate']);
 /** Tics that have a clip of their own. The rest are a few places for the hands to be. */
 const MANIA_CLIPS: Partial<Record<MannerismClip, string>> = {
   cap: 'mania_gorra',
@@ -140,7 +195,7 @@ const MANIA_CLIPS: Partial<Record<MannerismClip, string>> = {
 };
 
 export interface AnimatedFigure {
-  /** Where the body is drawn, on the court: a step away from the player while it lunges. */
+  /** Where the body is drawn, on the court: where the simulation has the player, unless the ball is out of a body's reach. */
   x: number;
   y: number;
   /** The matrix of every bone. */
@@ -196,9 +251,12 @@ export function strokeClipName(player: ScenePlayer, k = 1, has: (name: string) =
     return pick(side('volea'), plain);
   }
   if (height >= HEIGHTS.aboveAnyway) return pick('bandeja', 'remate');
-  // A ball far to the side and not high: the body throws itself after the racket.
+  // A ball beyond the reach of somebody standing, to the side and not high: the body throws itself after the racket.
   const aside = Math.abs(player.reachX) / k;
-  if (aside >= STRETCH_FROM && height <= HEIGHTS.stretch) return pick(side('estirada'), plain);
+  const far = Math.hypot(player.reachX, player.reachY);
+  if (height <= HEIGHTS.stretch && aside >= STRETCH_ASIDE && (aside >= STRETCH_FROM || far >= STANDING_REACH)) {
+    return pick(side('estirada'), plain);
+  }
   switch (player.shot) {
     case 'lob':
       return forehand ? 'globo' : 'reves';
@@ -208,6 +266,24 @@ export function strokeClipName(player: ScenePlayer, k = 1, has: (name: string) =
     default:
       return height >= HEIGHTS.shoulder ? pick(side('volea'), plain) : plain;
   }
+}
+
+/** The side of the body a stroke clip plays the ball on. */
+function sideOf(clip: Clip): 'derecha' | 'reves' {
+  return clip.lado ?? (clip.name.includes('reves') ? 'reves' : 'derecha');
+}
+
+/**
+ * The foot that steps toward the ball in a stroke: 0 the left, 1 the right,
+ * -1 none (the smash is played in the air, the serve where the ball is
+ * dropped). A forehand steps in with the left foot and a backhand with the
+ * right; at full stretch it is the other way round, the foot on the side of
+ * the ball going after it.
+ */
+export function steppingFoot(clip: Clip): number {
+  if (clip.name === 'remate' || clip.name === 'saque') return -1;
+  const stretch = clip.estirada === true || clip.name.startsWith('estirada');
+  return (sideOf(clip) === 'reves') !== stretch ? 1 : 0;
 }
 
 /**
@@ -391,10 +467,72 @@ export class FigureAnimator implements AnimatedFigure {
    * come, past the contact and finishing, or called off before it got there.
    */
   private strokePhase: 'before' | 'after' | 'off' = 'off';
+  /** What the whole figure slides, on the court: only what the body could not reach. */
   private lungeX = 0;
   private lungeY = 0;
   private started = false;
   private readonly hits = new Map<string, [number, number, number]>();
+  /**
+   * The feet. A foot on the floor stays where it is on the court, whatever
+   * the pose above it does. When the pose wants it somewhere else (a step
+   * toward the ball, a wider stance, a stroke that comes in late, a body that
+   * moved on) it steps there: up, across and down. Everything is x and y of
+   * the left foot, then of the right one.
+   */
+  private readonly feet = {
+    /** Where each foot is down, on the court, and whether it is. */
+    at: new Float64Array(4),
+    down: [false, false],
+    /** A step: where it left from, on the court; how far into it; how long it takes and how high it goes. */
+    from: new Float64Array(4),
+    t: new Float32Array([1, 1]),
+    dur: new Float32Array([0.2, 0.2]),
+    high: new Float32Array(2),
+    /** Where the fit wants each foot from where the pose has it, in the character's metres. */
+    want: new Float32Array(4),
+    /** Where each foot ended up from where the pose has it, in the character's metres: the step really taken. */
+    off: new Float32Array(4),
+  };
+  /**
+   * What the body does for the ball in this frame, in the character's own
+   * axes at life size: how far the ball is from where the clip meets it, how
+   * much of the way the body and the arm go, where the hips go, and what is
+   * left for the whole figure to slide.
+   */
+  private readonly fit = {
+    body: 0,
+    arm: 0,
+    dx: 0,
+    dy: 0,
+    dz: 0,
+    ux: 0,
+    uy: 0,
+    need: 0,
+    foot: -1,
+    x: 0,
+    y: 0,
+    z: 0,
+    /** Of how far the hips go down, how much is a jump made smaller: the feet in the air come down with it. */
+    jump: 0,
+    slideX: 0,
+    slideY: 0,
+  };
+  /** The toes, and how high they are off the floor standing: what tells a foot in the air. */
+  private readonly toes: number[];
+  private readonly toeFloor: number;
+  /** How much each foot is in the air in this frame: 0 on the floor, 1 off it. */
+  private readonly air = new Float32Array(2);
+  /** The file has both legs, hip to ankle: they can be bent. */
+  private readonly hasLegs: boolean;
+  /**
+   * Where the racket meets the ball with the body of this frame: the clip's
+   * own place when the whole body plays the stroke, somewhere else when the
+   * legs and the hips are running. And what it takes to work it out.
+   */
+  private readonly contact: [number, number, number] = [0, 0, 0];
+  private readonly probe: Float32Array;
+  private readonly probeAt: Float32Array;
+  private readonly probeSkeleton: Skeleton;
 
   // The head and the braid.
   private readonly head: number;
@@ -420,6 +558,13 @@ export class FigureAnimator implements AnimatedFigure {
   private readonly bothLegs: Limb[];
   private readonly world: Float32Array;
   private readonly ankles = new Float32Array(6);
+  /** The balls of the feet, where the toes bend: what a foot stands on. And where the ankles have to go. */
+  private readonly balls = new Float32Array(6);
+  private readonly targets = new Float32Array(6);
+  /** Where the pose wants each foot, in the character's metres and on the court, and whether it is free of the floor. */
+  private readonly wanted = new Float32Array(4);
+  private readonly court = new Float64Array(4);
+  private readonly loose = [false, false];
   /** The gesture on show, or the last one while it goes away, and how much of it there is. */
   private gesture = noGesture();
   private gestureWeight = 0;
@@ -466,6 +611,12 @@ export class FigureAnimator implements AnimatedFigure {
     }));
     this.world = new Float32Array(character.bones * 4);
     this.inHand = this.measureHand();
+    this.toes = ['toe.L', 'toe.R'].map((name) => character.bone(name));
+    this.hasLegs = this.bothLegs.every((leg) => leg.upper >= 0 && leg.lower >= 0 && leg.end >= 0);
+    this.toeFloor = this.measureFloor();
+    this.probe = new Float32Array(size);
+    this.probeAt = new Float32Array(size);
+    this.probeSkeleton = createSkeleton(character);
   }
 
   /** Forgets everything: the next update starts from scratch, with no fade (a new point, a new match). */
@@ -523,7 +674,10 @@ export class FigureAnimator implements AnimatedFigure {
     // The character faces -y in its own axes. `s` takes the court's x and y to them.
     const s = facing > 0 ? -1 : 1;
     const busy = player.anim !== 'idle' && player.animPhase < 1;
-    const eta = player.contactIn;
+    // A stroke that is only armed (the racket back, the swing not let go) whose contact has passed has not
+    // hit anything yet: the ball may still come within reach a moment later. The racket waits at the
+    // contact instead of swinging through the air and coming back.
+    const eta = player.animPhase < 0 && player.contactIn < 0 ? 0 : player.contactIn;
 
     // ------------------------------------------------------------ the ground
     const speed = Math.hypot(player.vx, player.vy);
@@ -643,13 +797,23 @@ export class FigureAnimator implements AnimatedFigure {
 
     // ------------------------------------------------------------ the stroke
     if (busy) {
-      const next = clips[strokeClipName(player, k, (name) => name in clips)] ?? null;
+      let next = clips[strokeClipName(player, k, (name) => name in clips)] ?? null;
       // A stroke that is past its contact cannot be before it again: that is another stroke.
       const another = this.strokePhase !== 'before' && eta > 0.02;
+      // Near its contact, at it and after it, a stroke is not changed for another one on the same side
+      // and at about the same height (the simulation names the shot for good only when it is hit):
+      // swapping clips then is a jump of the racket and of the feet. The body gets to the ball instead.
+      const current = this.strokeClip;
+      const settled = this.strokePhase === 'after' || (this.strokePhase === 'before' && eta < STROKE_SETTLED);
+      if (next && current && next !== current && !another && settled && sideOf(next) === sideOf(current)) {
+        if (OVERHEAD.has(next.name) === OVERHEAD.has(current.name) && next.name !== 'saque' && current.name !== 'saque') next = current;
+      }
       if (next && (next !== this.strokeClip || another)) {
         if (this.strokeClip && this.strokeWeight > 0) {
           this.strokeFrom.set(this.stroke);
-          this.strokeMix = snap ? 1 : 0;
+          // A new stroke that only starts at its contact has no time to fade from the one before: half
+          // of each would put the racket nowhere near the ball. It is there at once.
+          this.strokeMix = snap || (eta <= QUICKEST && this.strokePhase !== 'before') ? 1 : 0;
         } else {
           this.strokeMix = 1;
         }
@@ -691,9 +855,7 @@ export class FigureAnimator implements AnimatedFigure {
     // ------------------------------------------------------------ together
     const pose = this.pose;
     pose.set(this.ground);
-    let lungeX = 0;
-    let lungeY = 0;
-    let reach = 0;
+    let upper = 0;
     let lower = 0;
     if (swing && this.strokeWeight > 0) {
       samplePose(character, swing, Math.min(this.strokeAt, swing.dur), this.stroke);
@@ -701,37 +863,16 @@ export class FigureAnimator implements AnimatedFigure {
         this.strokeMix = Math.min(1, this.strokeMix + dt / clamp(left, QUICKEST, FADE));
         blendPose(character.bones, this.strokeFrom, this.stroke, smoothstep(0, 1, this.strokeMix), this.stroke);
       }
-      const upper = smoothstep(0, 1, this.strokeWeight);
+      upper = smoothstep(0, 1, this.strokeWeight);
       // Standing, the whole body plays the stroke. Moving, the legs stay with the ground.
       lower = upper * (1 - smoothstep(0.5, 1.8, speed));
       this.layer(pose, this.stroke, upper, lower);
-
-      // The ball is where the simulation says, not where the clip expects it:
-      // around the contact the body takes a step toward it.
-      const hit = this.hitOf(swing);
-      if (hit && player.anim !== 'whiff' && this.strokePhase !== 'off' && Number.isFinite(player.contactIn)) {
-        const near = lungeWeight(player.contactIn);
-        if (near > 0) {
-          // The ball of a serve is in the server's own hand: it is as much bigger than life as the server.
-          const own = player.anim === 'serve' ? k : 1;
-          const wantX = player.reachX * own - s * hit[0] * k;
-          const wantY = player.reachY * own - s * hit[1] * k;
-          const length = Math.hypot(wantX, wantY);
-          const scale = length > MAX_LUNGE ? MAX_LUNGE / length : 1;
-          lungeX = wantX * scale * near;
-          lungeY = wantY * scale * near;
-          reach = near * upper;
-        }
-      }
     }
     // How it stands, and the turn of the pelvis for the legs that follow the ground.
     if (style) stand(pose, style);
     if (this.twist !== 0) twistHips(character, pose, this.twist * (1 - lower));
+    solveSkeleton(character, pose, this.skeleton, style);
 
-    // The step eases in and out by itself, so nothing jumps if the plan changes. Right at the contact it hurries.
-    const ease = snap ? 1 : 1 - Math.exp(-dt * (Math.abs(eta) < 0.06 ? 40 : 18));
-    this.lungeX += (lungeX - this.lungeX) * ease;
-    this.lungeY += (lungeY - this.lungeY) * ease;
     // What the character adds: its tell while the racket is back, a tic while it rests.
     const made = this.readGesture(player, s, mania !== undefined);
     const windup = player.tell !== null;
@@ -740,12 +881,28 @@ export class FigureAnimator implements AnimatedFigure {
     this.gestureWeight = snap ? (showing ? 1 : 0) : clamp(this.gestureWeight + dt / (showing ? GESTURE_IN : -GESTURE_OUT), 0, 1);
     this.gestureRacket = snap ? (holding ? 1 : 0) : clamp(this.gestureRacket + dt / (holding ? GESTURE_IN : -GESTURE_OUT), 0, 1);
     const gesture = smoothstep(0, 1, this.gestureWeight);
+
+    // ------------------------------------------------------------ the body goes to the ball
+    // The ball is where the simulation says, not where the clip expects it. The
+    // feet do not slide: the hips sink and go toward it, and the front foot steps.
+    if (swing) this.planFit(player, swing, s, k, upper, lower, eta);
+    else this.restFit();
+    const clearance = this.clearance();
+    this.finishFit(lower, pose[character.bones * 4 + 2]!, clearance);
+    // What not even that reaches, the whole figure goes after: it eases in and out by itself, so nothing
+    // jumps if the plan changes, and right at the contact it hurries. The feet follow it with steps.
+    const ease = snap ? 1 : 1 - Math.exp(-dt * (Math.abs(eta) < 0.06 ? 40 : 18));
+    this.lungeX += (s * this.fit.slideX * k - this.lungeX) * ease;
+    this.lungeY += (s * this.fit.slideY * k - this.lungeY) * ease;
     this.x = player.x + this.lungeX;
     this.y = player.y + this.lungeY + facing * this.gesture.step * gesture;
+    this.placeBody(lower, clearance, speed, s, k, dt, snap, Math.abs(eta) < 0.25, this.gesture.stance * gesture, this.gesture.crouch * gesture);
 
     // ------------------------------------------------------------ life
-    solveSkeleton(character, pose, this.skeleton, style);
-    if (swing && reach > 0.001) this.reach(player, swing, s, k, reach);
+    // The arm takes the racket the rest of the way. The ball of a serve is the one the server dropped: only the arm.
+    const serving = player.anim === 'serve' && this.strokePhase !== 'off' && Number.isFinite(eta);
+    const arm = serving ? lungeWeight(eta) * upper : this.fit.arm;
+    if (swing && arm > 0.001) this.reachArm(player, serving ? this.hitOf(swing) : this.contact, s, k, arm);
     if (gesture > 0.001) this.gesticulate(gesture, Math.min(gesture, smoothstep(0, 1, this.gestureRacket)));
     this.look(pose, s, k, ball, dt, this.strokeWeight > 0.5 ? 0.4 : 0.8, snap);
     solveSkeleton(character, pose, this.skeleton, style);
@@ -823,53 +980,343 @@ export class FigureAnimator implements AnimatedFigure {
     return true;
   }
 
+  /** How high the toes are off the floor standing ready, for this character. */
+  private measureFloor(): number {
+    const ready = this.character.ready;
+    if (!ready || this.toes.some((toe) => toe < 0)) return 0;
+    const pose = new Float32Array(ready);
+    if (this.style) stand(pose, this.style);
+    const skeleton = solveSkeleton(this.character, pose, createSkeleton(this.character), this.style);
+    return Math.min(...this.toes.map((toe) => skeleton.pos[toe * 3 + 2]!));
+  }
+
+  /** How far off the floor the lower foot is, with the skeleton of the pose: something only in a jump. */
+  private clearance(): number {
+    const left = this.toes[0]!;
+    const right = this.toes[1]!;
+    if (left < 0 || right < 0) return 0;
+    const pos = this.skeleton.pos;
+    return Math.max(0, Math.min(pos[left * 3 + 2]!, pos[right * 3 + 2]!) - this.toeFloor);
+  }
+
   /**
-   * Takes the racket from where the clip has it to where the ball really is.
-   * `weight` is how much of the way: it grows as the contact comes and goes
-   * away after it, so the whole swing is bent toward the ball instead of the
-   * racket jumping to it. The skeleton has to be the one of the pose.
+   * Where the racket will meet the ball with the body as it is in this frame.
+   * When the whole body plays the stroke it is the clip's own place. With the
+   * legs and the hips running, the arms of the stroke go on top of the hips
+   * of the run, and the racket ends up somewhere else: this says where.
+   * `lower` is how much of the legs the stroke has once it is all there.
    */
-  private reach(player: ScenePlayer, clip: Clip, s: number, k: number, weight: number): void {
+  private contactWith(clip: Clip, lower: number): [number, number, number] | null {
     const hit = this.hitOf(clip);
-    if (!hit || this.arm.upper < 0) return;
+    if (!hit || this.racket < 0) return hit;
+    const out = this.contact;
+    if (lower >= 0.999 && this.twist === 0) {
+      out[0] = hit[0];
+      out[1] = hit[1];
+      out[2] = hit[2];
+      return out;
+    }
+    const character = this.character;
+    samplePose(character, clip, contactOf(clip), this.probeAt);
+    this.probe.set(this.ground);
+    this.layer(this.probe, this.probeAt, 1, lower);
+    if (this.style) stand(this.probe, this.style);
+    if (this.twist !== 0) twistHips(character, this.probe, this.twist * (1 - lower));
+    solveSkeleton(character, this.probe, this.probeSkeleton, this.style);
+    return boneToCharacter(this.probeSkeleton, this.racket, character.meta.racketCenter, out);
+  }
+
+  /** Nothing to reach: the body does nothing for a ball, and the feet go back to where the clips have them. */
+  private restFit(): void {
+    const fit = this.fit;
+    fit.body = 0;
+    fit.arm = 0;
+    fit.foot = -1;
+    fit.x = 0;
+    fit.y = 0;
+    fit.z = 0;
+    fit.jump = 0;
+    fit.slideX = 0;
+    fit.slideY = 0;
+    this.feet.want.fill(0);
+  }
+
+  /**
+   * Works out what the body has to do for the ball of this stroke: how far
+   * the ball is from where the clip meets it, and where the front foot has to
+   * step. How far the hips go depends on the step really taken: see
+   * `finishFit`. The skeleton has to be the one of the pose.
+   */
+  private planFit(player: ScenePlayer, clip: Clip, s: number, k: number, upper: number, lower: number, eta: number): void {
+    this.restFit();
+    const fit = this.fit;
+    if (!Number.isFinite(eta) || player.anim === 'whiff' || player.anim === 'serve' || this.strokePhase === 'off' || upper <= 0) return;
+    fit.body = bodyWeight(eta) * upper;
+    fit.arm = lungeWeight(eta) * upper;
+    if (fit.body <= 0 && fit.arm <= 0) return;
+    const hit = this.contactWith(clip, upper > 0 ? lower / upper : 1);
+    if (!hit) {
+      fit.body = 0;
+      fit.arm = 0;
+      return;
+    }
+    // Where the ball is from where the clip meets it, in the character's own axes at life size.
+    fit.dx = (s * player.reachX) / k - hit[0];
+    fit.dy = (s * player.reachY) / k - hit[1];
+    fit.dz = player.reachZ / k - hit[2];
+    const across = Math.hypot(fit.dx, fit.dy);
+    fit.ux = across > 1e-6 ? fit.dx / across : 0;
+    fit.uy = across > 1e-6 ? fit.dy / across : 0;
+    fit.need = Math.max(0, across - BODY.armEasy);
+    // Standing, the front foot steps for what the hips cannot do by themselves: a moment before the
+    // contact, and back after it. Running, the feet are the run's.
+    const foot = lower > 0.5 && this.hasLegs ? steppingFoot(clip) : -1;
+    fit.foot = foot;
+    if (foot < 0 || fit.need <= BODY.shift || eta > STEP_BEFORE || eta < -STEP_BACK) return;
+    const stretch = clip.estirada === true || clip.name.startsWith('estirada');
+    const length = Math.min(stretch ? BODY.stepStretch : BODY.step, (fit.need - BODY.shift) / BODY.follow);
+    let wx = fit.ux * length;
+    let wy = fit.uy * length;
+    // Never onto the other foot.
+    const pos = this.skeleton.pos;
+    const mine = this.bothLegs[foot]!.end * 3;
+    const other = this.bothLegs[1 - foot]!.end * 3;
+    const ax = pos[mine]! + wx - pos[other]!;
+    const ay = pos[mine + 1]! + wy - pos[other + 1]!;
+    const apart = Math.hypot(ax, ay);
+    if (apart < BODY.apart) {
+      const nx = apart > 1e-4 ? ax / apart : fit.ux;
+      const ny = apart > 1e-4 ? ay / apart : fit.uy;
+      wx = pos[other]! + nx * BODY.apart - pos[mine]!;
+      wy = pos[other + 1]! + ny * BODY.apart - pos[mine + 1]!;
+    }
+    this.feet.want[foot * 2] = wx;
+    this.feet.want[foot * 2 + 1] = wy;
+  }
+
+  /**
+   * How far the hips go for the ball, given the step the front foot really
+   * took, and what is left for the whole figure to slide. `hips` is how high
+   * the pelvis is in the pose and `clearance` how far off the floor the lower
+   * foot is.
+   */
+  private finishFit(lower: number, hips: number, clearance: number): void {
+    const fit = this.fit;
+    if (fit.body <= 0 && fit.arm <= 0) return;
+    const off = this.feet.off;
+    // Across the floor: as far as the hips go with the feet where they are, and then after the step.
+    const taken = fit.foot >= 0 ? Math.max(0, off[fit.foot * 2]! * fit.ux + off[fit.foot * 2 + 1]! * fit.uy) * lower : 0;
+    const free = BODY.shift + (BODY.shiftRun - BODY.shift) * (1 - lower);
+    const shift = Math.min(fit.need, free + BODY.follow * taken) * fit.body;
+    // A lower ball: first a jump that is not so high, then the knees, down to a knee near the floor
+    // (less of that running). A higher one: the knees straighten.
+    const low = Math.max(0, -fit.dz - BODY.lowFree);
+    const air = Math.min(clearance, low);
+    const sink = Math.min(low - air, Math.max(0, hips - BODY.lowest) * (0.4 + 0.6 * lower));
+    const rise = clearance > 0.01 ? 0 : clamp(fit.dz - BODY.riseFree, 0, Math.min(BODY.rise, Math.max(0, 0.93 - hips)));
+    fit.x = fit.ux * shift;
+    fit.y = fit.uy * shift;
+    fit.z = (rise - air - sink) * fit.body;
+    fit.jump = -air * fit.body;
+    // What the arm cannot take across the floor, the whole figure slides.
+    const rx = fit.dx - fit.x;
+    const ry = fit.dy - fit.y;
+    const rest = Math.hypot(rx, ry);
+    const over = Math.max(0, rest - BODY.armAcross) * fit.arm;
+    fit.slideX = rest > 1e-6 ? (rx / rest) * over : 0;
+    fit.slideY = rest > 1e-6 ? (ry / rest) * over : 0;
+  }
+
+  /**
+   * Puts the hips where the fit says (lower still for a crouching gesture)
+   * and the feet on the floor. Where the pose wants each foot is where the
+   * clip has it, plus the step toward the ball and a wider stance; a foot that
+   * is down stays where it is on the court until that is too far, and then it
+   * steps there. A foot the pose has in the air (a step of the clip, a jump,
+   * the leg of a run coming forward) goes with the body. Running, the feet
+   * are the run's. The legs bend for all of it.
+   *
+   * `this.x` and `this.y` have to be where the figure is drawn in this frame,
+   * and the skeleton the one of the pose.
+   */
+  private placeBody(
+    lower: number,
+    clearance: number,
+    speed: number,
+    s: number,
+    k: number,
+    dt: number,
+    snap: boolean,
+    settled: boolean,
+    stance: number,
+    crouch: number,
+  ): void {
+    if (!this.hasLegs) return;
+    const fit = this.fit;
+    const feet = this.feet;
     const character = this.character;
     const pose = this.pose;
     const skeleton = this.skeleton;
-    const style = this.style;
     const pos = skeleton.pos;
-    // What separates the ball from where this clip meets it, in the character's own axes at life size.
+    // Where the pose has each foot, and how much it is off the floor. A foot stands on its ball, where
+    // the toes bend, as in the clips: that is the point that stays put while the heel comes up or turns.
+    for (let i = 0; i < 2; i++) {
+      const foot = this.bothLegs[i]!.end * 3;
+      const toe = this.toes[i]!;
+      for (let c = 0; c < 3; c++) {
+        this.ankles[i * 3 + c] = pos[foot + c]!;
+        this.balls[i * 3 + c] = toe >= 0 ? pos[toe * 3 + c]! : pos[foot + c]!;
+      }
+      this.air[i] = toe >= 0 ? smoothstep(0.02, 0.07, pos[toe * 3 + 2]! - this.toeFloor) : smoothstep(0.01, 0.06, clearance);
+    }
+    const planted = 1 - smoothstep(PLANTED_UNTIL, PLANTED_FROM, speed);
+    const drift = settled ? FOOT_DRIFT_SET : FOOT_DRIFT;
+    // Where the pose wants the ball of each foot, in the character's own metres and on the court: the
+    // left foot further left for a wider stance. In the air a foot goes across with the body.
+    const wanted = this.wanted;
+    const court = this.court;
+    for (let i = 0; i < 2; i++) {
+      const air = this.air[i]!;
+      const wx = this.balls[i * 3]! + feet.want[i * 2]! * lower + (i === 0 ? stance : -stance) + fit.x * air;
+      const wy = this.balls[i * 3 + 1]! + feet.want[i * 2 + 1]! * lower + fit.y * air;
+      wanted[i * 2] = wx;
+      wanted[i * 2 + 1] = wy;
+      court[i * 2] = this.x + s * wx * k;
+      court[i * 2 + 1] = this.y + s * wy * k;
+      // In the air, or running, a foot is wherever the pose has it.
+      this.loose[i] = snap || planted <= 0 || air > 0.5;
+      if (this.loose[i]) {
+        feet.down[i] = false;
+        feet.t[i] = 1;
+      } else if (feet.t[i]! >= 1 && !feet.down[i]) {
+        // It has just come down: there it stays.
+        feet.down[i] = true;
+        feet.at[i * 2] = court[i * 2]!;
+        feet.at[i * 2 + 1] = court[i * 2 + 1]!;
+      }
+    }
+    // A foot that is down and is wanted somewhere else steps there, one foot at a time: while the other
+    // one is in the air it waits. If both want to go, the one further from where it should be goes first.
+    let first = -1;
+    let furthest = drift;
+    for (let i = 0; i < 2; i++) {
+      if (this.loose[i] || feet.t[i]! < 1) continue;
+      const other = 1 - i;
+      if (this.loose[other] || feet.t[other]! < 1) continue;
+      const away = Math.hypot(court[i * 2]! - feet.at[i * 2]!, court[i * 2 + 1]! - feet.at[i * 2 + 1]!);
+      if (away > furthest) {
+        furthest = away;
+        first = i;
+      }
+    }
+    if (first >= 0) {
+      const length = furthest / k;
+      feet.from[first * 2] = feet.at[first * 2]!;
+      feet.from[first * 2 + 1] = feet.at[first * 2 + 1]!;
+      feet.dur[first] = clamp(0.1 + 0.22 * length, 0.12, 0.24);
+      feet.high[first] = Math.min(0.12, 0.03 + 0.15 * length);
+      feet.t[first] = 0;
+    }
+    for (let i = 0; i < 2; i++) {
+      const o = i * 3;
+      const q = i * 2;
+      const air = this.air[i]!;
+      const wx = wanted[q]!;
+      const wy = wanted[q + 1]!;
+      const cx = court[q]!;
+      const cy = court[q + 1]!;
+      let x = wx;
+      let y = wy;
+      // Down with the body only if the whole body is coming down from a jump: when the hips sink, the
+      // knees bend and a foot in the air stays off the floor.
+      let z = Math.max(this.balls[o + 2]! + fit.jump * air, Math.min(this.balls[o + 2]!, this.toeFloor));
+      if (!this.loose[i]) {
+        let ax = feet.at[q]!;
+        let ay = feet.at[q + 1]!;
+        if (feet.t[i]! < 1) {
+          // Up, across and down, to wherever the pose wants it now.
+          const t = Math.min(1, feet.t[i]! + dt / feet.dur[i]!);
+          feet.t[i] = t;
+          const u = smoothstep(0, 1, t);
+          ax = feet.from[q]! + (cx - feet.from[q]!) * u;
+          ay = feet.from[q + 1]! + (cy - feet.from[q + 1]!) * u;
+          z += feet.high[i]! * Math.sin(Math.PI * t) * planted;
+          if (t >= 1) {
+            feet.down[i] = true;
+            feet.at[q] = cx;
+            feet.at[q + 1] = cy;
+          }
+        }
+        // Back to the character's own metres; walking, a little of the pose.
+        x = wx + (s * (ax - this.x) / k - wx) * planted;
+        y = wy + (s * (ay - this.y) / k - wy) * planted;
+      }
+      feet.off[q] = x - this.balls[o]!;
+      feet.off[q + 1] = y - this.balls[o + 1]!;
+      // The ankle, from the ball of the foot, with the foot turned as the pose has it.
+      this.targets[o] = x - (this.balls[o]! - this.ankles[o]!);
+      this.targets[o + 1] = y - (this.balls[o + 1]! - this.ankles[o + 1]!);
+      this.targets[o + 2] = z - (this.balls[o + 2]! - this.ankles[o + 2]!);
+    }
+    // Nothing to do when the hips stay and the feet are where the pose has them: most of the time.
+    const drop = fit.z - crouch;
+    let away = Math.abs(fit.x) + Math.abs(fit.y) + Math.abs(drop);
+    for (let c = 0; c < 6; c++) away += Math.abs(this.targets[c]! - this.ankles[c]!);
+    if (away < 2e-3) return;
+    const root = character.bones * 4;
+    pose[root] = pose[root]! + fit.x;
+    pose[root + 1] = pose[root + 1]! + fit.y;
+    pose[root + 2] = pose[root + 2]! + drop;
+    solveSkeleton(character, pose, skeleton, this.style);
+    worldRotations(character, pose, this.world);
+    this.bendLegs();
+    // A knee never goes through the floor: if one would, the hips come up for it.
+    const knee = Math.min(pos[this.bothLegs[0]!.lower * 3 + 2]!, pos[this.bothLegs[1]!.lower * 3 + 2]!);
+    if (knee < KNEE_FLOOR) {
+      const up = KNEE_FLOOR - knee;
+      pose[root + 2] = pose[root + 2]! + up;
+      fit.z += up;
+      solveSkeleton(character, pose, skeleton, this.style);
+      worldRotations(character, pose, this.world);
+      this.bendLegs();
+    }
+  }
+
+  /** Bends both legs so the ankles are at `this.targets`, knees forward: the character looks along its own -y. */
+  private bendLegs(): void {
+    const character = this.character;
+    for (let i = 0; i < 2; i++) {
+      const o = i * 3;
+      bendLimb(character, this.pose, this.skeleton, this.world, this.bothLegs[i]!, this.targets[o]!, this.targets[o + 1]!, this.targets[o + 2]!, 0, -0.6, 0);
+    }
+    solveSkeleton(character, this.pose, this.skeleton, this.style);
+  }
+
+  /**
+   * Takes the racket from where the clip has it to where the ball really is,
+   * with the body where the fit put it. `weight` is how much of the way: it
+   * grows as the contact comes and goes away after it, so the whole swing is
+   * bent toward the ball instead of the racket jumping to it. The skeleton
+   * has to be the one of the pose.
+   */
+  private reachArm(player: ScenePlayer, hit: readonly [number, number, number] | null, s: number, k: number, weight: number): void {
+    if (!hit || this.arm.upper < 0) return;
+    const character = this.character;
+    const fit = this.fit;
+    const pos = this.skeleton.pos;
+    // What still separates the ball from where this clip meets it, in the character's own axes at life size.
     // The ball of a serve drops from the server's own hand: it is as much bigger than life as the server.
     const own = player.anim === 'serve' ? k : 1;
-    const dx = (s * (player.x + player.reachX * own - this.x)) / k - hit[0];
-    const dy = (s * (player.y + player.reachY * own - this.y)) / k - hit[1];
-    let dz = (player.reachZ * own) / k - hit[2];
-
-    // A low ball: the body sinks, and the legs bend so the feet stay where they were.
-    const sink = NO_CROUCH.has(clip.name) ? 0 : clamp(-dz - CROUCH_FREE, 0, MAX_CROUCH);
-    if (sink * weight > 0.004 && this.bothLegs.every((leg) => leg.upper >= 0 && leg.lower >= 0 && leg.end >= 0)) {
-      for (let i = 0; i < 2; i++) {
-        const foot = this.bothLegs[i]!.end * 3;
-        for (let c = 0; c < 3; c++) this.ankles[i * 3 + c] = pos[foot + c]!;
-      }
-      const pelvis = character.bones * 4 + 2;
-      pose[pelvis] = pose[pelvis]! - sink * weight;
-      solveSkeleton(character, pose, skeleton, style);
-      worldRotations(character, pose, this.world);
-      // Knees go forward: the character looks along its own -y.
-      for (let i = 0; i < 2; i++) {
-        bendLimb(character, pose, skeleton, this.world, this.bothLegs[i]!, this.ankles[i * 3]!, this.ankles[i * 3 + 1]!, this.ankles[i * 3 + 2]!, 0, -0.6, 0);
-      }
-      solveSkeleton(character, pose, skeleton, style);
-      dz += sink;
-    }
-
-    // The arm takes the racket the rest of the way, as far as an arm goes.
+    const dx = (s * (player.x + player.reachX * own - this.x)) / k - hit[0] - fit.x;
+    const dy = (s * (player.y + player.reachY * own - this.y)) / k - hit[1] - fit.y;
+    const dz = (player.reachZ * own) / k - hit[2] - fit.z;
+    // As far as an arm goes.
     const far = Math.hypot(dx, dy, dz);
-    const scale = (far > MAX_ARM ? MAX_ARM / far : 1) * weight;
-    worldRotations(character, pose, this.world);
+    const scale = (far > BODY.arm ? BODY.arm / far : 1) * weight;
+    worldRotations(character, this.pose, this.world);
     const hand = this.arm.end * 3;
-    bendLimb(character, pose, skeleton, this.world, this.arm, pos[hand]! + dx * scale, pos[hand + 1]! + dy * scale, pos[hand + 2]! + dz * scale);
-    solveSkeleton(character, pose, skeleton, style);
+    bendLimb(character, this.pose, this.skeleton, this.world, this.arm, pos[hand]! + dx * scale, pos[hand + 1]! + dy * scale, pos[hand + 2]! + dz * scale);
+    solveSkeleton(character, this.pose, this.skeleton, this.style);
   }
 
   /**
@@ -904,9 +1351,10 @@ export class FigureAnimator implements AnimatedFigure {
   }
 
   /**
-   * Puts the limbs where the gesture has them, as much as `weight` says, and
-   * the hand with the racket as much as `racket` says. The skeleton has to be
-   * the one of the pose.
+   * Puts the arms and the head where the gesture has them, as much as
+   * `weight` says, and the hand with the racket as much as `racket` says.
+   * How low the hips go and how wide the feet are is the body's: see
+   * `placeBody`. The skeleton has to be the one of the pose.
    */
   private gesticulate(weight: number, racket: number): void {
     const character = this.character;
@@ -915,23 +1363,6 @@ export class FigureAnimator implements AnimatedFigure {
     const style = this.style;
     const pos = skeleton.pos;
     const g = this.gesture;
-
-    if ((g.crouch > 0 || g.stance > 0) && this.bothLegs.every((leg) => leg.upper >= 0 && leg.lower >= 0 && leg.end >= 0)) {
-      for (let i = 0; i < 2; i++) {
-        const foot = this.bothLegs[i]!.end * 3;
-        for (let c = 0; c < 3; c++) this.ankles[i * 3 + c] = pos[foot + c]!;
-      }
-      const pelvis = character.bones * 4 + 2;
-      pose[pelvis] = pose[pelvis]! - g.crouch * weight;
-      solveSkeleton(character, pose, skeleton, style);
-      worldRotations(character, pose, this.world);
-      for (let i = 0; i < 2; i++) {
-        // The left foot goes further left and the right one further right.
-        const out = (i === 0 ? 1 : -1) * g.stance * weight;
-        bendLimb(character, pose, skeleton, this.world, this.bothLegs[i]!, this.ankles[i * 3]! + out, this.ankles[i * 3 + 1]!, this.ankles[i * 3 + 2]!, 0, -0.6, 0);
-      }
-      solveSkeleton(character, pose, skeleton, style);
-    }
 
     if (g.free || g.racket) {
       worldRotations(character, pose, this.world);
@@ -1059,10 +1490,20 @@ export class FigureAnimator implements AnimatedFigure {
   }
 }
 
-/** How much of the step toward the ball is taken `eta` seconds before the contact (negative after it). */
+/** How much of the arm's way to the ball is taken `eta` seconds before the contact (negative after it). */
 function lungeWeight(eta: number): number {
   if (eta >= 0) return 1 - smoothstep(0.04, 0.3, eta);
   return 1 - smoothstep(0.05, 0.32, -eta);
+}
+
+/**
+ * How much of the body's way to the ball is taken `eta` seconds before the
+ * contact (negative after it): the hips are set before the swing, and stay
+ * a moment after it.
+ */
+function bodyWeight(eta: number): number {
+  if (eta >= 0) return 1 - smoothstep(0.1, 0.45, eta);
+  return 1 - smoothstep(0.15, 0.5, -eta);
 }
 
 /** A turn round z (side to side) and then round x (up and down), as a quaternion. */

@@ -113,7 +113,9 @@ Todos tienen la misma estructura, y es la que da el carácter:
 2. **Impacto seco.** Descarga en poco más de un décimo de segundo y atraviesa el contacto sin frenar.
 3. **Seguimiento que frena.** Sigue de largo, frena y recién ahí vuelve.
 
-Las poses van más lejos que las reales: más giro de hombros, más flexión y más extensión. En el remate salta con tijera y le pega arriba de todo; en el globo sale de bien abajo y todo el cuerpo sube detrás de la pelota; en las estiradas el cuerpo se tira detrás de la pala y el brazo libre equilibra. Las estiradas llegan a 1,35 m del eje del personaje.
+Las poses van más lejos que las reales: más giro de hombros, más flexión y más extensión. En el remate salta con tijera y le pega arriba de todo; en el globo sale de bien abajo y todo el cuerpo sube detrás de la pelota; en las estiradas el cuerpo se tira detrás de la pala y el brazo libre equilibra. Las estiradas llegan a 1,16 m del eje del personaje.
+
+**Dónde toca la pelota cada golpe lo decide el juego.** La simulación pega la pelota a unos 62 cm al costado y 20 cm adelante de los pies, y el juego dibuja a los personajes 1,2 a 1,5 veces más grandes que la pelota: a la escala del personaje, la pelota queda a medio metro al costado, a la altura del pie de adelante, y más baja que lo que espera alguien parado. Los golpes se arman para ese punto (desde la fase 2 de dobles, ver `docs/dobles.md`): contacto más cerca del cuerpo, más atrás y más bajo, con las rodillas más flexionadas y la base corrida hacia atrás, de modo que la pelota siga quedando delante del cuerpo. Cada contacto se escribe como punto en `anim_golpes.py` (`contacto`) y la mano se acomoda sola para que el centro de la pala caiga exactamente ahí. Lo que falta para cada pelota lo pone el motor con un paso, la pelvis y el brazo.
 
 Cada golpe marca su **cuadro de contacto**, la posición de la pala y de la mano en ese cuadro, hacia dónde apunta la pala y el tramo del armado que se puede estirar. Está todo en el [contrato](#contrato-para-el-motor).
 
@@ -389,15 +391,15 @@ Todos traen `name`, `dur`, `loop`, `frames`, `t0`, `data`, `label` y `grupo` (`b
 | `arranque` | locomoción | 0,30 s | | | Avanza 0,62 m |
 | `frenada` | locomoción | 0,47 s | | | Avanza 0,46 m |
 | `saque` | golpe | 1,40 s | 0,84 s, cuadro 25 | −0,21 · −0,48 · 0,62 | Suelta la pelota a los 0,20 s |
-| `derecha` | golpe | 1,02 s | 0,52 s, cuadro 15 | −0,75 · −0,60 · 0,87 | |
-| `reves` | golpe | 1,02 s | 0,52 s, cuadro 15 | 0,42 · −0,78 · 0,94 | |
-| `volea` | golpe | 0,66 s | 0,26 s, cuadro 7 | −0,66 · −0,70 · 1,41 | |
-| `volea_reves` | golpe | 0,66 s | 0,26 s, cuadro 7 | 0,39 · −0,67 · 1,38 | |
-| `bandeja` | golpe | 1,05 s | 0,52 s, cuadro 15 | −0,40 · −0,38 · 2,05 | Sin saltar |
-| `remate` | golpe | 1,30 s | 0,62 s, cuadro 18 | −0,30 · −0,52 · 2,42 | Salta |
-| `globo` | golpe | 1,08 s | 0,54 s, cuadro 16 | −0,66 · −0,51 · 0,69 | |
-| `estirada` | golpe | 0,92 s | 0,36 s, cuadro 10 | −1,35 · −0,32 · 0,59 | Casi sin armado |
-| `estirada_reves` | golpe | 0,92 s | 0,36 s, cuadro 10 | 1,34 · −0,47 · 0,58 | Casi sin armado |
+| `derecha` | golpe | 1,02 s | 0,52 s, cuadro 15 | −0,58 · −0,26 · 0,70 | |
+| `reves` | golpe | 1,02 s | 0,52 s, cuadro 15 | 0,54 · −0,26 · 0,72 | |
+| `volea` | golpe | 0,66 s | 0,26 s, cuadro 7 | −0,56 · −0,28 · 1,20 | |
+| `volea_reves` | golpe | 0,66 s | 0,26 s, cuadro 7 | 0,52 · −0,28 · 1,18 | |
+| `bandeja` | golpe | 1,05 s | 0,52 s, cuadro 15 | −0,42 · −0,22 · 1,98 | Sin saltar |
+| `remate` | golpe | 1,30 s | 0,62 s, cuadro 18 | −0,36 · −0,26 · 2,22 | Salta poco |
+| `globo` | golpe | 1,08 s | 0,54 s, cuadro 16 | −0,56 · −0,22 · 0,52 | |
+| `estirada` | golpe | 0,92 s | 0,36 s, cuadro 10 | −1,16 · −0,14 · 0,46 | Sin armado: espera con los dos pies en el piso |
+| `estirada_reves` | golpe | 0,92 s | 0,36 s, cuadro 10 | 1,14 · −0,18 · 0,46 | Sin armado: espera con los dos pies en el piso |
 | `espera` | reacción | 2,00 s, loop | | | Entre puntos |
 | `festejo` | reacción | 0,80 s | | | |
 | `lamento` | reacción | 0,80 s | | | |

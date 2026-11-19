@@ -78,12 +78,18 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
 
 **Prototipo publicado el 2026-11-18** (merge `0fb3c31`): propuesta en `docs/dobles.md` y en el [Artifact](https://claude.ai/artifact/9c464BuRNAzAys6RQnxpGX) (privado). Se prueba con `?dobles&alcance=real` o en Opciones → Experimental; la partida rápida no cambió. Esperando que el usuario lo pruebe en el celular.
 
+- **Primera prueba en el celular** (2026-11-18): "Es más caótico pero me gusta, eso le da diversión." La IA necesita pulirse, "es base para un juego divertido". A veces una pelota iba derecho al compañero, "claramente era suya en su área", y no hacía nada. Pidió IA que se sienta humana, "tanto aciertos como errores", y actitudes de compañero elegibles: agresivo (a veces roba), pasivo y equilibrado.
+  - **Publicado el 2026-11-19** (merges `5694d86` y `4b7bd3a`):
+    - **IA**: el compañero juega sus pelotas, los errores tienen motivo y hay tres actitudes (agresiva, equilibrada, pasiva) en Opciones → Dobles. Detalle en `docs/ia.md`.
+    - **Fase 2 de animación**: zancada con el pie plantado y flexión profunda; el cuerpo ya no se desliza pegando parado. Detalle en `docs/dobles.md`, sección 4.
+  - **En curso**: segunda vuelta de `ia-humana`. Con los errores nuevos la táctica rinde menos: en 1 contra 1, contra Romina +10 → +4 pp y contra Chela +19 → +8; en dobles posicional, +17/+12/+8 → +12/+10/+3. Se pidió que el error lo provoque la presión del jugador, que se suelten los planes vencidos de la IA y que se arregle un flake del smoke («vos pegás y tu compañero también»).
+  - **Siguiente para `animacion-zancada`**: los gestos que pidió la IA (golpe apurado, bloqueo al cuerpo, «no llegué», arranque tarde si lo sorprenden, postura bajo presión, festejo o disculpa del robo) y la estocada al final de una carrera (queda un deslizamiento de 32 cm en el p90).
 - **Decisiones del usuario, después de probarlo**: partida rápida en dobles, alcance real para todos, el 1 contra 1 como «Cruzado» (media cancha en diagonal), revés y Beto por defecto, cuánto se desordena la pareja rival.
 - **Pendiente** (revisión de la orquestadora):
-  - **Fase 2, animación**: el cuerpo se sigue deslizando unos 70 cm hacia la pelota. Hace falta zancada con el pie plantado, flexión profunda hasta unos 55 cm y alinear dónde toca la pelota la simulación con los clips. Sin esto el alcance real se juega bien pero se ve igual.
+  - ~~Fase 2, animación~~: publicada el 2026-11-19 (ver arriba).
   - Al drive, jugar posicional casi no rinde (−3 a +3 pp). La meta de +15 pp se cumple solo en algunas casillas, con un jugador simulado.
-  - Puntos contra Romina y Chela de 16 a 20 s (meta: 8 a 14).
-  - Personalidad propia de cada compañero (hoy los tres avisan igual), las lecciones D1 a D5 y la pista de tierra de nadie.
+  - ~~Puntos contra Romina y Chela de 16 a 20 s~~: con la IA nueva, 11,5 s en dobles al revés con alcance real.
+  - Las lecciones D1 a D5 y la pista de tierra de nadie. Cada personaje ya tiene su actitud, pero todavía avisan igual.
   - Medir los cuadros por segundo con cuatro personajes en el celular (`?dobles&fps`).
 
 Lo que sigue es el planteo original, de antes del prototipo.

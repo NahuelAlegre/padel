@@ -57,7 +57,7 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
     - Casi ningún punto termina en error: una pelota exigida vuelve floja, no afuera.
     - La presión todavía no se ve en el cuerpo del jugador.
   - No se hicieron los puntos 7 a 10 de `docs/profundidad.md`: lectura de patrones, cambios de ritmo, salida por tres y el medio en dobles.
-  - Medir los cuadros por segundo del 3D en un teléfono.
+  - ~~Medir los cuadros por segundo del 3D en un teléfono~~: medido el 2026-11-19 en un celular del usuario más viejo que el suyo, «no es antiguo pero tampoco es moderno para juegos». Va a 90 fps (11,1 ms por cuadro, el tope de su pantalla) con 1,74 ms de CPU por cuadro. Falta un Android de gama media de hace unos 5 años y un iPhone viejo.
 - **Ronda "pantalla limpia"** (feedback del primer juego en el celular, 2026-11-18). El usuario dice "simple pero entretenido", pero que "demasiados círculos" lo confundieron. Es diseño de información; el estilo llega con el 3D:
   - Sacar el anillo que marca cuál es el jugador propio. Para accesibilidad queda como opción (contorno o color).
   - Pisadas de "dónde pararse" apagadas por defecto.

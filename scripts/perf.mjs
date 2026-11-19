@@ -26,6 +26,7 @@
  *   --headed           use a visible window instead of headless
  *   --nogpu            run the browser without a graphics card
  *   --only frames      measure only one part: weight, start or frames
+ *   --dobles           also measure the frames of a doubles demo: four characters on court
  *   CHROME_PATH=...    browser executable to use
  */
 import { openPhone, option, sleep, startPreview } from './lib/browser.mjs';
@@ -39,6 +40,7 @@ const settings = {
   headed: option('headed', false) === true,
   gpu: !option('nogpu', false),
   only: String(option('only', '')),
+  doubles: option('dobles', false) === true,
 };
 
 /** Connections, as DevTools has them: bytes per second and milliseconds of delay per request. */
@@ -163,18 +165,21 @@ async function main() {
     // ------------------------------------------------------------ frames
     if (wants('frames')) {
       const results = [];
-      for (const query of ['demo&loop', 'demo&loop&2d']) {
+      const queries = ['demo&loop', 'demo&loop&2d'];
+      if (settings.doubles) queries.push('demo&loop&dobles', 'demo&loop&dobles&2d');
+      for (const query of queries) {
         for (const rate of settings.throttles) {
           await phone.throttle(rate);
           await phone.goto(`${preview.url}?${query}`);
           // Let the page settle: start-up work and the automatic resolution probe.
           await sleep(4000);
-          results.push({ rate, ...(await phone.evaluate(`(${measureInPage.toString()})(${settings.seconds})`)) });
+          results.push({ rate, players: query.includes('dobles') ? 4 : 2, ...(await phone.evaluate(`(${measureInPage.toString()})(${settings.seconds})`)) });
         }
       }
       console.log('\nCuadros, con la demo andando');
       console.table(
         results.map((r) => ({
+          'jugadores': r.players,
           'aspecto': r.look,
           'CPU': `${r.rate}x`,
           'trabajo del juego': `${r.work.toFixed(2)} ms`,

@@ -2,6 +2,7 @@ import type { GameConfig } from '../config';
 import { clamp } from '../core/math';
 import { teamDir } from './court';
 import type { InterceptPlan } from './intercept';
+import { startingLane, type Astray, type CallKind } from './pair';
 import type { PlayerIntent, ShotIntent, ShotKind, TeamId } from './types';
 
 /**
@@ -109,6 +110,23 @@ export interface Player extends PlayerSetup {
   anim: PlayerAnim;
   /** Resting position during the rally: the back of the court or the net. */
   homeMode: 'back' | 'net';
+  /** Doubles: the side of the pair it plays on, as the sign of world x. */
+  lane: 1 | -1;
+  /**
+   * Doubles, a pair of computer players only: out of place for this exchange.
+   * 'stay': it did not follow its partner up or back, and waits where the pair
+   * was (`astrayHome`). 'halfway': it stopped in no man's land. It is what the
+   * other side can punish, and it lasts until its pair strikes the ball again.
+   */
+  astray: Astray | null;
+  astrayHome: 'back' | 'net';
+  /** Doubles: until this time it hesitates over a ball through the middle, and so does its partner. */
+  doubtUntil: number;
+  /** Doubles: what it last told its partner, and when. Only for show: it is always true. */
+  call: CallKind | null;
+  callAt: number;
+  /** The ball that call was about, so each ball gets one at most. */
+  callTraj: number;
 }
 
 export function createPlayer(id: number, team: TeamId, index: number, setup: PlayerSetup): Player {
@@ -139,6 +157,13 @@ export function createPlayer(id: number, team: TeamId, index: number, setup: Pla
     cueAt: 0,
     anim: { kind: 'idle', t0: 0, duration: 0, contactAt: Infinity, side: 1, shot: 'drive', reachX: 0.6, reachY: 0.2, reachZ: 0.9 },
     homeMode: 'back',
+    lane: startingLane(team, index),
+    astray: null,
+    astrayHome: 'back',
+    doubtUntil: 0,
+    call: null,
+    callAt: 0,
+    callTraj: -1,
   };
 }
 
@@ -147,9 +172,30 @@ export function playerSpeed(player: Player, config: GameConfig): number {
   return config.player.maxSpeed * player.speedFactor;
 }
 
-/** Horizontal distance from the body at which this player can hit the ball. */
-export function playerReach(player: Player, config: GameConfig): number {
-  return config.player.reach * player.reachScale;
+/**
+ * Horizontal distance from the body at which this player can hit the ball
+ * standing, without a lunge. With the real reach it is the same for
+ * everybody, and it shrinks over the head (pass the height of the ball).
+ */
+export function playerReach(player: Player, config: GameConfig, z = 1): number {
+  const pc = config.player;
+  if (!pc.realReach) return pc.reach * player.reachScale;
+  const real = pc.real;
+  if (z <= real.highFrom) return real.reach;
+  const k = clamp((z - real.highFrom) / (pc.maxContactZ - real.highFrom), 0, 1);
+  return real.reach + (real.highReach - real.reach) * k;
+}
+
+/** How much further than `playerReach` a lunge gets, with the real reach. */
+export function lungeReach(config: GameConfig): number {
+  return config.player.realReach ? config.player.real.lunge : config.player.lungeExtra;
+}
+
+/** The lowest ball that can still be played, standing or lunging. */
+export function lowestContact(config: GameConfig, lunging: boolean): number {
+  const pc = config.player;
+  if (!pc.realReach) return pc.minContactZ;
+  return lunging ? pc.real.lungeFloorZ : Math.max(pc.minContactZ, pc.real.floorZ);
 }
 
 /**

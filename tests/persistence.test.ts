@@ -90,6 +90,22 @@ describe('guardado local', () => {
     expect(data.match).toBeNull();
   });
 
+  it('lo experimental viene apagado: uno contra uno, con el alcance de siempre', async () => {
+    const settings = defaultSettings(false);
+    expect(settings.doubles).toBe(false);
+    expect(settings.reach).toBe('generous');
+    expect(settings.side).toBe('reves');
+    expect(settings.partner).toBe('beto');
+    // What was chosen comes back, and what makes no sense is ignored.
+    const store = createMemoryStore();
+    saveSettings(store, { ...settings, doubles: true, reach: 'real', side: 'drive', partner: 'chela' });
+    await settle();
+    const back = (await loadData(store, false)).settings;
+    expect([back.doubles, back.reach, back.side, back.partner]).toEqual([true, 'real', 'drive', 'chela']);
+    const odd = createMemoryStore({ 'padel.settings.v2': '{"doubles":"sí","reach":"infinito","side":"medio","partner":"nadie"}' });
+    expect((await loadData(odd, false)).settings).toEqual(defaultSettings(false));
+  });
+
   it('por defecto la pantalla está limpia y la cámara acompaña', () => {
     const settings = defaultSettings(false);
     expect(settings.aids).toBe('minimal');

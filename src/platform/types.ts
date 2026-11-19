@@ -144,4 +144,6 @@ export interface Launch {
   elapsed(): number;
   /** Developer switches (on the web, the query string). The game never depends on them. */
   flag(name: string): boolean;
+  /** The value given to a developer switch (`?alcance=real` gives "real"), or null when there is none. */
+  value(name: string): string | null;
 }

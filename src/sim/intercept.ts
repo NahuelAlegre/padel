@@ -1,6 +1,6 @@
 import { SIM_DT, type GameConfig } from '../config';
 import { teamDir } from './court';
-import { clampToHalf, playerReach, playerSpeed, travelTime, type Player } from './player';
+import { clampToHalf, lowestContact, lungeReach, playerReach, playerSpeed, travelTime, type Player } from './player';
 import { isPastPlayer } from './shots';
 import type { TrajPoint, Trajectory } from './trajectory';
 
@@ -136,7 +136,9 @@ export function planIntercept(
 ): InterceptPlan | null {
   const pc = config.player;
   const speed = playerSpeed(player, config);
+  const real = pc.realReach;
   const reach = playerReach(player, config);
+  const lowest = lowestContact(config, false);
   const points = trajectory.points;
   const first = Math.max(0, Math.ceil((now + minLead - trajectory.t0) / SIM_DT - 1e-6));
   // Only somebody who is at the net has a net to hold.
@@ -155,9 +157,9 @@ export function planIntercept(
   for (let i = first; i < points.length; i += 2) {
     const point = points[i]!;
     if (point.hittable !== player.team) continue;
-    if (point.z < pc.minContactZ || point.z > pc.maxContactZ) continue;
+    if (point.z < lowest || point.z > pc.maxContactZ) continue;
     stanceFor(point, player, config);
-    if (stance.gap > reach) continue;
+    if (stance.gap > (real ? playerReach(player, config, point.z) : reach)) continue;
 
     const distance = Math.hypot(stance.x - player.x, stance.y - player.y);
     const slack = point.t - now - travelTime(distance, speed, pc.accel);
@@ -217,6 +219,8 @@ export function planIntercept(
 const PLACEMENT_WEIGHT = 1.5;
 /** What a ball that can only be played into the own glass costs against any other. */
 const LAST_RESORT = 6;
+/** With the real reach: what each metre of lunge costs, on top of being further from the comfortable spot. */
+const LUNGE_WEIGHT = 2;
 
 /**
  * The best ball for a player who stays where it is standing right now: within
@@ -249,7 +253,10 @@ export function contactNear(
   allowPast = true,
 ): InterceptPlan | null {
   const pc = config.player;
+  const real = pc.realReach;
   const reach = playerReach(player, config);
+  const lunge = real ? lungeReach(config) : 0;
+  const lowest = lowestContact(config, false);
   const points = trajectory.points;
   const from = Math.max(0, Math.floor((now - back - trajectory.t0) / SIM_DT));
   const to = Math.min(points.length - 1, Math.ceil((now + ahead - trajectory.t0) / SIM_DT));
@@ -263,13 +270,18 @@ export function contactNear(
   for (let i = from; i <= to; i++) {
     const point = points[i]!;
     if (point.hittable !== player.team) continue;
-    if (point.z < pc.minContactZ || point.z > pc.maxContactZ) continue;
+    if (point.z < lowest || point.z > pc.maxContactZ) continue;
     // Running to the back, the ball over the head is left for the glass.
     if (retreating && point.bounces === 0 && point.z >= pc.overheadZ) continue;
     const dx = point.x - player.x;
-    if (Math.hypot(dx, point.y - player.y) > reach) continue;
+    const gap = Math.hypot(dx, point.y - player.y);
+    // A real person can lunge for a ball that goes by a step away, but not so low, and it costs.
+    const standing = real ? playerReach(player, config, point.z) : reach;
+    if (gap > standing + lunge) continue;
+    if (gap > standing && point.z < lowestContact(config, true)) continue;
     // Distance to the nearer of the two comfortable spots, one on each side of the body.
     let score = Math.hypot(Math.abs(dx) - pc.sweetSpot, point.y - frontY) * PLACEMENT_WEIGHT;
+    if (gap > standing) score += (gap - standing) * LUNGE_WEIGHT;
     // Nobody has to run, so there is no hurry to count: only the ball itself.
     score += contactCost(point, player.y, 1, now, config, holdNet);
     if (isPastPlayer(player.team, player.y, point.y, point.bounces, config)) {

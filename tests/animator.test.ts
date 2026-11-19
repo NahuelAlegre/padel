@@ -44,6 +44,7 @@ function player(more: Partial<ScenePlayer> = {}): ScenePlayer {
     character: null,
     tell: null,
     act: null,
+    call: null,
     ...more,
   };
 }

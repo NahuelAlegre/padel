@@ -56,6 +56,8 @@ npm run preview:host
 
 Atajos de desarrollo en la URL: `?demo` arranca un partido de IA contra IA, `?loop` lo repite al terminar, `?fps` muestra el contador de cuadros (con qué aspecto se está dibujando, `3d` o `2d`) y el error de timing de cada golpe en milisegundos, `?2d` no usa nunca el 3D (lo que ve un dispositivo sin WebGL2) y `?record` guarda las entradas del partido para poder repetirlo.
 
+Atajos experimentales, que valen mientras la página está abierta y no se guardan: `?dobles` juega la partida rápida en 2 contra 2, `?alcance=real` le da a todos el alcance de una persona (`?alcance=actual`, el de siempre), `?lado=drive` o `?lado=reves` elige tu lado en dobles y `?companero=beto`, `romina` o `chela` elige tu compañero. Se combinan: `?dobles&alcance=real`. Con `?demo&dobles` juegan cuatro IA.
+
 ## Cómo se juega
 
 **La primera vez no hay menú ni nada que leer.** El juego abre directo en la cancha, con tu saque listo, unos pulgares fantasma que muestran los gestos y Beto, el profe, que saluda desde el otro lado. El primer peloteo hace de introducción: devuelve una pelota lenta hacia donde estás y deja pasar la siguiente, hasta que ganás un punto. Una vez que te salió el primer golpe, las visitas siguientes abren en la pantalla de inicio, con "Partida rápida" como botón principal, abajo, donde ya está el pulgar. Los demás golpes (el globo, la chiquita, la bandeja, el remate) se aprenden en el Tutorial, o jugando: el juego los muestra una vez, cuando convienen.
@@ -154,7 +156,7 @@ Un timing mediocre no manda la pelota afuera. Los errores salen del riesgo que e
 
 Armar el golpe temprano es lo seguro (sale como uno bueno); esperar y soltar justo da calidad; soltar tarde sale flojo.
 
-**La ayuda está en el alcance, no en el movimiento.** Alcanza con acercarse: la persona llega a pelotas que pasan a 1,6 m (la máquina, a 1,25 m) y el jugador se estira para llegar. Cuanto más estirado, más débil y menos preciso el golpe.
+**La ayuda está en el alcance, no en el movimiento.** Alcanza con acercarse: la persona llega a pelotas que pasan a 1,6 m (la máquina, a 1,25 m) y el jugador se estira para llegar. Cuanto más estirado, más débil y menos preciso el golpe. Con `?alcance=real` (experimental) no hay ayuda: todos llegan a 1,15 m parados y a 1,60 m con una zancada.
 
 **Qué pelota se juega.** Si desde donde estás parado la pelota pasa dos veces a tu alcance (antes y después del vidrio de fondo, por ejemplo), la señal es para la más cómoda, con el mismo criterio que usa la máquina. Desde el fondo eso suele ser dejarla picar y esperar la salida de pared. La contrapared queda como último recurso: sale cuando la pelota ya te pasó y no va a volver.
 
@@ -204,13 +206,27 @@ Ninguno hace trampa: predicen la pelota con la misma física que la marca de piq
 
 **Te reconocen.** El juego guarda la historia con cada rival en el dispositivo. La primera vez se presentan ("¡Hola! Soy Beto, el profe."), después te saludan distinto, y al terminar piden la revancha al lado del botón ("¿Otra? ¡De una!"). Si un rival te ganó tres veces seguidas, al empezar el siguiente partido te cuenta su gesto delator, una sola vez. No hay rachas que castiguen ni nada que se pierda por perder.
 
+### Dobles (experimental)
+
+Se prende con `?dobles` o en Opciones → Experimental, y la partida rápida pasa a ser de 2 contra 2: vos y un compañero del elenco contra los otros dos (por defecto, vos al revés con Beto, contra Romina y Chela). La partida rápida de siempre no cambia. La propuesta completa, con sus mediciones, está en [docs/dobles.md](docs/dobles.md).
+
+- **Cada pelota tiene dueño.** La de tu lado es tuya; la del medio, de quien tiene la derecha hacia el medio (con dos diestros, el de revés). Tu compañero juega una pelota tuya solo si no llegás o si es un globo que te pasó por arriba, y siempre avisa antes.
+- **La pareja va atada.** Tu compañero sube a la red cuando subís y baja cuando te quedás atrás; nunca abre el hueco él. Las parejas de la computadora suben y bajan juntas, se deslizan con la pelota y no esperan en tierra de nadie.
+- **Los avisos son con el cuerpo**, nunca con texto: la mano arriba es «¡mía!», señalarte es «¡tuya!», barrer el brazo es «¡voy!», hacerte señas es «¡arriba!» y señalar atrás es «¡atrás!». Siempre son verdad.
+- **La pareja rival busca dónde no estás:** a los pies de quien queda en tierra de nadie, por arriba del que está en la red o al hueco de una pareja partida, globo a una pareja en la red y el medio a una pareja atrás.
+- **Y también se desordena, y se la castiga.** Las mismas reglas y el mismo alcance valen para las dos parejas. Según su entereza y la presión del punto, a veces uno de la pareja rival no acompaña al otro (sube o baja solo), se queda en tierra de nadie o dudan en una pelota al medio; una pelota que pasa lejos de los dos los hace dudar más, y a veces no va ninguno. Se ve sin leer: el que subió solo le hace señas al compañero y, cuando dudan, se señalan los dos. Tu compañero nunca se desordena.
+- **El compañero es el mismo personaje** que como rival, pero juega a ganar (no le regala pelotas al rival) y con manos más firmes.
+- Por ahora no se guarda para seguirlo después, no cuenta en la historia con cada rival y nadie habla.
+
+**El alcance real** (`?alcance=real`, también en Experimental) es el de una persona, igual para todos: 1,15 m parado y 1,60 m con una zancada, más corto por arriba de la cabeza, y nada por debajo de 20 cm del piso (32 cm con zancada). Vale en 1 contra 1 y en dobles. Con el alcance de siempre, el 1 contra 1 juega exactamente igual que antes.
+
 ### Entre punto y punto
 
 La pausa dura un segundo como mucho y se saltea con un toque. Quien ganó el punto lo festeja con un gesto corto mientras camina a su lugar; el saque siguiente lo corta y nada espera a que termine. Al terminar el partido, "Revancha" es el botón principal y ya tiene el foco.
 
 ### Opciones
 
-Esquema de control y lado del joystick, velocidad del juego (60 %, 80 %, 100 %), frases del rival (muchas, pocas, ninguna), ayudas en pantalla (completas, mínimas, ninguna), movimiento asistido, reducir movimiento, vibración, sonido (sí o no, y el volumen de los golpes y el del ambiente por separado), cámara (acompaña o fija), resolución, pantalla completa y contador de cuadros. Abajo se ven los datos guardados en el dispositivo.
+Esquema de control y lado del joystick, velocidad del juego (60 %, 80 %, 100 %), frases del rival (muchas, pocas, ninguna), ayudas en pantalla (completas, mínimas, ninguna), movimiento asistido, reducir movimiento, vibración, sonido (sí o no, y el volumen de los golpes y el del ambiente por separado), cámara (acompaña o fija), resolución, pantalla completa y contador de cuadros. En **Experimental**: dobles, tu lado (drive o revés) y tu compañero, y el alcance (actual o real); se aplican desde el próximo partido. Abajo se ven los datos guardados en el dispositivo.
 
 **Ayudas en pantalla.** El juego es para alguien que quiere algo simple y no quiere leer, así que por defecto hay muy poco:
 
@@ -292,6 +308,7 @@ src/
     trajectory.ts      Predicción: simula el futuro de la pelota con la misma física y reglas
     intercept.ts       Dónde y cuándo le conviene pegar a cada jugador
     formation.ts       Dónde se para cada jugador, para equipos de 1 o de 2
+    pair.ts            Dobles: de quién es cada pelota, dónde espera cada uno, cuándo suben o bajan juntos y qué se avisan
     player.ts          Estado y movimiento de un jugador
     replay.ts          Grabación de las entradas y repetición exacta de un partido
     match.ts           El partido: une todo y avanza de a un paso fijo
@@ -426,7 +443,7 @@ Cuánto le queda de esas ayudas a cada persona (`assist`, de 0 a 1) se guarda en
 
 ### Equipos de N jugadores, un controlador por jugador
 
-Un `Match` recibe dos equipos con la cantidad de jugadores que sea, y cada jugador trae su `Controller`. Nada asume 1 contra 1: el saque rota entre todos los jugadores, las formaciones salen de una tabla en coordenadas del equipo y, cuando hay más de un jugador, el partido decide quién va a cada pelota. `npm run sim` y los tests ya juegan partidos de dobles con cuatro IA. Para tener dobles de verdad falta el encuadre y decidir cómo se maneja al compañero, no reescribir.
+Un `Match` recibe dos equipos con la cantidad de jugadores que sea, y cada jugador trae su `Controller`. Nada asume 1 contra 1: el saque rota entre todos los jugadores y las formaciones salen de una tabla en coordenadas del equipo. Una pareja juega como en el pádel ([src/sim/pair.ts](src/sim/pair.ts)): el partido decide de quién es cada pelota por el lado y por el medio, y no por quién llega antes; la pareja tiene una profundidad común (la decide quien pegó la última, o la persona si hay una); y cada uno espera en su lado, deslizado hacia la pelota. Los avisos entre compañeros (`Player.call`) salen de esas decisiones, así que siempre son verdad. Nada de esto usa azar: un partido de dobles se repite igual con la misma semilla.
 
 ### Una sola física para todo
 
@@ -584,15 +601,25 @@ Casi todo lo que define cómo se siente el juego está en [src/config.ts](src/co
 | Cuándo se enciende la pelota, cuánto duran los efectos y los nombres | [director.ts](src/render/stage/director.ts) y [frame.ts](src/render/stage/frame.ts) |
 | Qué tan rápido se apagan las ayudas mínimas | `ASSIST_*` en [src/app/game.ts](src/app/game.ts) |
 
-El alcance extra de la persona (`HUMAN_REACH`) está en [src/app/game.ts](src/app/game.ts).
+El alcance extra de la persona (`HUMAN_REACH`) está en [src/app/game.ts](src/app/game.ts). El alcance real, igual para todos, está en `player.realReach` y `player.real`.
+
+| Qué, en dobles | Dónde |
+| --- | --- |
+| Cuándo una pelota es "del medio", cuánto se desliza la pareja, qué tan separados están en la red y atrás, cuándo el compañero cubre o cruza | Las constantes de [src/sim/pair.ts](src/sim/pair.ts) |
+| Qué cambia un personaje cuando es tu compañero | `asPartner` en [src/characters/style.ts](src/characters/style.ts) |
+| Qué hace la pareja rival según cómo está parada la tuya | `pairShot` y las constantes `FEET_*`, `HOLE_DEPTH`, `DOUBLES_SERVE_UP`, `BUILD_*` en [src/control/ai.ts](src/control/ai.ts) |
+| Cuándo se estorban dos de la misma pareja, y cuándo sube quien pegó desde adentro | `CROWD_*` y `ADVANCE_FROM` en [src/sim/match.ts](src/sim/match.ts) |
+| Cuánto se desordena una pareja de la computadora (no acompañar, quedarse a mitad de camino, dudar, que no vaya ninguno) y qué es un hueco | `DISORDER` y `HALFWAY` en [src/sim/pair.ts](src/sim/pair.ts) |
 
 `npm run sim` sirve para ver el efecto de un cambio sin jugar. Usa un jugador simulado que pasa por la misma entrada que una persona: empuja el joystick hacia las pisadas, con demora y con error, y suelta el golpe mirando el anillo. Tiene tres niveles de manos (principiante: timing ±160 ms y se para a 70 cm del lugar ideal; promedio: ±100 ms y 45 cm; experto: ±50 ms y 25 cm) y, aparte, **táctica**: sin ella pega cualquier golpe y espera en el fondo; con ella juega al pádel con las mismas manos (sube detrás de un golpe de ataque y aguanta la red, globo o pelota a los pies cuando el rival está en la red, define la pelota fácil lejos del otro y sin darle el vidrio, no arriesga la volea baja).
 
-Hay tres informes:
+Hay cinco informes:
 
 - **Balance** ([tests/sim/balance.sim.ts](tests/sim/balance.sim.ts)): quién gana y cómo terminan los puntos, por casilla.
 - **Profundidad** ([tests/sim/depth.sim.ts](tests/sim/depth.sim.ts)): cómo se juegan los puntos y **cuánto paga pensar**, contra las metas de `docs/profundidad.md` (rama de investigación). Lo que queda fuera de una meta sale como advertencia, no como error. Con `SIM_TWEAK='{"rivals.chela.speedFactor":0.9}'` se prueba otro número sin tocar los archivos.
 - **Peloteo** ([tests/sim/rally.sim.ts](tests/sim/rally.sim.ts)): un partido golpe por golpe.
+- **Dobles** ([tests/sim/doubles.sim.ts](tests/sim/doubles.sim.ts)): si la posición importa. Quién gana cuando una pareja está en la red y la otra atrás, cuánto cuesta un hueco o quedarse en tierra de nadie, cuánto se desordena la pareja rival y cuánto se gana castigándola, cuánto tiempo está junta cada pareja, cuánto paga jugar posicional contra correr a todas, y cuánto duran los puntos. `SIM_REACH=real` lo juega con el alcance real, `SIM_SIDE=reves` pone a la persona al revés y `SIM_LINEUP=chela,beto,romina` cambia el compañero y la pareja rival. Las metas y los resultados están en [docs/dobles.md](docs/dobles.md).
+- **Alcance** ([tests/sim/reach.sim.ts](tests/sim/reach.sim.ts)): con el alcance de hoy y con el real, a qué distancia y a qué altura se pega, cuánto se desliza el cuerpo dibujado para llegar y dónde queda la pala.
 
 **Cuánto paga la táctica.** Puntos ganados por el jugador simulado sin táctica → con táctica (entre paréntesis, partidos ganados de 30). "Antes" es el motor de la ronda anterior medido con este mismo jugador simulado; cada casilla son 30 partidas rápidas y el ruido entre corridas es de unos 3 puntos.
 
@@ -631,7 +658,7 @@ Para leer estos números: el jugador simulado "sin táctica" igual apunta al lad
 
 Objetivo: 60 cuadros por segundo en un Android de gama media de hace unos cinco años, y una descarga inicial chica.
 
-`npm run perf` abre el build de producción en Chrome, emula un celular en vertical (360×800 CSS, densidad 3, táctil) y mide tres cosas. Los resultados que siguen son de Chrome 157 headless sobre un Ryzen 7 8700G con su gráfica integrada (Radeon 780M).
+`npm run perf` abre el build de producción en Chrome, emula un celular en vertical (360×800 CSS, densidad 3, táctil) y mide tres cosas. Con `--dobles` mide también los cuadros de una demo de dobles. Los resultados que siguen son de Chrome 157 headless sobre un Ryzen 7 8700G con su gráfica integrada (Radeon 780M).
 
 **Peso de la primera visita**, tal como viaja por la red, con sus cabeceras:
 
@@ -664,20 +691,23 @@ El personaje nuevo trae más del doble de clips y pesa menos que el anterior, po
 | 2D | 4× | 0,51 ms | 4,2 / 4,4 / 8,3 ms | 0 % |
 | 2D | 6× | 0,86 ms | 4,2 / 4,4 / 8,4 ms | 0 % |
 
+**Con cuatro personajes** (dobles, `npm run perf -- --dobles`): el trabajo del juego por cuadro es 0,21 / 0,80 / 1,23 ms en 3D con la CPU 1×, 4× y 6× (en la misma corrida, el 1 contra 1 dio 0,15 / 0,53 / 1,14 ms) y 0,13 / 0,57 / 0,93 ms en 2D. Ningún cuadro tardó más de 17,5 ms.
+
 Chrome headless pinta a 240 cuadros por segundo en esta máquina, así que 4,2 ms entre cuadros significa que no perdió ninguno. El "trabajo del juego" es todo lo que hace el JavaScript en un cuadro: simular, animar los esqueletos con su cinemática inversa, decidir la cámara y mandar a dibujar. Con la CPU frenada 6× usa 1,07 ms de los 16,7 ms que hay por cuadro a 60 cuadros por segundo. El canvas queda en 720×1600 por el tope de densidad.
 
 **Qué no dice esta medición.** Frenar la CPU no frena la placa de video, y el tiempo entre cuadros es el de la gráfica de esta máquina, no el de un teléfono. La prueba de estilo 3D ([design/prueba-3d](design/prueba-3d/)), que dibuja lo mismo, dio 60 cuadros por segundo en el celular del usuario, pero este renderer todavía no se midió ahí. Con `?fps` (o la opción "Mostrar fps") el juego muestra cuadros por segundo, el peor cuadro del último segundo, el trabajo por cuadro y si está dibujando en `3d` o en `2d`.
 
 ## Verificación
 
-- `npm test`: 354 tests. Cubren la física de la pelota (pique, vidrio, reja, red, salida de la cancha), que la predicción coincide exactamente con la simulación, las reglas, la puntuación, qué golpe sale en cada situación, el timing y el golpe armado, el movimiento a mano y el asistido, los gestos de los dos esquemas, el tutorial, guardar y seguir un partido (y leer lo que guardó la versión anterior), la repetición exacta de un partido grabado, partidos completos entre IA (también de dobles), las reglas de arquitectura y el elenco. De las últimas rondas:
+- `npm test`: 374 tests. Cubren la física de la pelota (pique, vidrio, reja, red, salida de la cancha), que la predicción coincide exactamente con la simulación, las reglas, la puntuación, qué golpe sale en cada situación, el timing y el golpe armado, el movimiento a mano y el asistido, los gestos de los dos esquemas, el tutorial, guardar y seguir un partido (y leer lo que guardó la versión anterior), la repetición exacta de un partido grabado, partidos completos entre IA (también de dobles), las reglas de arquitectura y el elenco. De las últimas rondas:
   - **La profundidad** ([tests/depth.test.ts](tests/depth.test.ts)): que una pelota más baja, más estirada, más rápida o más pegada al vidrio es más difícil; que una pelota difícil sale más lenta, más alta, menos abierta y más corta; la profundidad del globo según la ejecución; el perfecto de cada golpe; que yendo para atrás no hay remate; el efecto de cada golpe y que la predicción lo conoce; aguantar la red o irse al fondo, a mano y con la IA; la presión acumulada y la entereza; cómo define y cuándo sube la IA; que **no lee el pulgar** (dos partidos que solo difieren en el apuntado de la persona); que nadie erra al azar ni corre más que una persona; y que, con las mismas manos, jugar con táctica le saca más puntos a Chela.
   - **El tutorial** ([tests/drill.test.ts](tests/drill.test.ts)): que cada una de las ocho lecciones se completa haciendo lo que enseña y no cuenta otro golpe; la cancha de práctica (sin saque ni marcador); y que las lecciones hechas, los golpes encontrados y las pistas mostradas se guardan y se leen bien.
   - **El personaje** ([tests/toon.test.ts](tests/toon.test.ts)): que el archivo se lee bien, que la pala está donde dice cada clip en su instante de contacto y que los ciclos cierran.
   - **La animación** ([tests/animator.test.ts](tests/animator.test.ts)): el pie apoyado no patina en ninguna de las cuatro marchas; la pelvis gira en diagonal; el saltito antes del golpe del rival; la pelota en la mano libre antes del saque; la pala en el punto de contacto con el cuerpo de cada personaje; arrancar y frenar sin saltos; la pala en el punto de contacto en el instante del contacto, se haya armado el golpe con mucho tiempo o con 90 ms; que armado con tiempo espera con la pala atrás; el paso hacia la pelota y la vuelta; pegar corriendo; la cabeza que sigue a la pelota; los gestos delatores y las manías de cada personaje; el festejo; y, en un partido simulado entero, que la pala queda cerca de la pelota en el contacto.
   - **El sonido** ([tests/audio.test.ts](tests/audio.test.ts)): que todos los sonidos se generan sin errores ni saturación y que no queda ninguna voz; que un golpe más fuerte suena más brillante; que la mezcla es pareja; que el ambiente da la vuelta sin corte; que el club queda muy por debajo de los golpes en el parlante de un celular, también con el ambiente al 100 %, que los pájaros cantan de vez en cuando y que el club se prepara de a pasos chicos, nunca en el momento de un toque; que cada golpe, pique, pared y red del partido suena, lo tuyo cerca y lo del rival lejos; que **escuchar no cambia el partido** (el mismo partido con y sin sonido); que nunca suenan más de 12 sonidos a la vez; y las opciones de sonido.
+  - **Dobles y alcance real** ([tests/doubles.test.ts](tests/doubles.test.ts)): de quién es cada pelota (su lado, el medio para la derecha que da al medio, al drive y al revés); que el compañero no corre ni pega una pelota tuya, que la cubre avisando antes si no llegás y que, en partidos enteros, nunca pega una pelota tuya sin avisar ni una que te dejó; que sube cuando subís y baja cuando te quedás atrás o corrés detrás de un globo; que la pareja se desliza con la pelota y se cierra en la red; que entre computadoras cada pareja está junta la mayor parte del punto; que la pareja rival le tira por arriba o al hueco a una pareja partida y a los pies a quien queda en tierra de nadie; que una pareja de la computadora se desordena más cuanto menos entereza tiene, que tu compañero nunca, y que el hueco de una pareja partida se castiga; que el alcance real es el mismo para todos, llega a 1,6 m con zancada y no a una pelota al ras del piso; el compañero con manos más firmes; y que un partido de dobles termina con los dos alcances y se repite igual con la misma semilla.
   - **La cámara y la pantalla limpia** ([tests/stage.test.ts](tests/stage.test.ts)): las reglas de la cámara que acompaña pieza por pieza y jugando partidos enteros contra los tres rivales; que "Fija", "Reducir movimiento" y el respaldo 2D no mueven nada; y qué hay en pantalla con cada nivel de ayudas, cuadro por cuadro.
-- `npm run smoke`: 112 verificaciones en un Chrome con emulación de celular, con toques reales. Hace la primera visita (en 3D, sin textos de ayuda, con el saludo del rival), juega un partido entero con dos dedos a la vez mientras mira que la pantalla siga limpia, que la cámara tenga siempre a la vista lo que importa y que el rival delate sus golpes, tenga sus manías y diga sus frases; pausa y saltea la espera entre puntos; pasa por el inicio; **abre el tutorial, juega la lección del globo con el pulgar de verdad** (mira el pulgar fantasma, el doble anillo de la marca, las tres pelotas, la tilde de "Hecha" y que no sume puntos) y comprueba la pista del globo en medio de un partido; mira que el sonido se prepare después del primer cuadro, que el partido suene, que el ambiente esté de fondo, que en pausa no suene nada y que nunca suenen más de 12 sonidos a la vez; pasa por las opciones (ayudas, cámara y sonido incluidos); **le quita el contexto gráfico a la página en medio del juego** y mira que siga en 2D y que vuelva al 3D; juega con una mano, la cámara fija y las ayudas completas; cierra el juego a mitad de un partido y lo retoma; prueba un dispositivo sin WebGL2; emula un notch; prueba mouse y teclado en tamaño de escritorio; abre el build desde `file://`; y revisa que no se pida nada de afuera y que la cancha baje en AVIF y el personaje comprimido. Guarda capturas de cada etapa en `.smoke/`.
+- `npm run smoke`: 124 verificaciones en un Chrome con emulación de celular, con toques reales. Hace la primera visita (en 3D, sin textos de ayuda, con el saludo del rival), juega un partido entero con dos dedos a la vez mientras mira que la pantalla siga limpia, que la cámara tenga siempre a la vista lo que importa y que el rival delate sus golpes, tenga sus manías y diga sus frases; pausa y saltea la espera entre puntos; pasa por el inicio; **abre el tutorial, juega la lección del globo con el pulgar de verdad** (mira el pulgar fantasma, el doble anillo de la marca, las tres pelotas, la tilde de "Hecha" y que no sume puntos) y comprueba la pista del globo en medio de un partido; mira que el sonido se prepare después del primer cuadro, que el partido suene, que el ambiente esté de fondo, que en pausa no suene nada y que nunca suenen más de 12 sonidos a la vez; pasa por las opciones (ayudas, cámara y sonido incluidos); **le quita el contexto gráfico a la página en medio del juego** y mira que siga en 2D y que vuelva al 3D; juega con una mano, la cámara fija y las ayudas completas; cierra el juego a mitad de un partido y lo retoma; prueba un dispositivo sin WebGL2; emula un notch; **juega dobles con `?dobles&alcance=real`** (el marcador de las dos parejas, cada personaje en su lugar, que vos y tu compañero peguen, que el compañero avise con el cuerpo, los cuatro y la pelota siempre en pantalla, nadie pegándole a más de 1,6 m ni al ras del piso, y la sección Experimental de Opciones); prueba mouse y teclado en tamaño de escritorio; abre el build desde `file://`; y revisa que no se pida nada de afuera y que la cancha baje en AVIF y el personaje comprimido. Guarda capturas de cada etapa en `.smoke/`.
 
 Los dedos de la prueba los maneja un programa que lee el estado del partido. Sirve para saber que los controles funcionan de punta a punta; no para saber cómo se sienten. Para mirar la animación cuadro por cuadro, `Game.advance(dt)` avanza el partido un cuadro con el bucle detenido.
 
@@ -721,6 +751,7 @@ Los dedos de la prueba los maneja un programa que lee el estado del partido. Sir
 - **Animación**: no se usan las caras (parpadeo y expresiones) ni los clips de arranque y de frenada. Antes del saque, vista desde atrás, la pelota en la mano libre queda tapada por el cuerpo del jugador cercano.
 - **Tutorial**: la lección "Leer el gesto" enseña solo el gesto de Beto (señalar el lado). Con teclado no hay pulgar fantasma que mostrar: queda la media línea de texto. No hay lección de saque ni de contrapared.
 - **Límites de la cinemática inversa.** El paso hacia la pelota llega a 0,9 m y el brazo a 0,5 m; las pelotas tomadas más lejos y los golpes tardíos no llegan. El brazo lleva la pala pero no la gira, y el tronco no rota hacia la pelota.
+- **El cuerpo se desliza hacia la pelota** (el «imán») una mediana de 67 a 76 cm en el contacto, con el alcance de hoy y con el real por igual (informe `reach` de `npm run sim`). La causa no es el alcance: el clip de derecha toca la pelota 60 cm adelante del cuerpo y la simulación, 20 cm. Faltan una zancada con el pie plantado en lugar de mover el cuerpo entero, alinear el punto de contacto de la simulación con el de los clips y una flexión más profunda para las pelotas bajas (ver [docs/dobles.md](docs/dobles.md)).
 - **Zurdos.** El modelo es diestro. Todo el elenco de hoy lo es; un personaje zurdo necesita el cuerpo espejado.
 - **Si el 3D anda lento, no se pasa solo a 2D.** El respaldo entra cuando no hay WebGL2 o se pierde el contexto. En un equipo con WebGL2 por software, hoy solo baja la resolución.
 - **La cancha en AVIF se recodifica desde el WebP** de la prueba de estilo. Exportarla directo desde los originales daría un poco más de calidad por el mismo peso.
@@ -737,6 +768,6 @@ El resto:
 - No hay botón para exportar o importar los datos guardados, ni pantalla de privacidad. No se envía nada a ningún lado.
 - El saque no tiene timing: entra casi siempre. Las faltas existen (hay segundo saque y doble falta), pero son raras.
 - El globito del rival y el cartel del punto pueden pisarse cuando el rival está cerca de la red.
-- Dobles funciona en la simulación y la cámara ya encuadra a los compañeros, pero falta la interfaz para jugarlo.
+- Dobles se juega como experimento (`?dobles`). Falta lo que propone [docs/dobles.md](docs/dobles.md): las lecciones de dobles, elegir compañero en el inicio, guardar el partido, las frases de pareja y decidir si pasa a ser la partida rápida.
 - La red no tiene postes con hueco ni puertas, y la pelota no choca con los jugadores.
 - `npm audit` marca una vulnerabilidad de severidad alta en `picomatch`, que llega por Vite y Vitest. Son herramientas de desarrollo: no entra en lo que se publica.

@@ -1,3 +1,4 @@
+import type { CallKind } from '../../sim/pair';
 import type { MannerismClip, TellPose } from '../../characters/types';
 import { clamp, lerp } from '../../core/math';
 import type { ScenePlayer } from '../scene';
@@ -186,6 +187,30 @@ function setTell(pose: TellPose, kind: 'drive' | 'lob' | 'drop', aimX: number, t
   }
 }
 
+/** Doubles: what a player tells its partner, with the free arm (see the 3D one in the animator). */
+function setCall(kind: CallKind, t: number, towardX: number): void {
+  overlay.weight = tellWeight(t);
+  const beat = Math.sin(t * 14);
+  const side = clamp(towardX / 2.4, -1, 1);
+  switch (kind) {
+    case 'mine':
+      freeHand(0.12, 2.05 + beat * 0.03);
+      break;
+    case 'yours':
+      freeHand(side * 0.62, 1.32, true);
+      break;
+    case 'switch':
+      freeHand(side * (0.4 + 0.1 * (beat + 1)), 1.55, true);
+      break;
+    case 'up':
+      freeHand(0.14, 1.5 + beat * 0.12);
+      break;
+    case 'back':
+      freeHand(0.3, 1.78);
+      break;
+  }
+}
+
 function setAct(clip: MannerismClip, t: number, duration: number): void {
   // In and out in a blink, so it can be cut at any moment without a jump.
   overlay.weight = clamp(Math.min(t, duration - t) / 0.12, 0, 1);
@@ -299,7 +324,9 @@ export function drawFigure(
   resetOverlay();
   const tell = player.tell;
   const act = player.act;
+  const call = player.call;
   if (tell?.pose && player.anim === 'swing' && player.animPhase <= 0) setTell(tell.pose, tell.kind, tell.aimX, tell.t);
+  else if (call && !(player.contactIn < 0.3 && player.contactIn > -0.2)) setCall(call.kind, call.t, call.towardX);
   else if (act && resting) setAct(act.clip, act.t, act.duration);
   const w = overlay.weight;
 

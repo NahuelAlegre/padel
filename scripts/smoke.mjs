@@ -761,15 +761,21 @@ async function main() {
     await phone.evaluate(`(() => { const g = window.padel; g.settings.aids = 'minimal'; g.settings.camera = 'follow'; g.applySettings(); })()`);
     console.log('\n        timing: ', tally(mine, 'quality'), '  golpes:', tally(mine, 'kind'));
 
-    // A slow drag is only movement: letting go must not hit.
+    // A slow drag is only movement: letting go must not hit. It starts with the player standing (one
+    // still running after the last ball takes a moment to turn round) and it lasts the same time of
+    // play whatever the load of the machine.
     await phone.touchReset();
+    for (const deadline = Date.now() + 1500; Date.now() < deadline; await sleep(50)) {
+      const speed = await phone.evaluate(`(() => { const m = window.padel.match, me = m.players.find((p) => p.isHuman) ?? m.players[0]; return Math.hypot(me.vx, me.vy); })()`);
+      if (speed < 0.3) break;
+    }
     await watchEvents();
     const before = await look();
     await phone.touchDown(1, WIDTH / 2, HEIGHT * 0.86);
     await sleep(160);
     await phone.touchMove(1, WIDTH / 2 + 40, HEIGHT * 0.86);
-    await sleep(420);
-    const during = await look();
+    let during = await look();
+    for (const deadline = Date.now() + 3000; Date.now() < deadline && during.time - before.time < 0.58; await sleep(40)) during = await look();
     await sleep(120);
     await phone.touchUp(1);
     await sleep(200);
@@ -895,7 +901,10 @@ async function main() {
       maxMs: 150000,
       until: async () => {
         const list = await phone.evaluate('window.__pairs');
-        return list.filter((e) => e.type === 'point').length >= 3 && four.calls.size > 0;
+        const points = list.filter((e) => e.type === 'point').length;
+        // Points can be short: play on until both of the pair have hit a ball (or plenty of points went by).
+        const both = ['human', 'mate'].every((who) => list.some((e) => e.type === 'hit' && e.kind !== 'serve' && e.team === 0 && e.human === (who === 'human')));
+        return points >= 3 && four.calls.size > 0 && (both || points >= 10);
       },
       watch: async () => {
         const v = await phone.evaluate(`(() => {

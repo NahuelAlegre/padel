@@ -42,17 +42,22 @@ export interface ShotIntent {
   tension?: number;
   /** What a computer player's swing was like, if anything made it harder than the ball itself (see `SwingWhy`). */
   why?: SwingWhy;
+  /**
+   * A computer player whose body gets there after the ball is gone: the
+   * swing comes, at the last moment, and misses. Left out, it gets there.
+   */
+  late?: boolean;
 }
 
 /**
  * Why a computer player's swing was not an ordinary one. It is what makes a
- * mistake readable: the body got there late, it only blocked a ball at its
- * body, or it went for too much with a ball that did not allow it.
- *   hurried  it got there with no time to set up, and swung late
+ * mistake readable, and what the other side did to bring it about:
+ *   forced   a demanding ball: low at the net, deep in a corner, fast,
+ *            out of its place, a change of pace or a surprise
  *   reflex   the ball came at it before it had read it: a block
- *   gamble   a difficult ball, and it went for the winner anyway
+ *   gamble   a demanding ball, and it went for the winner anyway
  */
-export type SwingWhy = 'hurried' | 'reflex' | 'gamble';
+export type SwingWhy = 'forced' | 'reflex' | 'gamble';
 
 export function createShotIntent(aim = 0, depth = 0.6, lob = false, power = 1): ShotIntent {
   return { aim, depth, lob, power };
@@ -82,10 +87,16 @@ export interface PlayerIntent {
    * partner's. The match takes it only while there is time to say so.
    */
   claim: boolean;
+  /**
+   * When it means to meet the ball it is waiting for, if that is later than
+   * the contact it planned (a body that gets there late): what its windup
+   * shows. -1 leaves it to the plan.
+   */
+  meetAt: number;
 }
 
 export function createIntent(): PlayerIntent {
-  return { hasTarget: false, targetX: 0, targetY: 0, moveX: 0, moveY: 0, swing: null, cue: null, home: null, claim: false };
+  return { hasTarget: false, targetX: 0, targetY: 0, moveX: 0, moveY: 0, swing: null, cue: null, home: null, claim: false, meetAt: -1 };
 }
 
 export function resetIntent(intent: PlayerIntent): void {
@@ -96,4 +107,5 @@ export function resetIntent(intent: PlayerIntent): void {
   intent.cue = null;
   intent.home = null;
   intent.claim = false;
+  intent.meetAt = -1;
 }

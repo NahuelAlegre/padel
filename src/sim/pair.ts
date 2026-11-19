@@ -363,11 +363,12 @@ const COVER_LATER = 0.35;
  *     it would have been the watcher's from the start; or if the person is
  *     not on its way to it. Until then the person may yet go. A passive one
  *     covers only what the person is not on its way to.
- * Never a ball the person is about to play first.
+ * Never a ball the person is about to play first, and a person is not
+ * judged before it has had `PERSON_GOES` seconds to start going.
  * `mine` is the watcher's run to the ball from where it is, `run` the
  * owner's best run, and `near` the contact the owner can make from where it
  * stands (for a person: null when the ball does not pass within its reach).
- * `speed` and `reach` are the owner's.
+ * `speed` and `reach` are the owner's; `elapsed` is how long ago the ball was struck.
  */
 export function shouldCover(
   watcher: Player,
@@ -378,6 +379,7 @@ export function shouldCover(
   now: number,
   speed: number,
   reach: number,
+  elapsed = Infinity,
 ): boolean {
   if (!mine || !mine.reachable || mine.slack < COVER_SLACK) return false;
   if (!run || !run.reachable) return true;
@@ -387,8 +389,12 @@ export function shouldCover(
   if (mine.t - now > COVER_COMMIT) return false;
   // It passes within the person's reach about as soon: the person's. A passive one leaves it to the person anyway.
   if (near && (watcher.attitude === 'passive' || near.t <= mine.t + COVER_LATER)) return false;
+  if (elapsed < PERSON_GOES) return false;
   return !onItsWay(owner, mine, now, speed, reach);
 }
+
+/** A person is given this long (seconds) after the shot to start going for a ball before its partner judges it is not going. */
+const PERSON_GOES = 0.4;
 
 /**
  * A ball of the person's that has come to be at `watcher`: it passes within

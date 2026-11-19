@@ -21,7 +21,7 @@ export const SIM_DT = 1 / SIM_HZ;
  * (physics, rules, shot maths, AI). Recorded matches carry the version they
  * were played with, so an old recording is replayed right or cleanly refused.
  */
-export const PHYSICS_VERSION = 4;
+export const PHYSICS_VERSION = 5;
 
 export interface SideSegment {
   /** Distance from the back wall where this segment ends. */

@@ -2,9 +2,10 @@ import { writeFileSync } from 'node:fs';
 import { describe, it } from 'vitest';
 import type { GameConfig, RivalId } from '../../src/config';
 import { Match, type PlayerEntry } from '../../src/sim/match';
-import { closestPass, DISORDER } from '../../src/sim/pair';
+import { attitudeFrom, ATTITUDES, closestPass, DISORDER, type Attitude } from '../../src/sim/pair';
 import type { Player } from '../../src/sim/player';
-import { aiEntry, humanEntry, partnerEntry, SKILLS, testConfig, withTactics, type SkillName } from '../helpers';
+import { humanEntry, ownAttitude, pairEntry, partnerEntry, SKILLS, testConfig, withTactics, type SkillName } from '../helpers';
+import { addTotals, emptyTotals, ERROR_NAME, PairProbe, type ErrorCause, type ProbeTotals } from '../probe';
 
 /**
  * Doubles report: `npm run sim` (or `npx vitest run --config vitest.sim.config.ts doubles`).
@@ -19,8 +20,14 @@ import { aiEntry, humanEntry, partnerEntry, SKILLS, testConfig, withTactics, typ
  *   - how much playing positionally pays, with the same hands: a person who
  *     plays its side of the pair, goes up and down with its partner and plays
  *     the ball where the other pair is not, against one that chases every
- *     ball it can get to and stays at the back;
- *   - how long the points are.
+ *     ball it can get to and stays at the back; and how much with each
+ *     attitude of the partner (docs/ia.md);
+ *   - how long the points are;
+ *   - whether the computer players look like people (see tests/probe.ts):
+ *     how long they take to go for a ball, the balls that go right by them
+ *     that nobody even tries, the balls the partner takes from the person
+ *     («¡mía!») and how they come out, and why the points that end in a
+ *     mistake end in one.
  *
  * Nothing is asserted. What falls outside a target is printed as a warning.
  *
@@ -28,6 +35,9 @@ import { aiEntry, humanEntry, partnerEntry, SKILLS, testConfig, withTactics, typ
  *   SIM_JSON=path    also writes the numbers to a file
  *   SIM_REACH=real   everybody with the reach of a real person (see `realReach` in src/config.ts)
  *   SIM_SKILLS=average  only some hands
+ *   SIM_SIDE=reves   the person plays the left (the default is the right, drive)
+ *   SIM_ATTITUDE=agresiva  the partner's attitude (its own one by default)
+ *   SIM_ATTITUDES=no skips the table of attitudes
  */
 const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env;
 const MATCHES = Number(env?.SIM_MATCHES ?? 30);
@@ -37,6 +47,10 @@ const SKILL_LIST = (env?.SIM_SKILLS ?? 'beginner,average,expert').split(',') as 
 const LINEUP = (env?.SIM_LINEUP ?? 'beto,romina,chela').split(',') as [RivalId, RivalId, RivalId];
 /** The side the person plays: drive (right, the default) or revés (left, with the middle on its forehand). */
 const REVES = env?.SIM_SIDE === 'reves';
+/** The partner's attitude. Left out, its own. */
+const ATTITUDE = attitudeFrom(env?.SIM_ATTITUDE) ?? ownAttitude(LINEUP[0]);
+const ATTITUDE_TABLE = env?.SIM_ATTITUDES !== 'no';
+const ATTITUDE_NAME: Record<Attitude, string> = { aggressive: 'agresiva', balanced: 'equilibrada', passive: 'pasiva' };
 
 /** Closer to the net than this, a player is at the net; further than `BACK`, at the back; in between, half way. */
 const NET = 5;
@@ -118,6 +132,8 @@ interface Stats {
   winningShot: Record<string, number>;
   missedShot: Record<string, number>;
   stalled: number;
+  /** What the probe counted: reactions, balls nobody tried, steals, why the mistakes (see tests/probe.ts). */
+  human: ProbeTotals;
 }
 
 type Setup = (config: GameConfig, seed: number) => [PlayerEntry[], PlayerEntry[]];
@@ -151,6 +167,7 @@ function play(title: string, setup: Setup): Stats {
     winningShot: {},
     missedShot: {},
     stalled: 0,
+    human: emptyTotals(),
   };
 
   for (let i = 0; i < MATCHES; i++) {
@@ -165,6 +182,7 @@ function play(title: string, setup: Setup): Stats {
         { name: 'B', players: far },
       ],
     });
+    const probe = new PairProbe(match);
     // The balls struck at each pair in this point: its shape then, and how many touches it had made before.
     let facing: Array<{ team: 0 | 1; shape: Shape; touches: number }> = [];
     /** The near pair's shots in this point: how the far pair stood, and the far pair's touches before it. */
@@ -182,6 +200,7 @@ function play(title: string, setup: Setup): Stats {
     let lastMid = 0;
     while (match.phase !== 'matchOver' && match.tick < 3600 * 120) {
       match.step();
+      probe.step();
       if (match.phase === 'rally' && match.rally.live) {
         for (const team of [0, 1] as const) stats.shapeTime[team][shapeOf(match.teams[team])] += 1 / 120;
         const net = [bothAt(match.teams[0], 'net'), bothAt(match.teams[1], 'net')];
@@ -279,6 +298,7 @@ function play(title: string, setup: Setup): Stats {
       match.events.length = 0;
     }
     if (match.phase !== 'matchOver') stats.stalled++;
+    addTotals(stats.human, probe.totals);
   }
   stats.lengths.sort((a, b) => a - b);
   stats.seconds.sort((a, b) => a - b);
@@ -325,6 +345,7 @@ function indicators(stats: Stats): Record<string, number> {
     holeCost: lostWhen('split') - lostWhen('together'),
     halfwayCost: lostWhen('halfway') - lostWhen('together'),
     netHits: ratio(sum(stats.hitsAtNet), sum(stats.hits)),
+    netHitsA: ratio(stats.hitsAtNet[0], stats.hits[0]),
     errors: ratio(stats.byError, points),
     untouchedMiddleA: ratio(stats.untouchedMiddle[0], stats.pointsWon[1]),
     rivalLoose: ratio(stats.rivalLoose, stats.hits[0]),
@@ -337,7 +358,35 @@ function indicators(stats: Stats): Record<string, number> {
     formedNotBack: ratio(stats.struck.formed.notBack, stats.struck.formed.n),
     formedNow: ratio(stats.struck.formed.now, stats.struck.formed.n),
     doubtWin: ratio(stats.doubtsWon, stats.rivalDoubts),
+    ...humanIndicators(stats),
   };
+}
+
+/** The numbers of the probe (tests/probe.ts), per match where that makes them easier to picture. */
+function humanIndicators(stats: Stats): Record<string, number> {
+  const human = stats.human;
+  const matches = stats.matches || 1;
+  // The steals of the near pair: the person's partner.
+  const steals = Object.values(human.steals[0]).reduce((n, outcome) => n + outcome.good + outcome.error + outcome.missed, 0);
+  const good = Object.values(human.steals[0]).reduce((n, outcome) => n + outcome.good, 0);
+  const out: Record<string, number> = {
+    untouchedPartner: human.untouchedPartner,
+    untouchedPartnerShare: ratio(human.untouchedPartner, human.byPartner),
+    untouchedPerson: human.untouchedPerson,
+    untouchedRivals: human.untouchedRivals,
+    untouchedRivalsShare: ratio(human.untouchedRivals, human.byRivals),
+    reactionPartner: mean(human.reactionPartner),
+    reactionRivals: mean(human.reactionRivals),
+    reflexPartnerPerMatch: human.reflexPartner / matches,
+    stealsPerMatch: steals / matches,
+    stealsGood: ratio(good, steals),
+  };
+  for (const side of [0, 1] as const) {
+    const errors = human.errors[side];
+    const total = sum(Object.values(errors));
+    for (const cause of Object.keys(errors) as ErrorCause[]) out[`error${side ? 'B' : 'A'}_${cause}`] = ratio(errors[cause], total);
+  }
+  return out;
 }
 
 function describeStats(stats: Stats): string {
@@ -369,7 +418,48 @@ function describeStats(stats: Stats): string {
       ` · con el hueco y sin castigarlo: gana ${pct(stats.struck.spared.won, stats.struck.spared.n)} (en el acto ${pct(stats.struck.spared.now, stats.struck.spared.n)})` +
       ` · contra B ordenada: gana ${pct(stats.struck.formed.won, stats.struck.formed.n)} (en el acto ${pct(stats.struck.formed.now, stats.struck.formed.n)}, no la devuelven ${pct(stats.struck.formed.notBack, stats.struck.formed.n)})`,
     `golpe que gana  ${top(stats.winningShot)}   golpe errado ${top(stats.missedShot)}`,
+    ...describeHuman(stats),
   ].join('\n');
+}
+
+const seconds = (value: number): string => `${value.toFixed(2)} s`;
+
+/** What the probe saw, in words (see tests/probe.ts). */
+function describeHuman(stats: Stats): string[] {
+  const human = stats.human;
+  const matches = stats.matches || 1;
+  const reaction = (list: number[]): string => {
+    const sorted = [...list].sort((a, b) => a - b);
+    return list.length ? `${seconds(mean(list))} (p10 ${seconds(quantile(sorted, 0.1))}, p90 ${seconds(quantile(sorted, 0.9))})` : '-';
+  };
+  const lines = [
+    `reacción        A (compu): ${reaction(human.reactionPartner)}, bloqueos al cuerpo ${human.reflexPartner}   B: ${reaction(human.reactionRivals)}, bloqueos al cuerpo ${human.reflexRivals}`,
+    `le pasa al lado y nadie la intenta   A, la compu: ${human.untouchedPartner} de ${human.byPartner} (${(human.untouchedPartner / matches).toFixed(2)} por partido)` +
+      `   A, la persona: ${human.untouchedPerson} de ${human.byPerson}   B: ${human.untouchedRivals} de ${human.byRivals}`,
+  ];
+  const why = Object.entries(human.untouchedWhy).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  if (why.length) lines.push(`                de quién era la que nadie intentó: ${why.map(([key, n]) => `${n}× ${key}`).join(' · ')}`);
+  for (const side of [0, 1] as const) {
+    const steals = Object.entries(human.steals[side]) as Array<[Attitude, { good: number; error: number; missed: number }]>;
+    for (const [attitude, outcome] of steals) {
+      const n = outcome.good + outcome.error + outcome.missed;
+      lines.push(
+        `«¡mía!» ${side ? 'B' : 'A'} (${ATTITUDE_NAME[attitude]})   ${(n / matches).toFixed(1)} por partido, salen bien ${pct(outcome.good, n)} (al error ${pct(outcome.error, n)}, no llega ${pct(outcome.missed, n)})`,
+      );
+    }
+  }
+  const errors = (side: 0 | 1): string => {
+    const counts = human.errors[side];
+    const total = sum(Object.values(counts));
+    return (Object.keys(counts) as ErrorCause[])
+      .filter((cause) => counts[cause] > 0)
+      .sort((a, b) => counts[b] - counts[a])
+      .map((cause) => `${ERROR_NAME[cause]} ${pct(counts[cause], total)}`)
+      .join(', ');
+  };
+  lines.push(`por qué erran    A: ${errors(0) || '-'}`, `                 B: ${errors(1) || '-'}`);
+  lines.push(`no llegó (le pegó al aire, la compu)   A ${(human.lateMisses[0] / matches).toFixed(1)} por partido   B ${(human.lateMisses[1] / matches).toFixed(1)}`);
+  return lines;
 }
 
 interface Target {
@@ -413,14 +503,14 @@ describe('dobles', () => {
   it('cuatro IA medias: cómo se paran y quién gana desde dónde', () => {
     const out: string[] = [];
     const mirror = play('IA media y media contra IA media y media', (config, seed) => [
-      [aiEntry(config, 'medium', seed), aiEntry(config, 'medium', seed + 1)],
-      [aiEntry(config, 'medium', seed + 2), aiEntry(config, 'medium', seed + 3)],
+      [pairEntry(config, 'medium', seed), pairEntry(config, 'medium', seed + 1)],
+      [pairEntry(config, 'medium', seed + 2), pairEntry(config, 'medium', seed + 3)],
     ]);
     keep('medium x4', mirror);
     out.push(describeStats(mirror), '\nMetas, cuatro IA medias:', ...gates(mirror));
-    const cast = play('Beto y Chela contra Romina y Chela (cuatro IA)', (config, seed) => [
+    const cast = play('Beto y Chela contra Romina y Chela (cuatro IA, cada una con su actitud)', (config, seed) => [
       [partnerEntry(config, 'beto', seed), partnerEntry(config, 'chela', seed + 1)],
-      [aiEntry(config, 'romina', seed + 2), aiEntry(config, 'chela', seed + 3)],
+      [pairEntry(config, 'romina', seed + 2), pairEntry(config, 'chela', seed + 3)],
     ]);
     keep('beto+chela vs romina+chela', cast);
     out.push(describeStats(cast));
@@ -431,11 +521,11 @@ describe('dobles', () => {
     const out: string[] = [];
     const [mate, rivalA, rivalB] = LINEUP;
     out.push(`
-Vos (${REVES ? 'revés' : 'drive'}) y ${mate} contra ${rivalA} y ${rivalB}`);
+Vos (${REVES ? 'revés' : 'drive'}) y ${mate} (${ATTITUDE_NAME[ATTITUDE]}) contra ${rivalA} y ${rivalB}, cada uno con su actitud`);
     const person = (skill: SkillName, tactics: number): Setup => (config, seed) => {
       const me = humanEntry(seed, withTactics(SKILLS[skill], tactics));
-      const partner = partnerEntry(config, mate, seed + 1);
-      return [REVES ? [partner, me] : [me, partner], [aiEntry(config, rivalA, seed + 2), aiEntry(config, rivalB, seed + 3)]];
+      const partner = partnerEntry(config, mate, seed + 1, 'IA', ATTITUDE);
+      return [REVES ? [partner, me] : [me, partner], [pairEntry(config, rivalA, seed + 2), pairEntry(config, rivalB, seed + 3)]];
     };
     const cells: Array<{ skill: SkillName; plain: Stats; thinking: Stats }> = [];
     for (const skill of SKILL_LIST) {
@@ -456,6 +546,35 @@ Vos (${REVES ? 'revés' : 'drive'}) y ${mate} contra ${rivalA} y ${rivalB}`);
       out.push(
         `  ${skill.padEnd(9)} puntos ${asPct(a.pointsA!)} → ${asPct(b.pointsA!)}  (${gap >= 0 ? '+' : ''}${gap} pp${gap < 15 ? ', FUERA: la meta es +15' : ''})   partidos ${a.winsA}/${MATCHES} → ${b.winsA}/${MATCHES}   seg/punto ${a.seconds!.toFixed(1)} → ${b.seconds!.toFixed(1)}   juntos ${asPct(a.togetherA!)} → ${asPct(b.togetherA!)}` +
           `   castigando el hueco gana ${asPct(b.punishedWin!)} (sin castigarlo ${asPct(b.sparedWin!)}, B ordenada ${asPct(b.formedWin!)}; el velocista castigando ${asPct(a.punishedWin!)})`,
+      );
+    }
+    console.log(out.join('\n'));
+  });
+
+  it('cada actitud del compañero: ¿qué paga jugar posicional, y cómo se siente?', () => {
+    if (!ATTITUDE_TABLE) return;
+    const [mate, rivalA, rivalB] = LINEUP;
+    const out: string[] = [
+      `
+Actitudes de ${mate}, persona promedio al ${REVES ? 'revés' : 'drive'}, contra ${rivalA} y ${rivalB} (cada uno con su actitud):`,
+    ];
+    for (const attitude of ATTITUDES) {
+      const cell = (tactics: number): Stats =>
+        play(`persona average ${tactics ? 'posicional' : 'sin táctica'} y ${mate} ${ATTITUDE_NAME[attitude]}`, (config, seed) => {
+          const me = humanEntry(seed, withTactics(SKILLS.average, tactics));
+          const partner = partnerEntry(config, mate, seed + 1, 'IA', attitude);
+          return [REVES ? [partner, me] : [me, partner], [pairEntry(config, rivalA, seed + 2), pairEntry(config, rivalB, seed + 3)]];
+        });
+      const plain = cell(0);
+      const thinking = cell(1);
+      keep(`${attitude} sin táctica`, plain);
+      keep(`${attitude} posicional`, thinking);
+      const a = indicators(plain);
+      const b = indicators(thinking);
+      const gap = Math.round((b.pointsA! - a.pointsA!) * 100);
+      out.push(
+        `  ${ATTITUDE_NAME[attitude].padEnd(11)} puntos ${asPct(a.pointsA!)} → ${asPct(b.pointsA!)} (${gap >= 0 ? '+' : ''}${gap} pp)   seg/punto ${b.seconds!.toFixed(1)}` +
+          `   «¡mía!» ${b.stealsPerMatch!.toFixed(1)} por partido (salen bien ${asPct(b.stealsGood!)})   la compu deja pasar ${b.untouchedPartner} de las suyas   A desde la red ${asPct(b.netHitsA!)}   juntos ${asPct(b.togetherA!)}`,
       );
     }
     console.log(out.join('\n'));

@@ -206,6 +206,14 @@ export const TEXT = {
       reves: 'A la izquierda. Las del medio son tuyas: te quedan de derecha.',
     },
     partner: 'Compañero',
+    attitude: 'Actitud',
+    attitudes: { aggressive: 'Agresiva', balanced: 'Equilibrada', passive: 'Pasiva' },
+    attitudeHint: {
+      aggressive: 'Sube mucho, remata todo lo alto y a veces te pide la tuya, siempre avisando: «¡mía!».',
+      balanced: 'Juega su lado y el medio como manda la regla, y te cubre lo que no llegás.',
+      passive: 'Se queda atrás, juega lo suyo y te deja lo dudoso.',
+    },
+    attitudeOwn: (name: string): string => `Así juega ${name} si no le pedís nada.`,
   },
 
   stats: {

@@ -937,8 +937,10 @@ async function main() {
     const experimental = await phone.evaluate(`(() => ['doubles', 'reach'].map((key) => !!document.querySelector('[data-key="' + key + '"]')))()`);
     check('en Opciones hay una sección "Experimental" con dobles y alcance', experimental.every(Boolean));
     await tapButton('Sí', 'doubles');
-    const sides = await phone.evaluate(`(() => ['side', 'partner'].map((key) => !!document.querySelector('[data-key="' + key + '"]')))()`);
-    check('con dobles prendido aparecen tu lado y tu compañero', sides.every(Boolean));
+    const sides = await phone.evaluate(`(() => ['side', 'partner', 'attitude'].map((key) => !!document.querySelector('[data-key="' + key + '"]')))()`);
+    check('con dobles prendido aparecen tu lado, tu compañero y su actitud, dibujada', sides.every(Boolean));
+    const drawn = await phone.evaluate(`(() => document.querySelectorAll('[data-key="attitude"] button svg').length)()`);
+    check('las tres actitudes se eligen por su dibujo: una canchita con el compañero arriba, al lado o atrás', drawn === 3, `${drawn} dibujos`);
     await tapButton('No', 'doubles');
     await tapButton('Volver');
 

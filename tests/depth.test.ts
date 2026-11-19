@@ -457,8 +457,11 @@ describe('una red que se defiende', () => {
 
 describe('presión acumulada', () => {
   it('la tensión de cada uno sale de las pelotas difíciles que le tocan, y cada punto empieza de cero', () => {
+    // A match long enough for a few hundred balls.
+    const long = createConfig();
+    long.rules.format.gamesToWin = 6;
     const match = new Match({
-      config: createConfig(),
+      config: long,
       seed: 21,
       teams: [
         { name: 'A', players: [aiEntry(config, 'romina', 3)] },
@@ -470,7 +473,7 @@ describe('presión acumulada', () => {
     let hits = 0;
     let hard = 0;
     let top = 0;
-    for (let i = 0; i < 120 * 240 && match.phase !== 'matchOver'; i++) {
+    for (let i = 0; i < 120 * 480 && match.phase !== 'matchOver'; i++) {
       match.step();
       for (const event of match.events) {
         if (event.type === 'serveReady') {
@@ -716,7 +719,8 @@ describe('jugar con táctica paga', () => {
     let atNet = 0;
     let hits = 0;
     let held = 0;
-    for (let i = 0; i < 4; i++) {
+    // Enough matches for the difference to stand out of the luck of a few.
+    for (let i = 0; i < 8; i++) {
       const cfg = createConfig();
       const match = new Match({
         config: cfg,
@@ -749,7 +753,9 @@ describe('jugar con táctica paga', () => {
   it('con las mismas manos, quien sube a la red y elige el golpe le saca más puntos a Chela', () => {
     const plain = share(0);
     const thinking = share(1);
-    expect(thinking.points).toBeGreaterThan(plain.points + 0.08);
+    // Since Chela makes her own mistakes when she is rushed (docs/ia.md), part of what tactics won now
+    // comes to anybody: the gap is about 8 points over 30 matches, and over 8 it has to stand out.
+    expect(thinking.points).toBeGreaterThan(plain.points + 0.05);
     // And it is a different match: much more of it is played at the net, holding it against her lobs.
     expect(thinking.net).toBeGreaterThan(plain.net + 0.1);
     expect(thinking.held).toBeGreaterThan(5);

@@ -235,6 +235,7 @@ export class Director {
     context.ball.x = ball.x;
     context.ball.y = ball.y;
     context.ball.z = ball.z;
+    context.ball.vx = ball.vx;
     context.ball.vy = ball.vy;
     // A ball that is no longer in play is not worth a move of the camera.
     context.ball.visible = ball.visible && ball.live;

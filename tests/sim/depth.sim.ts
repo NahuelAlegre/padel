@@ -3,6 +3,7 @@ import { describe, it } from 'vitest';
 import type { GameConfig, RivalId } from '../../src/config';
 import { Match, type PlayerEntry } from '../../src/sim/match';
 import { aiEntry, humanEntry, SKILLS, testConfig, withTactics, type SkillName } from '../helpers';
+import { addTotals, emptyTotals, ERROR_NAME, PairProbe, type ErrorCause, type ProbeTotals } from '../probe';
 
 /**
  * Depth report: `npm run sim` (or `npx vitest run --config vitest.sim.config.ts depth`).
@@ -106,6 +107,8 @@ interface Stats {
   kinds: Record<string, number>;
   heated: number;
   stalled: number;
+  /** Why the points that ended in a mistake ended in one, by side (see tests/probe.ts). */
+  human: ProbeTotals;
 }
 
 type Setup = (config: GameConfig, seed: number) => [PlayerEntry[], PlayerEntry[]];
@@ -144,6 +147,7 @@ function play(title: string, setup: Setup): Stats {
     kinds: {},
     heated: 0,
     stalled: 0,
+    human: emptyTotals(),
   };
 
   for (let i = 0; i < MATCHES; i++) {
@@ -160,8 +164,10 @@ function play(title: string, setup: Setup): Stats {
     });
     let rally: Hit[] = [];
     let startedAt = 0;
+    const probe = new PairProbe(match);
     while (match.phase !== 'matchOver' && match.tick < 3600 * 120) {
       match.step();
+      probe.step();
       for (const event of match.events) {
         if (event.type === 'hit') {
           if (rally.length === 0) startedAt = match.time;
@@ -244,6 +250,7 @@ function play(title: string, setup: Setup): Stats {
       match.events.length = 0;
     }
     if (match.phase !== 'matchOver') stats.stalled++;
+    addTotals(stats.human, probe.totals);
   }
   stats.lengths.sort((a, b) => a - b);
   stats.seconds.sort((a, b) => a - b);
@@ -311,7 +318,16 @@ function describeStats(stats: Stats): string {
         .map(([key, entry]) => `${key} n=${entry.n} no devuelta ${pct(entry.notReturned, entry.n)}, gana el punto ${pct(entry.won, entry.n)}`)
         .join(' | '),
     `golpes          ${top(stats.kinds, 10)}`,
+    `por qué erran   A: ${errorCauses(stats, 0)}   B: ${errorCauses(stats, 1)}   no llegó (la compu): A ${(stats.human.lateMisses[0] / stats.matches).toFixed(1)}, B ${(stats.human.lateMisses[1] / stats.matches).toFixed(1)} por partido`,
   ].join('\n');
+}
+
+/** Why each side's mistakes happened, the most common first (see tests/probe.ts). */
+function errorCauses(stats: Stats, side: 0 | 1): string {
+  const counts = stats.human.errors[side];
+  const total = sum(Object.values(counts));
+  const causes = (Object.keys(counts) as ErrorCause[]).filter((cause) => counts[cause] > 0).sort((a, b) => counts[b] - counts[a]);
+  return causes.map((cause) => `${ERROR_NAME[cause]} ${pct(counts[cause], total)}`).join(', ') || '-';
 }
 
 interface Target {

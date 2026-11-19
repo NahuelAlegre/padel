@@ -1,6 +1,6 @@
 import { CAST } from '../characters/cast';
 import { CHARACTER_TEXT } from '../characters/lines.es';
-import { asPartner, toAILevel } from '../characters/style';
+import { asPartner, toAILevel, withAttitude } from '../characters/style';
 import {
   CONTROLS,
   FORMATS,
@@ -27,11 +27,12 @@ import { StageRenderer } from '../render/stage/renderer';
 import { VIEW } from '../render/view';
 import { Viewport } from '../render/viewport';
 import { Match, type PlayerEntry, type SimEvent } from '../sim/match';
+import { attitudeFrom, type Attitude } from '../sim/pair';
 import { SoundDirector } from '../audio/director';
 import { isGoldenPoint, pointLabel } from '../sim/score';
 import { Hud } from '../ui/hud';
 import { Screens, type ScreenInfo } from '../ui/screens';
-import { QUALITY_SCALE, RIVALS, type ReachName, type Settings, type SideName } from '../ui/settings';
+import { partnerAttitude, QUALITY_SCALE, RIVALS, type ReachName, type Settings, type SideName } from '../ui/settings';
 import { shotName, TEXT } from '../ui/text';
 import {
   newRivalRecord,
@@ -104,6 +105,8 @@ function today(): string {
  *   ?alcance=real      the reach of a real person, for everybody (?alcance=actual, today's)
  *   ?lado=reves        in doubles, play the left side (?lado=drive, the right one)
  *   ?companero=chela   in doubles, who plays with you (beto, romina or chela)
+ *   ?actitud=agresiva  in doubles, how your partner plays with you (agresiva, equilibrada or pasiva)
+ *   ?rivales=pasiva    in doubles, the same for both of the other pair (each one's own, otherwise)
  * They win over the options while the page is open and are never saved.
  */
 interface Trial {
@@ -111,6 +114,8 @@ interface Trial {
   reach?: ReachName;
   side?: SideName;
   partner?: RivalId;
+  attitude?: Attitude;
+  rivals?: Attitude;
 }
 
 function readTrial(launch: Launch): Trial {
@@ -124,6 +129,10 @@ function readTrial(launch: Launch): Trial {
   else if (side === 'drive') trial.side = 'drive';
   const partner = launch.value('companero') ?? launch.value('compañero');
   if (partner && (RIVALS as readonly string[]).includes(partner)) trial.partner = partner as RivalId;
+  const attitude = attitudeFrom(launch.value('actitud'));
+  if (attitude) trial.attitude = attitude;
+  const rivals = attitudeFrom(launch.value('rivales'));
+  if (rivals) trial.rivals = rivals;
   return trial;
 }
 
@@ -615,13 +624,15 @@ export class Game {
     this.lineup = [];
 
     const seed = (Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0;
-    const ai = (id: RivalId, offset: number, firstMatch = false, partner = false): PlayerEntry => {
+    const ai = (id: RivalId, offset: number, firstMatch = false, partner = false, attitude?: Attitude): PlayerEntry => {
       const who = CAST[id];
       let level = config.rivals[id];
       // A coach feeds more balls to somebody he has just met.
       if (firstMatch) level.feed = toAILevel(who, true).feed;
       // On your side, the same character plays to win and with steadier hands.
       if (partner) level = asPartner(level);
+      // In doubles, how it shares the court.
+      if (attitude) level = withAttitude(level, attitude);
       const controller = new AIController(level, new Rng(seed + offset));
       this.ais.push(controller);
       return {
@@ -636,6 +647,8 @@ export class Game {
         wallBias: level.wallBias,
         holdNet: level.holdNet,
         composure: level.composure,
+        reading: level.smart,
+        attitude,
         controller,
       };
     };
@@ -694,14 +707,16 @@ export class Game {
     mode: Exclude<PlayMode, 'tutorial'>,
     config: GameConfig,
     seed: number,
-    ai: (id: RivalId, offset: number, firstMatch?: boolean, partner?: boolean) => PlayerEntry,
+    ai: (id: RivalId, offset: number, firstMatch?: boolean, partner?: boolean, attitude?: Attitude) => PlayerEntry,
   ): Match {
     const partnerId = this.trial.partner ?? this.settings.partner;
     const [rivalA, rivalB] = RIVALS.filter((id) => id !== partnerId) as [RivalId, RivalId];
-    const mate = ai(partnerId, 3, false, true);
+    // Your partner plays with the attitude you asked it for; everybody else with its own.
+    const mate = ai(partnerId, 3, false, true, this.trial.attitude ?? partnerAttitude(this.settings, partnerId));
+    const rival = (id: RivalId, offset: number): PlayerEntry => ai(id, offset, false, false, this.trial.rivals ?? CAST[id].attitude);
     const reves = (this.trial.side ?? this.settings.side) === 'reves';
     const demo = mode === 'demo';
-    const me: PlayerEntry = demo ? { ...ai(this.rival, 4), name: TEXT.you } : this.humanEntry(config.player.realReach);
+    const me: PlayerEntry = demo ? { ...rival(this.rival, 4), name: TEXT.you } : this.humanEntry(config.player.realReach);
     const near = reves ? [mate, me] : [me, mate];
     this.lineup = reves ? [partnerId, null, rivalA, rivalB] : [null, partnerId, rivalA, rivalB];
     return new Match({
@@ -709,7 +724,7 @@ export class Game {
       seed,
       teams: [
         { name: TEXT.pair(TEXT.you, CAST[partnerId].name), players: near },
-        { name: TEXT.pair(CAST[rivalA].name, CAST[rivalB].name), players: [ai(rivalA, 1), ai(rivalB, 2)] },
+        { name: TEXT.pair(CAST[rivalA].name, CAST[rivalB].name), players: [rival(rivalA, 1), rival(rivalB, 2)] },
       ],
       record: this.platform.launch.flag('record'),
     });
@@ -754,6 +769,7 @@ export class Game {
         player.wallBias = level.wallBias;
         player.holdNet = level.holdNet;
         player.composure = level.composure;
+        player.reading = level.smart;
       }
     }
     if (match) for (const controller of this.ais) controller.level = level;

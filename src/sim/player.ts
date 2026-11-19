@@ -2,7 +2,7 @@ import type { GameConfig } from '../config';
 import { clamp } from '../core/math';
 import { teamDir } from './court';
 import type { InterceptPlan } from './intercept';
-import { startingLane, type Astray, type CallKind } from './pair';
+import { startingLane, type Astray, type Attitude, type CallKind } from './pair';
 import type { PlayerIntent, ShotIntent, ShotKind, TeamId } from './types';
 
 /**
@@ -66,12 +66,27 @@ export interface PlayerSetup {
   holdNet?: number;
   /** 0..1, how little a run of difficult balls gets to it. Left out, it is 0.5. */
   composure?: number;
+  /** Doubles: how it shares the court with its partner (see `Attitude`). Left out, balanced. */
+  attitude?: Attitude;
+  /**
+   * 0..1, how well it reads the other side: it sees coming the ball of
+   * somebody in trouble, or one a windup gave away (see `Match.setReads`).
+   * Left out, 0. A person reads with its own eyes.
+   */
+  reading?: number;
 }
 
 export interface Player extends PlayerSetup {
   wallBias: number;
   holdNet: number;
   composure: number;
+  attitude: Attitude;
+  reading: number;
+  /**
+   * Seconds it needs to read the ball that is coming: its reaction, shorter
+   * for a ball it saw coming and longer for one that took it by surprise.
+   */
+  read: number;
   /**
    * What the rally has done to it so far: it grows with every difficult ball
    * it has to play and fades with the comfortable ones. Zero at every serve.
@@ -135,6 +150,9 @@ export function createPlayer(id: number, team: TeamId, index: number, setup: Pla
     wallBias: setup.wallBias ?? 0,
     holdNet: setup.holdNet ?? 0,
     composure: setup.composure ?? 0.5,
+    attitude: setup.attitude ?? 'balanced',
+    reading: setup.reading ?? 0,
+    read: setup.reaction,
     strain: 0,
     pressure: 0,
     id,

@@ -1,8 +1,9 @@
-import { CHARACTER_IDS } from '../characters/cast';
+import { CAST, CHARACTER_IDS } from '../characters/cast';
 import type { RivalId } from '../config';
 import type { ControlScheme } from '../input/pointer';
 import type { AidLevel } from '../render/scene';
 import type { CameraName } from '../render/view';
+import { ATTITUDES, type Attitude } from '../sim/pair';
 
 export type QualityName = 'auto' | 'high' | 'medium' | 'low';
 /** How far a player gets to the ball: today's generous reach, or a real person's, the same for everybody. */
@@ -56,6 +57,17 @@ export interface Settings {
   side: SideName;
   /** Doubles: who plays with the person. The other two of the cast are the pair against it. */
   partner: RivalId;
+  /**
+   * Doubles: the attitude the person asked each partner for. Each one
+   * remembers its own; one nobody asked anything plays its own attitude
+   * (see `partnerAttitude`).
+   */
+  attitudes: Partial<Record<RivalId, Attitude>>;
+}
+
+/** How `partner` plays next to the person: what it was asked for, or its own attitude. */
+export function partnerAttitude(settings: Settings, partner: RivalId): Attitude {
+  return settings.attitudes[partner] ?? CAST[partner].attitude;
 }
 
 export const SPEEDS = [0.6, 0.8, 1] as const;
@@ -90,6 +102,7 @@ export function defaultSettings(reduceMotion: boolean): Settings {
     reach: 'generous',
     side: 'reves',
     partner: 'beto',
+    attitudes: {},
   };
 }
 
@@ -124,5 +137,17 @@ export function readSettings(saved: unknown, reduceMotion: boolean): Settings {
     reach: pick(data.reach, ['generous', 'real'] as const, base.reach),
     side: pick(data.side, ['drive', 'reves'] as const, base.side),
     partner: pick(data.partner, RIVALS, base.partner),
+    attitudes: readAttitudes(data.attitudes),
   };
+}
+
+/** The attitudes asked of each partner, keeping only the ones that still make sense. */
+function readAttitudes(saved: unknown): Partial<Record<RivalId, Attitude>> {
+  const out: Partial<Record<RivalId, Attitude>> = {};
+  if (typeof saved !== 'object' || saved === null) return out;
+  for (const id of RIVALS) {
+    const value = (saved as Record<string, unknown>)[id];
+    if (ATTITUDES.includes(value as Attitude)) out[id] = value as Attitude;
+  }
+  return out;
 }

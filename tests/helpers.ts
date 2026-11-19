@@ -1,12 +1,13 @@
 import { createConfig, type AILevel, type GameConfig, type RivalId } from '../src/config';
-import { asPartner } from '../src/characters/style';
+import { CAST } from '../src/characters/cast';
+import { asPartner, withAttitude } from '../src/characters/style';
 import { AIController } from '../src/control/ai';
 import { HumanController } from '../src/control/human';
 import { Rng } from '../src/core/rng';
 import { InputState } from '../src/input/state';
 import type { InterceptPlan } from '../src/sim/intercept';
 // Doubles: a person who plays positionally stands where the game's own pairs stand (see src/sim/pair.ts).
-import { LANE, LANE_NET, MIDDLE_BAND, SLIDE, SLIDE_MAX } from '../src/sim/pair';
+import { LANE, LANE_NET, MIDDLE_BAND, SLIDE, SLIDE_MAX, type Attitude } from '../src/sim/pair';
 import { Match, type Controller, type PlayerEntry, type SimEvent } from '../src/sim/match';
 import type { Player } from '../src/sim/player';
 import type { Trajectory } from '../src/sim/trajectory';
@@ -30,6 +31,7 @@ const plain = {
   wallScatter: 1,
   lobUnderPressure: false,
   tellLead: 0.35,
+  steal: 0,
 };
 
 /**
@@ -50,10 +52,21 @@ export function aiEntry(config: GameConfig, who: LevelName | RivalId, seed: numb
   return levelEntry(level, seed, name);
 }
 
-/** A computer player as somebody's partner, the way the game sets it up (see `asPartner`). */
-export function partnerEntry(config: GameConfig, who: LevelName | RivalId, seed: number, name = 'IA'): PlayerEntry {
+/** The attitude a player brings to a pair when nobody asks for another one: a character's own, balanced for a plain level. */
+export function ownAttitude(who: LevelName | RivalId): Attitude {
+  return who in LEVELS ? 'balanced' : CAST[who as RivalId].attitude;
+}
+
+/** A computer player of a pair, as the game sets the rival pair up: with its attitude (its own unless one is given). */
+export function pairEntry(config: GameConfig, who: LevelName | RivalId, seed: number, attitude = ownAttitude(who), name = 'IA'): PlayerEntry {
+  const level: AILevel = who in LEVELS ? LEVELS[who as LevelName] : config.rivals[who as RivalId];
+  return { ...levelEntry(withAttitude(level, attitude), seed, name), attitude };
+}
+
+/** A computer player as somebody's partner, the way the game sets it up (see `asPartner`), with its attitude. */
+export function partnerEntry(config: GameConfig, who: LevelName | RivalId, seed: number, name = 'IA', attitude = ownAttitude(who)): PlayerEntry {
   const base: AILevel = who in LEVELS ? LEVELS[who as LevelName] : config.rivals[who as RivalId];
-  return levelEntry(asPartner(base), seed, name);
+  return { ...levelEntry(withAttitude(asPartner(base), attitude), seed, name), attitude };
 }
 
 function levelEntry(level: AILevel, seed: number, name: string): PlayerEntry {
@@ -69,6 +82,7 @@ function levelEntry(level: AILevel, seed: number, name: string): PlayerEntry {
     wallBias: level.wallBias,
     holdNet: level.holdNet,
     composure: level.composure,
+    reading: level.smart,
     controller: new AIController(level, new Rng(seed)),
   };
 }

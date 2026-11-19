@@ -64,12 +64,13 @@ describe('dobles: cada pelota tiene dueño', () => {
     match.rest(places(), 2, true);
     feedTo(match, 3.4, -6.5);
     expect(match.assigned[0]).toBe(0);
-    expect(match.pairs[0].why).toBe('side');
+    // On its side, and close to whoever plays that side.
+    expect(['side', 'body']).toContain(match.pairs[0].why);
 
     match.rest(places(), 2, true);
     feedTo(match, -3.4, -6.5);
     expect(match.assigned[0]).toBe(1);
-    expect(match.pairs[0].why).toBe('side');
+    expect(['side', 'body']).toContain(match.pairs[0].why);
   });
 
   it('la del medio es de quien tiene la derecha hacia el medio: el de revés, si los dos son diestros', () => {

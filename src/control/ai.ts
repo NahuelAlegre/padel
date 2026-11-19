@@ -1,11 +1,12 @@
-import type { AILevel } from '../config';
+import { SIM_DT, type AILevel } from '../config';
 import { clamp, lerp } from '../core/math';
 import type { Rng } from '../core/rng';
-import type { InterceptPlan } from '../sim/intercept';
+import { planIntercept, type InterceptPlan } from '../sim/intercept';
 import type { Controller, Match } from '../sim/match';
 import { BACK_LINE, NET_LINE } from '../sim/pair';
 import type { Player } from '../sim/player';
-import { otherTeam, type PlayerIntent, type ShotIntent } from '../sim/types';
+import { pointAt } from '../sim/trajectory';
+import { otherTeam, type PlayerIntent, type ShotIntent, type SwingWhy } from '../sim/types';
 import { autoMove } from './autopilot';
 
 /** How much wilder than usual a mishit ball leaves the racket. */
@@ -39,6 +40,69 @@ const DOUBLES_SERVE_UP = 0.6;
 /** Doubles, both pairs at the back: how much more than its taste a player lobs and plays short, to go up. */
 const BUILD_LOB = 1;
 const BUILD_DROP = 1.5;
+
+/**
+ * Hurry: getting to a ball with less than this much time to spare (seconds)
+ * is arriving rushed, all the way at none. A rushed swing is wider in its
+ * timing and later (`HURRY_SIGMA`, `HURRY_LATE` more seconds of each, the
+ * same for everybody: good hands are the ones that start steadier), and its
+ * ball wilder (`HURRY_SCATTER`): the body gets there late.
+ */
+const HURRY_SLACK = 0.25;
+const HURRY_SIGMA = 0.06;
+const HURRY_LATE = 0.06;
+const HURRY_SCATTER = 0.6;
+/** From this much hurry on, the swing counts as hurried (for whoever shows or measures it). */
+const HURRIED = 0.5;
+/** A swing that would come after the ball is dead comes this long (seconds) before, instead. */
+const LAST_SWING = 4 * SIM_DT;
+/** A fast ball is harder to time: from `PACE_FROM` m/s, up to `PACE_SIGMA` more seconds of spread at `PACE_FROM + PACE_SPAN`. */
+const PACE_FROM = 12;
+const PACE_SPAN = 12;
+const PACE_SIGMA = 0.04;
+/** Hands with less spread than this (seconds) are on their way to perfect: the rush and the pace get to them that much less. */
+const HUMAN_SPREAD = 0.05;
+/**
+ * A block of a ball at the body: the racket is put in front of it, so its
+ * timing is only a little wider than usual (`REFLEX_SIGMA`) and never rushed;
+ * there is no aiming it, and it comes off the racket wilder and softer.
+ */
+const REFLEX_SIGMA = 1.25;
+const REFLEX_SCATTER = 1.3;
+const REFLEX_POWER = 0.85;
+/**
+ * A difficult ball, and it goes for the winner anyway: how often, for the
+ * aggressive who do not read the game (aggression × (1 − smart) × this), and
+ * how much wilder that ball is.
+ */
+const GAMBLE = 0.45;
+const GAMBLE_SCATTER = 1.6;
+/**
+ * Doubles: going for a ball of the partner's (see `Attitude`). How much each
+ * kind tempts it, times its taste for it (`AILevel.steal`):
+ *   high     over its head at the net, where it puts it away
+ *   hurried  one the partner gets to rushed, and it would play with time
+ *   poach    one the partner lets bounce, that it can volley at the net
+ * People who like taking the ball think they get there better than they do:
+ * it judges its own time to spare `OVERCONFIDENT` too well, give or take
+ * `JUDGE`. Sometimes it is wrong.
+ */
+const STEAL_HIGH = 0.9;
+const STEAL_HURRIED = 0.7;
+const STEAL_POACH = 0.35;
+const OVERCONFIDENT = 0.1;
+const JUDGE = 0.15;
+/** It goes for a high ball with this much time to spare as it sees it, for the others with `STEAL_ROOM`. */
+const STEAL_HIGH_ROOM = 0.15;
+const STEAL_ROOM = 0.35;
+/** A partner who gets there with less than this to spare gets there rushed. */
+const RUSHED = 0.12;
+
+/** 0..1, how rushed a player is getting to this contact: 1 for a ball it is only chasing. A block is not run to: 0. */
+export function hurryOf(plan: InterceptPlan): number {
+  if (plan.reflex) return 0;
+  return clamp((HURRY_SLACK - plan.slack) / HURRY_SLACK, 0, 1);
+}
 
 /**
  * Computer opponent.
@@ -79,6 +143,8 @@ export class AIController implements Controller {
   private cue: ShotIntent | null = null;
   /** It plays doubles, with a partner. */
   private pair = false;
+  /** Doubles: the last ball of its partner's it thought about going for (see `wantsIt`). */
+  private looked = -1;
 
   constructor(
     /** Can be swapped while a match is running (rival changed in the options). */
@@ -95,6 +161,7 @@ export class AIController implements Controller {
     this.ownHits = 0;
     this.followLob = false;
     this.cue = null;
+    this.looked = -1;
   }
 
   update(match: Match, me: Player, intent: PlayerIntent): void {
@@ -126,6 +193,15 @@ export class AIController implements Controller {
       return;
     }
 
+    // Doubles: a ball of the partner's it would rather play. It says so («¡mía!») the moment it decides.
+    const trajectory = match.trajectory;
+    if (this.pair && this.level.steal > 0 && trajectory && rally.live && rally.hitter !== me.team && trajectory.id !== this.looked) {
+      if (match.assigned[me.team] !== me.id && match.pairs[me.team].trajId === trajectory.id && match.time >= trajectory.t0 + me.read) {
+        this.looked = trajectory.id;
+        if (this.wantsIt(match, me)) intent.claim = true;
+      }
+    }
+
     const plan = me.plan;
     if (!plan) {
       this.lastPlan = null;
@@ -137,7 +213,7 @@ export class AIController implements Controller {
       // A new contact: decide now how well this swing will be timed. Whatever
       // had been decided was for another ball.
       this.lastPlan = plan;
-      this.swingAt = plan.t + this.rng.gauss() * this.level.timingSigma;
+      this.swingAt = this.swingTime(match, plan);
       this.cue = null;
     }
     if (this.swingAt < 0) return;
@@ -159,6 +235,59 @@ export class AIController implements Controller {
       this.swingAt = -1;
       intent.swing = this.cue;
     }
+  }
+
+  /**
+   * When it swings at this contact. A ball it gets to with time is timed as
+   * well as its hands allow; one it gets to rushed, or a fast one, is timed
+   * worse, and the rushed one late: the body gets there late. A late swing
+   * meets the ball late, further on (it comes out weak), or not at all.
+   *
+   * Whatever happens it swings while the ball is in play: a swing that would
+   * come after the ball is dead comes at the last moment instead, late. Never
+   * a player watching the ball go by.
+   */
+  private swingTime(match: Match, plan: InterceptPlan): number {
+    const spread = this.level.timingSigma;
+    const hurry = hurryOf(plan);
+    const trajectory = match.trajectory;
+    const point = trajectory ? pointAt(trajectory, plan.t) : null;
+    const pace = point ? Math.hypot(point.vx, point.vy, point.vz) : 0;
+    const fast = clamp((pace - PACE_FROM) / PACE_SPAN, 0, 1);
+    // A player whose timing is perfect by design (the coach of the lessons) stays perfect.
+    const human = Math.min(1, spread / HUMAN_SPREAD);
+    const sigma = (spread + human * (HURRY_SIGMA * hurry + PACE_SIGMA * fast)) * (plan.reflex ? REFLEX_SIGMA : 1);
+    const at = plan.t + human * HURRY_LATE * hurry + this.rng.gauss() * sigma;
+    const alive = trajectory && trajectory.id === plan.trajId && trajectory.end ? trajectory.end.t - LAST_SWING : Infinity;
+    return Math.min(at, Math.max(plan.t, alive));
+  }
+
+  /**
+   * Doubles: whether it goes for this ball, which is its partner's. Only a
+   * player with a taste for it (`AILevel.steal`), and only a ball it plays
+   * better: one over its head at the net, one the partner gets to rushed, or
+   * one the partner lets bounce that it can volley at the net. It judges its
+   * own chances a little too well, like people who like taking the ball.
+   */
+  private wantsIt(match: Match, me: Player): boolean {
+    const trajectory = match.trajectory;
+    const owner = match.players[match.assigned[me.team]];
+    if (!trajectory || !owner || match.shouldLeave(me.team)) return false;
+    const config = match.config;
+    const pc = config.player;
+    const mine = planIntercept(trajectory, me, match.time, config);
+    if (!mine || !mine.reachable) return false;
+    const feel = mine.slack + OVERCONFIDENT + this.rng.gauss() * JUDGE;
+    const atNet = Math.abs(me.y) < NET_LINE;
+    let appetite = 0;
+    if (atNet && mine.kind === 'volley' && mine.z >= pc.overheadZ && feel >= STEAL_HIGH_ROOM) {
+      appetite = STEAL_HIGH;
+    } else if (feel >= STEAL_ROOM) {
+      const theirs = owner.manual ? planIntercept(trajectory, owner, match.time, config) : owner.plan;
+      if (theirs && theirs.reachable && theirs.slack < RUSHED) appetite = STEAL_HURRIED;
+      else if (atNet && !owner.manual && mine.kind === 'volley' && theirs && theirs.kind !== 'volley') appetite = STEAL_POACH;
+    }
+    return appetite > 0 && this.rng.chance(this.level.steal * appetite);
   }
 
   /**
@@ -206,6 +335,10 @@ export class AIController implements Controller {
     // who do not like it, and every so often, for those who do that, a mishit.
     let scatter = plan.kind === 'wall' ? level.wallScatter : 1;
     if (level.mishit > 0 && rng.chance(level.mishit)) scatter *= MISHIT_SCATTER;
+    // Getting there rushed: the swing is late and the ball wilder.
+    const hurry = hurryOf(plan);
+    scatter *= 1 + HURRY_SCATTER * hurry;
+    let why: SwingWhy | undefined = plan.reflex ? 'reflex' : hurry >= HURRIED ? 'hurried' : undefined;
     // The impatient bring their own strain to a point that goes on.
     const tension = level.impatience > 0 ? Math.max(0, match.rallyHits - level.impatientAfter) * level.impatience : 0;
     const shot = (aim: number, depth: number, lob: boolean, power = level.power): ShotIntent => ({
@@ -215,6 +348,7 @@ export class AIController implements Controller {
       power,
       scatter,
       tension,
+      why,
     });
 
     // Where the other side is standing decides what is worth playing.
@@ -227,9 +361,22 @@ export class AIController implements Controller {
     const away = (): number => this.awayFrom(opponents, range) * lerp(0.55, 1, level.angle);
     const middle = (): number => rng.range(-0.6, 0.6) * lerp(0.5, 1, level.angle);
 
-    // Under pressure the percentage play is to lob and win time.
+    if (plan.reflex) {
+      // A ball at the body, before it had read it: the racket goes in front and blocks it back, wherever it goes.
+      scatter *= REFLEX_SCATTER;
+      return shot(middle() * 0.5, rng.range(0.45, 0.7), false, level.power * REFLEX_POWER);
+    }
+
+    // Under pressure the percentage play is to lob and win time. Those who
+    // like to hit and do not read the game go for the winner anyway, now and
+    // then, and that ball is the one that goes out.
     const pressed = !plan.reachable || plan.slack < 0.12 || plan.z < 0.4;
     if (pressed && !inTheAir) {
+      if (!level.lobUnderPressure && rng.chance(level.aggression * (1 - level.smart) * GAMBLE)) {
+        why = 'gamble';
+        scatter *= GAMBLE_SCATTER;
+        return shot(away(), rng.range(0.8, 1), false);
+      }
       if (level.lobUnderPressure || rng.chance(0.55)) return shot(middle(), 1, true);
       return shot(0, 0.55, false);
     }

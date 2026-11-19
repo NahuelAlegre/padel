@@ -46,6 +46,8 @@ export const CAST: Record<CharacterId, Character> = {
       angle: 0.1,
       composure: 0.5,
     },
+    // The coach plays his side and the middle by the book, covers you and calls everything.
+    attitude: 'balanced',
     traits: [{ kind: 'feeder', chance: 0.4, firstMatchChance: 0.7 }],
     // He points with his free hand at where he is going to play, as in class.
     tell: { lead: 0.55, cues: { drive: 'pointAim', lob: 'pointAim', drop: 'pointAim' } },
@@ -77,6 +79,8 @@ export const CAST: Record<CharacterId, Character> = {
       angle: 0.4,
       composure: 0.3,
     },
+    // Up to the net, everything over her head is hers, and "¡mía!" more often than you would like.
+    attitude: 'aggressive',
     traits: [
       { kind: 'impatient', afterHits: 4, strainPerHit: 0.15 },
       { kind: 'wallWeak', precisionFactor: 0.5 },
@@ -112,6 +116,8 @@ export const CAST: Record<CharacterId, Character> = {
       angle: 0.4,
       composure: 0.8,
     },
+    // From the back she gets everything back and leaves you the doubtful ones and the net.
+    attitude: 'passive',
     traits: [{ kind: 'lobUnderPressure' }],
     // She crouches and opens the racket face, "like serving soup": a lob. A step in: a chiquita.
     tell: { lead: 0.5, cues: { lob: 'crouchOpenFace', drop: 'stepIn' } },

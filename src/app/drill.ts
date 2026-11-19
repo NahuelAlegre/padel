@@ -239,6 +239,7 @@ const TEACHING: AILevel = {
   wallScatter: 1,
   lobUnderPressure: false,
   tellLead: 0.55,
+  steal: 0,
 };
 
 /** What a player set up as the coach needs to be (see `Drill.coach`). */

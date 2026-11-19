@@ -719,7 +719,8 @@ describe('jugar con táctica paga', () => {
     let atNet = 0;
     let hits = 0;
     let held = 0;
-    for (let i = 0; i < 4; i++) {
+    // Enough matches for the difference to stand out of the luck of a few.
+    for (let i = 0; i < 8; i++) {
       const cfg = createConfig();
       const match = new Match({
         config: cfg,
@@ -752,7 +753,9 @@ describe('jugar con táctica paga', () => {
   it('con las mismas manos, quien sube a la red y elige el golpe le saca más puntos a Chela', () => {
     const plain = share(0);
     const thinking = share(1);
-    expect(thinking.points).toBeGreaterThan(plain.points + 0.08);
+    // Since Chela makes her own mistakes when she is rushed (docs/ia.md), part of what tactics won now
+    // comes to anybody: the gap is about 8 points over 30 matches, and over 8 it has to stand out.
+    expect(thinking.points).toBeGreaterThan(plain.points + 0.05);
     // And it is a different match: much more of it is played at the net, holding it against her lobs.
     expect(thinking.net).toBeGreaterThan(plain.net + 0.1);
     expect(thinking.held).toBeGreaterThan(5);

@@ -575,9 +575,14 @@ body {
   justify-items: center;
   align-content: center;
   gap: 4px;
-  min-height: 72px;
+  min-height: 84px;
   padding: 8px 2px 6px;
   font-size: 14px;
+}
+
+.seg.icons .icon {
+  display: block;
+  line-height: 0;
 }
 
 .seg.icons button[aria-pressed='true']::before {

@@ -211,8 +211,6 @@ const REFLEX_MAX = 0.2;
 const REFLEX_AHEAD = 0.1;
 /** A computer player hands a ball it cannot get to over to the person only if the person gets there with this much to spare. */
 const HANDOFF_SLACK = 0.3;
-/** How much wilder a ball is when the body was later than any swing can be (`ShotIntent.lateBy`): a poke. */
-const LATE_POKE = 2;
 /**
  * Reading the ball (see `Match.setReads`), as a share of the reaction:
  *   dropAtBack   a chiquita, for whoever waits at the back: that much later
@@ -862,10 +860,12 @@ export class Match {
         player.anim.contactAt = Infinity;
         continue;
       }
-      // Start the stroke so the racket arrives together with the ball.
+      // Start the stroke so the racket arrives together with the ball. A player that moves by itself
+      // and swings late swings when it does: the racket gets there late.
       const anim = player.anim;
-      anim.t0 = plan.t - SWING_LEAD;
-      anim.contactAt = plan.t;
+      const contactAt = player.manual ? plan.t : Math.max(plan.t, swing.at);
+      anim.t0 = contactAt - SWING_LEAD;
+      anim.contactAt = contactAt;
       anim.shot = this.predictKind(player, swing.intent);
       anim.side = plan.x >= player.x ? 1 : -1;
       anim.reachX = plan.x - player.x;
@@ -874,14 +874,19 @@ export class Match {
       if (this.time + 1e-9 < plan.t) continue;
 
       if (this.tryHit(player, swing.intent, swing.at - plan.t)) continue;
-      // A player that moves by itself gives up when it did not get there. A
-      // player moved by hand stays armed: the ball may still come back.
-      if (!player.manual && this.time > plan.t + timing.graceAfter) {
-        player.swing = null;
-        player.anim.kind = 'idle';
-        this.events.push({ type: 'whiff', player: player.id, reason: 'far' });
-      }
+      // A player that moves by itself gives up when it did not get there: the
+      // stroke goes on, at the air. A player moved by hand stays armed: the
+      // ball may still come back.
+      if (!player.manual && this.time > plan.t + timing.graceAfter) this.missed(player);
     }
+  }
+
+  /** A player that moves by itself swung and did not get there: the racket goes through at the air, and it is seen. */
+  private missed(player: Player): void {
+    const swing = player.swing;
+    player.swing = null;
+    if (swing) this.playSwing(player, 'whiff', Math.min(this.time, Math.max(player.anim.contactAt, swing.at)) - SWING_LEAD, swing.intent);
+    this.events.push({ type: 'whiff', player: player.id, reason: 'far' });
   }
 
   private tryHit(player: Player, intent: ShotIntent, error: number): boolean {
@@ -905,14 +910,12 @@ export class Match {
     return true;
   }
 
-  private executeHit(player: Player, intent: ShotIntent, clock: number, gap: number): void {
+  private executeHit(player: Player, intent: ShotIntent, error: number, gap: number): void {
     const config = this.config;
     const pc = config.player;
     const shots = config.shots;
     const ball = this.ball;
     const rules = config.rules;
-    // A body that got there late meets the ball as late as it really was (see `ShotIntent.lateBy`).
-    const error = clock + (intent.lateBy ?? 0);
     const quality = qualityFromError(error, config.timing);
     const effect = shots.quality[quality];
     const dir = teamDir(player.team);
@@ -972,8 +975,6 @@ export class Match {
       Math.max(0, strain - rules.strain.from) * rules.strain.error * (1 - player.composure) +
       this.heat * rules.heatError;
     scale *= player.errorScale * (intent.scatter ?? 1);
-    // Later than any swing can be: the ball is only poked at.
-    if (error > config.timing.lateMax) scale *= LATE_POKE;
     player.strain = player.strain * rules.strain.carry + pressure;
     player.pressure = pressure;
     this.lastRisk = quality === 'late' ? 0 : shot.risk;
@@ -1521,8 +1522,10 @@ export class Match {
     for (const player of this.players) {
       player.plan = null;
       player.guide = null;
-      // A swing that was still waiting for the ball never happens.
-      if (player.swing) player.anim.kind = 'idle';
+      // A swing that was still waiting for the ball never happens. One a player that moves by itself
+      // had already started, too late for the ball, goes on at the air.
+      if (player.swing && !player.manual && player.swing.at <= this.time && this.rally.hitter !== player.team) this.missed(player);
+      else if (player.swing) player.anim.kind = 'idle';
       player.swing = null;
     }
 

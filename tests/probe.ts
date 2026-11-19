@@ -28,12 +28,11 @@ const CLOSER = 0.5;
 const MARGIN = 0.1;
 
 /** Why a point ended in a mistake of whoever hit last, from what that swing was like. */
-export type ErrorCause = 'reflex' | 'gamble' | 'poke' | 'hurried' | 'pressure' | 'long' | 'plain';
+export type ErrorCause = 'reflex' | 'gamble' | 'hurried' | 'pressure' | 'long' | 'plain';
 
 export const ERROR_NAME: Record<ErrorCause, string> = {
   reflex: 'bloqueo al cuerpo',
   gamble: 'fue por todo con una difícil',
-  poke: 'llegó muy tarde',
   hurried: 'llegó apurado',
   pressure: 'pelota difícil',
   long: 'punto largo',
@@ -100,11 +99,13 @@ export interface ProbeTotals {
   steals: [Partial<Record<Attitude, StealOutcome>>, Partial<Record<Attitude, StealOutcome>>];
   /** Points that ended in a mistake, by why, for each side of the net. */
   errors: [Record<ErrorCause, number>, Record<ErrorCause, number>];
+  /** Swings of computer players that met nothing because the ball was already out of reach («no llegó»), for each side. */
+  lateMisses: [number, number];
   /** What happened with the balls nobody tried, for a look at why: owner and reason. */
   untouchedWhy: Record<string, number>;
 }
 
-const emptyErrors = (): Record<ErrorCause, number> => ({ reflex: 0, gamble: 0, poke: 0, hurried: 0, pressure: 0, long: 0, plain: 0 });
+const emptyErrors = (): Record<ErrorCause, number> => ({ reflex: 0, gamble: 0, hurried: 0, pressure: 0, long: 0, plain: 0 });
 
 export function emptyTotals(): ProbeTotals {
   return {
@@ -120,6 +121,7 @@ export function emptyTotals(): ProbeTotals {
     reflexRivals: 0,
     steals: [{}, {}],
     errors: [emptyErrors(), emptyErrors()],
+    lateMisses: [0, 0],
     untouchedWhy: {},
   };
 }
@@ -204,9 +206,12 @@ export class PairProbe {
         }
         break;
       }
-      case 'whiff':
+      case 'whiff': {
         if (this.ball) for (const watched of this.ball.watched) if (watched.player.id === event.player) watched.attempted = true;
+        const player = match.players[event.player];
+        if (event.reason === 'far' && player && !player.isHuman) this.totals.lateMisses[player.team]++;
         break;
+      }
       case 'point': {
         const last = this.lastHit;
         if (this.ball?.stealer && !this.ball.stealCounted) this.steal(this.ball.stealer).missed++;
@@ -248,10 +253,8 @@ export class PairProbe {
   }
 
   private causeOf(hit: Extract<SimEvent, { type: 'hit' }>): ErrorCause {
-    const timing = this.match.config.timing;
     if (hit.why === 'reflex') return 'reflex';
     if (hit.why === 'gamble') return 'gamble';
-    if (hit.error > timing.lateMax) return 'poke';
     if (hit.why === 'hurried' || hit.quality === 'late') return 'hurried';
     if (hit.pressure >= HARD) return 'pressure';
     if (this.hits >= LONG) return 'long';
@@ -320,6 +323,7 @@ export function addTotals(into: ProbeTotals, from: ProbeTotals): void {
       entry.missed += outcome.missed;
     }
     for (const key of Object.keys(from.errors[side]) as ErrorCause[]) into.errors[side][key] += from.errors[side][key];
+    into.lateMisses[side] += from.lateMisses[side];
   }
   for (const [key, n] of Object.entries(from.untouchedWhy)) into.untouchedWhy[key] = (into.untouchedWhy[key] ?? 0) + n;
 }

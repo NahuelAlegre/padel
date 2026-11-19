@@ -4,7 +4,9 @@ Propuesta de diseño y prototipo jugable. La versión visual, con los diagramas 
 
 **En una línea:** en dobles cada pelota tiene dueño, la pareja va atada con una cuerda y nadie llega a lo imposible. Así la posición importa y no hace falta ser un velocista.
 
-**Cómo probarlo:** `?dobles` abre la partida rápida en 2 contra 2 (vos al revés con Beto, contra Romina y Chela). `?alcance=real` le da a todos el alcance de una persona. `?lado=drive` y `?companero=chela` (o `romina`) cambian tu lado y tu compañero. Lo mismo está en **Opciones → Experimental**. La partida rápida de siempre no cambia.
+**Cómo probarlo:** `?dobles` abre la partida rápida en 2 contra 2 (vos al revés con Beto, contra Romina y Chela). `?alcance=real` le da a todos el alcance de una persona. `?lado=drive` y `?companero=chela` (o `romina`) cambian tu lado y tu compañero. `?actitud=agresiva` (o `equilibrada`, `pasiva`) cambia cómo juega tu compañero con vos, y `?rivales=pasiva` la de la pareja de enfrente. Lo mismo está en **Opciones → Experimental**. La partida rápida de siempre no cambia.
+
+**La IA, más humana:** el compañero ya no se queda mirando una pelota suya, y la computadora acierta y falla con motivos que se ven. Además, cada compañero tiene una actitud: agresiva, equilibrada o pasiva. Está todo en [ia.md](ia.md), con las mediciones de antes y después. Esta página está actualizada donde eso cambió una regla.
 
 ---
 
@@ -31,7 +33,8 @@ Esto ordena todo lo demás:
 | **El hueco.** Uno arriba y otro abajo deja una diagonal vacía. | La pareja rival lo busca: por arriba del que está en la red o al medio de la diagonal. | A una pareja partida le tira ahí el 64–85 % de las veces; a una junta, el 38–58 %. |
 | **La tierra de nadie.** Entre la línea de saque y la red (5 a 6,5 m de la red). | Nadie de la computadora espera ahí. La pareja rival le tira a los pies a quien se queda. | A los pies el 35–69 % de las veces, según el rival. |
 | **Deslizarse con la pelota** (basculación). | La pareja se corre en bloque hacia el lado de la pelota (30 % de su posición, hasta 1,2 m). El de ese lado cubre el paralelo; el otro se cierra al medio. En la red los dos están más juntos (3,6 m) que atrás (4,6 m). | Test: `se desliza con la pelota y se cierra en la red`. |
-| **El medio es de la derecha.** | Una pelota que pasa a menos de 0,9 m del centro de la pareja es del que tiene la derecha hacia el medio: con dos diestros, el de revés. Si los dos o ninguno, el que está más adelante. Si el otro llega 0,3 s más cómodo, es del otro, y se avisa. | Test: `la del medio es de quien tiene la derecha hacia el medio`. |
+| **La que va al cuerpo es de ese.** | Una pelota que pasa a un paso de uno (1,3 m) y por lo menos 0,9 m más lejos del otro es de ese, digan lo que digan el lado y el medio. Y se sigue mirando: si la pelota termina yendo a uno, es de ese. | Test: `la del medio que va al cuerpo de tu compañero es suya` (`tests/ai.test.ts`). |
+| **El medio es de la derecha.** | Una pelota que pasa entre los dos, a menos de 0,9 m del centro de la pareja, es del que tiene la derecha hacia el medio: con dos diestros, el de revés. Si los dos o ninguno, el que está más adelante. Si el otro llega 0,3 s más cómodo, es del otro, y se avisa. Un compañero pasivo te la deja. | Test: `la del medio es de quien tiene la derecha hacia el medio`. |
 | **Drive y revés.** | Elegís tu lado. El drive (derecha) construye; el revés (izquierda) toma el medio y casi todos los globos al medio. | — |
 | **Subir después de un buen globo.** | Un globo que pasó por arriba de la pareja rival es la señal para subir los dos. | — |
 | **Bajar ante un globo profundo.** | Si el globo pasa por arriba de la pareja en la red, los dos bajan. | — |
@@ -43,16 +46,23 @@ Todo esto vive en `src/sim/pair.ts` y no usa azar: el partido sigue siendo deter
 
 **Juega en pareja con vos.**
 
-- **Te sigue.** Sube a la red cuando estás a menos de 5 m de la red. Baja cuando te quedás atrás casi medio segundo (0,4 s) o en el instante en que corrés para atrás detrás de un globo. A mitad de camino, espera a ver adónde vas. Nunca abre el hueco él: si no subís, no sube.
+- **Te sigue.** Sube a la red cuando estás a menos de 5 m de la red. Baja cuando te quedás atrás casi medio segundo (0,4 s) o en el instante en que corrés para atrás detrás de un globo. A mitad de camino, espera a ver adónde vas. Equilibrado, nunca abre el hueco él: si no subís, no sube. Cuánto antes sube y cuánto tarda en bajar depende de su actitud (abajo).
 - **Cubre su mitad** y se desliza con la pelota. Si cruzás al otro lado, toma el lado que dejaste.
-- **Nunca te roba.** Una pelota tuya la juega solo en dos casos, y siempre avisa antes: si no vas a llegar (la cubre) o si es un globo que te pasó por arriba y no estás yendo (el cambio). Una pelota que te dejó («¡tuya!») no la toca. Hay un test que juega partidos enteros y lo verifica golpe por golpe.
-- **Es honesto con lo que no llega:** si una pelota suya no la alcanza y vos sí, te la pasa con un «¡tuya!».
+- **No se queda mirando.** Una pelota que le viene al cuerpo es suya. Una que es tuya la sigue con la vista: si terminó yendo a él y no a vos, o si no estás yendo, la toma, y siempre avisa antes («¡mía!»). Una que se le cruza a una pelota de distancia y a la que no llegás, la juega en el último momento. Si le llega antes de leerla, la bloquea.
+- **No te roba.** Equilibrado o pasivo, una pelota tuya a la que estás yendo no la toca. Agresivo, a veces sí, siempre con «¡mía!» antes (abajo). Hay un test que juega partidos enteros y verifica, golpe por golpe, que toda pelota tuya que pegó la avisó antes.
+- **Es honesto con lo que no llega:** si una pelota suya no la alcanza ni estirándose y vos llegás con margen, te la pasa con un «¡tuya!».
+- **Su actitud** ([ia.md](ia.md), sección 3):
+  - **agresiva**: sube antes y baja después, sube sola detrás de su ataque y te llama («¡arriba!»), remata todo y a veces te pide la tuya;
+  - **equilibrada**: lo de arriba, tal cual;
+  - **pasiva**: sube cuando ya estás arriba, baja enseguida, te deja las del medio y cubre solo lo que le viene al cuerpo.
+  
+  Cada personaje tiene la suya (Beto equilibrado, Romina agresiva, Chela pasiva) y le podés pedir otra en Opciones, con tres canchitas dibujadas.
 
 **Cómo avisa, sin texto.** Con el brazo libre, el mismo gesto para todos los personajes, para que se aprenda una vez. Siempre es verdad.
 
 | Aviso | Gesto | Cuándo |
 | --- | --- | --- |
-| ¡Mía! | La mano libre arriba de la cabeza. | Va a una pelota del medio, o a una tuya que no alcanzás. |
+| ¡Mía! | La mano libre arriba de la cabeza. | Va a una pelota del medio, a una tuya que no alcanzás o que terminó yendo a él, o (agresivo) a una tuya que juega mejor. |
 | ¡Tuya! | Te señala, con la cabeza hacia vos. | Una pelota del medio es tuya, o te pasa una que él no alcanza. |
 | ¡Voy! | El brazo barre hacia tu lado: cruzá. | Cruza por un globo que te pasó por arriba. |
 | ¡Arriba! | Te hace señas hacia la red. | Su globo pasó a la pareja rival y vos estás atrás. |
@@ -60,7 +70,7 @@ Todo esto vive en `src/sim/pair.ts` y no usa azar: el partido sigue siendo deter
 
 Los avisos salen cuando el compañero terminó de leer la pelota (su reacción, 0,2 a 0,35 s después del golpe rival), así hay medio segundo o más para actuar. Duran 0,9 s. No dicen nada sobre las pelotas obvias de cada lado: la pantalla queda limpia.
 
-**Su personalidad.** El mismo personaje que como rival, con su estilo y sus piernas, pero jugando a ganar y con manos más firmes (40 % menos de dispersión de timing, con tope de 0,07 s; 25 % menos de dispersión de golpes; lee la pelota un 25 % antes). Lo que propone `docs/personajes.md`, y todavía no está en el prototipo, donde los tres avisan igual: Beto «avisa temprano y siempre» y te deja definir; Romina sube y remata lo alto de su zona; Chela es la maestra de la pared y la que dice «¡arriba!» después de su globo.
+**Su personalidad.** El mismo personaje que como rival, con su estilo y sus piernas, pero jugando a ganar y con manos más firmes (40 % menos de dispersión de timing, con tope de 0,07 s; 25 % menos de dispersión de golpes; lee la pelota un 25 % antes). Lo que propone `docs/personajes.md` llega por la actitud de cada uno: Beto equilibrado, que avisa todo; Romina agresiva, que sube y remata lo alto; Chela pasiva, que te devuelve todo desde atrás. Los tres avisan con los mismos gestos.
 
 **Tu lado.** Por defecto, **revés**: tomás el medio con la derecha, como el más fuerte de una pareja de pádel, y es el lado donde jugar posicional paga más (+8 a +25 pp al revés contra −3 a +3 al drive, con Beto de compañero y la rival que se desordena). Al drive, el medio es de tu compañero; se elige en Opciones o con `?lado=drive`.
 
@@ -163,6 +173,14 @@ Vos y Beto contra Romina y Chela, 30 partidos por casilla. «Antes» es el motor
 
 La pareja rival junta baja de 77 % a 71 % a propósito: ahora se desordena, y eso es lo que se le castiga.
 
+**Después de la ronda de IA humana** ([ia.md](ia.md)), con vos al revés y el alcance real, como en la última columna:
+
+- Jugar posicional paga +12 / +10 / +3 pp (antes +17 / +12 / +8).
+- Los puntos duran 11,5 s (antes 15,7): entran en la meta.
+- Las pelotas del compañero que nadie intentó bajan de 0,5 a 0,07 por partido.
+
+Paga un poco menos porque los dos ganan más (el que corre a todas, de 46 a 53 %; el posicional, de 58 a 64 %): el compañero cubre más y los rivales fallan cuando los apurás, y eso le sirve a cualquiera.
+
 **El hueco y la tierra de nadie**, con pelotas tiradas a mano a una pareja quieta (porque en un partido, ahora, una pareja partida casi no aparece: 1 a 6 % de las pelotas):
 
 | Rival | A una pareja partida: por arriba del de la red o al hueco | A una pareja junta, lo mismo | A los pies de quien está en tierra de nadie | A una pareja en la red, globo |
@@ -212,7 +230,7 @@ Un cuadro a 60 fps tiene 16,7 ms. Ningún cuadro tardó más de 17,5 ms en ningu
 **Riesgos.**
 
 - Con el alcance real hay que pararse bien, y el joystick en el celular puede quedarse corto. Solo se sabe jugando.
-- Un compañero que se percibe tonto o que «roba» arruina el modo. Los avisos y la regla del medio son lo que hay que mirar en el celular.
+- Un compañero que se percibe tonto o que «roba» arruina el modo. Los avisos y la regla del medio son lo que hay que mirar en el celular. El compañero que se quedaba mirando su pelota ya está arreglado, y el que roba es solo el agresivo, que siempre avisa ([ia.md](ia.md)).
 - Al drive con Beto de compañero, que es lento, correr a todas paga lo mismo que jugar posicional. Al revés paga +8 a +25 pp.
 - Cuánto se desordena la rival es un número a afinar jugando: hoy, una de cada cinco pelotas tuyas la encuentra desordenada. Si es poco no hay nada que castigar; si es mucho, parece torpe.
 - Los puntos contra Romina y Chela siguen algo largos (16 a 20 s de media; la meta es 8 a 14): Chela devuelve todo.

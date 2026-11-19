@@ -318,7 +318,7 @@ function describeStats(stats: Stats): string {
         .map(([key, entry]) => `${key} n=${entry.n} no devuelta ${pct(entry.notReturned, entry.n)}, gana el punto ${pct(entry.won, entry.n)}`)
         .join(' | '),
     `golpes          ${top(stats.kinds, 10)}`,
-    `por qué erran   A: ${errorCauses(stats, 0)}   B: ${errorCauses(stats, 1)}`,
+    `por qué erran   A: ${errorCauses(stats, 0)}   B: ${errorCauses(stats, 1)}   no llegó (la compu): A ${(stats.human.lateMisses[0] / stats.matches).toFixed(1)}, B ${(stats.human.lateMisses[1] / stats.matches).toFixed(1)} por partido`,
   ].join('\n');
 }
 

@@ -42,12 +42,6 @@ export interface ShotIntent {
   tension?: number;
   /** What a computer player's swing was like, if anything made it harder than the ball itself (see `SwingWhy`). */
   why?: SwingWhy;
-  /**
-   * Seconds the body is behind this swing. A player that gets there late
-   * still meets the ball, at the last moment it can, and the shot comes out
-   * as late as the body really was. Left out, it is 0.
-   */
-  lateBy?: number;
 }
 
 /**

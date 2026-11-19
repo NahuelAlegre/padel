@@ -458,6 +458,7 @@ function describeHuman(stats: Stats): string[] {
       .join(', ');
   };
   lines.push(`por qué erran    A: ${errors(0) || '-'}`, `                 B: ${errors(1) || '-'}`);
+  lines.push(`no llegó (le pegó al aire, la compu)   A ${(human.lateMisses[0] / matches).toFixed(1)} por partido   B ${(human.lateMisses[1] / matches).toFixed(1)}`);
   return lines;
 }
 

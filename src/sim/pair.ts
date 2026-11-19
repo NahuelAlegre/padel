@@ -413,7 +413,7 @@ export function cameToIt(
   speed: number,
   reach: number,
 ): boolean {
-  if (!stand || stand.t - now > COVER_COMMIT) return false;
+  if (!stand || stand.t - now > COVER_COMMIT || stand.t - now < COVER_LEAST) return false;
   if (near && near.t <= stand.t) return false;
   if (stand.t - now <= LAST_MOMENT && !near && !onItsWay(owner, stand, now, speed, reach)) return true;
   if (watcher.attitude === 'passive') return false;
@@ -424,6 +424,8 @@ export function cameToIt(
 
 /** How long before a ball goes by within reach a player puts the racket there if its partner is not going to. */
 export const LAST_MOMENT = 0.3;
+/** Taking a ball of the partner's needs at least this long (seconds) before the contact: to say so, and to swing. */
+const COVER_LEAST = 0.12;
 
 /**
  * A person on its way to where the ball will be met: going the way it is

@@ -73,25 +73,30 @@ function button(label: string, className: string, onClick: () => void, note = ''
  * reads it without the word under it.
  */
 const ATTITUDE_SPOTS: Record<Attitude, { you: number; mate: number }> = {
-  aggressive: { you: 32, mate: 24 },
-  balanced: { you: 31, mate: 31 },
-  passive: { you: 29, mate: 35 },
+  aggressive: { you: 41, mate: 28 },
+  balanced: { you: 40, mate: 40 },
+  passive: { you: 36, mate: 44.5 },
 };
+
+/** A padel court from behind your own end, 10 × 20 m: the net in the middle and the service lines with their T. */
+const COURT_ICON =
+  '<rect x="4" y="2" width="24" height="48" rx="2" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-opacity="0.7" stroke-width="1.2"/>' +
+  '<path d="M4 9.3H28M4 42.7H28M16 9.3V42.7" fill="none" stroke="currentColor" stroke-opacity="0.45" stroke-width="0.9"/>' +
+  '<line x1="2.5" y1="26" x2="29.5" y2="26" stroke="currentColor" stroke-width="2"/>';
 
 function attitudeIcon(attitude: Attitude, side: SideName): HTMLElement {
   const spots = ATTITUDE_SPOTS[attitude];
   // Revés is the left of the pair, seen from behind it.
-  const youX = side === 'reves' ? 9 : 19;
-  const mateX = side === 'reves' ? 19 : 9;
+  const youX = side === 'reves' ? 10 : 22;
+  const mateX = side === 'reves' ? 22 : 10;
   // Inline SVG through the HTML parser: static markup, nothing of the person's in it.
   const icon = el('span', 'icon');
   icon.setAttribute('aria-hidden', 'true');
   icon.innerHTML =
-    '<svg viewBox="0 0 28 40" width="24" height="34" focusable="false">' +
-    '<rect x="3" y="2" width="22" height="36" rx="3" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.55"/>' +
-    '<line x1="3" y1="20" x2="25" y2="20" stroke="currentColor" stroke-width="1.6"/>' +
-    `<circle cx="${youX}" cy="${spots.you}" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/>` +
-    `<circle cx="${mateX}" cy="${spots.mate}" r="3.1" fill="currentColor"/>` +
+    '<svg viewBox="0 0 32 52" width="30" height="49" focusable="false">' +
+    COURT_ICON +
+    `<circle cx="${youX}" cy="${spots.you}" r="2.9" fill="none" stroke="currentColor" stroke-width="1.6"/>` +
+    `<circle cx="${mateX}" cy="${spots.mate}" r="3.6" fill="currentColor"/>` +
     '</svg>';
   return icon;
 }

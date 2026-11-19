@@ -44,21 +44,24 @@ const BUILD_DROP = 1.5;
 /**
  * Hurry: getting to a ball with less than this much time to spare (seconds)
  * is arriving rushed, all the way at none. A rushed swing is wider in its
- * timing and later (`HURRY_SIGMA`, `HURRY_LATE`, in units of its own spread),
- * and its ball wilder (`HURRY_SCATTER`): the body gets there late.
+ * timing and later (`HURRY_SIGMA`, `HURRY_LATE` more seconds of each, the
+ * same for everybody: good hands are the ones that start steadier), and its
+ * ball wilder (`HURRY_SCATTER`): the body gets there late.
  */
 const HURRY_SLACK = 0.25;
-const HURRY_SIGMA = 0.6;
-const HURRY_LATE = 0.9;
+const HURRY_SIGMA = 0.06;
+const HURRY_LATE = 0.06;
 const HURRY_SCATTER = 0.6;
 /** From this much hurry on, the swing counts as hurried (for whoever shows or measures it). */
 const HURRIED = 0.5;
-/** It has its swing on its way this long (seconds) before the contact, however late its body is. */
-const ARMED_BY = 2 * SIM_DT;
-/** A fast ball is harder to time: from `PACE_FROM` m/s, up to `PACE_SIGMA` more spread at `PACE_FROM + PACE_SPAN`. */
+/** A swing that would come after the ball is dead comes this long (seconds) before, instead. */
+const LAST_SWING = 4 * SIM_DT;
+/** A fast ball is harder to time: from `PACE_FROM` m/s, up to `PACE_SIGMA` more seconds of spread at `PACE_FROM + PACE_SPAN`. */
 const PACE_FROM = 12;
 const PACE_SPAN = 12;
-const PACE_SIGMA = 0.6;
+const PACE_SIGMA = 0.04;
+/** Hands with less spread than this (seconds) are on their way to perfect: the rush and the pace get to them that much less. */
+const HUMAN_SPREAD = 0.05;
 /**
  * A block of a ball at the body: the racket is put in front of it, so its
  * timing is only a little wider than usual (`REFLEX_SIGMA`) and never rushed;
@@ -142,8 +145,6 @@ export class AIController implements Controller {
   private pair = false;
   /** Doubles: the last ball of its partner's it thought about going for (see `wantsIt`). */
   private looked = -1;
-  /** How much later than it can still swing its body is for the contact in `lastPlan` (see `swingTime`). */
-  private lateBy = 0;
 
   constructor(
     /** Can be swapped while a match is running (rival changed in the options). */
@@ -232,31 +233,33 @@ export class AIController implements Controller {
     intent.cue = this.cue;
     if (swingNow && this.cue) {
       this.swingAt = -1;
-      intent.swing = this.lateBy > 0 ? { ...this.cue, lateBy: this.lateBy } : this.cue;
+      intent.swing = this.cue;
     }
   }
 
   /**
    * When it swings at this contact. A ball it gets to with time is timed as
    * well as its hands allow; one it gets to rushed, or a fast one, is timed
-   * worse, and the rushed one late: the body gets there late.
+   * worse, and the rushed one late: the body gets there late. A late swing
+   * meets the ball late, further on (it comes out weak), or not at all.
    *
-   * Whatever happens the racket is there when the ball is: it swings in time
-   * for the contact it planned, and what its body was late by goes with the
-   * swing (`lateBy`), so being late is a late, weak ball (or a poke, very
-   * late) and never a player watching the ball go by.
+   * Whatever happens it swings while the ball is in play: a swing that would
+   * come after the ball is dead comes at the last moment instead, late. Never
+   * a player watching the ball go by.
    */
   private swingTime(match: Match, plan: InterceptPlan): number {
     const spread = this.level.timingSigma;
     const hurry = hurryOf(plan);
-    const point = match.trajectory ? pointAt(match.trajectory, plan.t) : null;
+    const trajectory = match.trajectory;
+    const point = trajectory ? pointAt(trajectory, plan.t) : null;
     const pace = point ? Math.hypot(point.vx, point.vy, point.vz) : 0;
     const fast = clamp((pace - PACE_FROM) / PACE_SPAN, 0, 1);
-    const sigma = spread * (1 + HURRY_SIGMA * hurry + PACE_SIGMA * fast) * (plan.reflex ? REFLEX_SIGMA : 1);
-    const at = plan.t + spread * HURRY_LATE * hurry + this.rng.gauss() * sigma;
-    const armed = plan.t - ARMED_BY;
-    this.lateBy = Math.max(0, at - armed);
-    return Math.min(at, armed);
+    // A player whose timing is perfect by design (the coach of the lessons) stays perfect.
+    const human = Math.min(1, spread / HUMAN_SPREAD);
+    const sigma = (spread + human * (HURRY_SIGMA * hurry + PACE_SIGMA * fast)) * (plan.reflex ? REFLEX_SIGMA : 1);
+    const at = plan.t + human * HURRY_LATE * hurry + this.rng.gauss() * sigma;
+    const alive = trajectory && trajectory.id === plan.trajId && trajectory.end ? trajectory.end.t - LAST_SWING : Infinity;
+    return Math.min(at, Math.max(plan.t, alive));
   }
 
   /**

@@ -2,7 +2,7 @@ import type { GameConfig } from '../config';
 import { clamp } from '../core/math';
 import { teamDir } from './court';
 import type { InterceptPlan } from './intercept';
-import { startingLane, type CallKind } from './pair';
+import { startingLane, type Astray, type CallKind } from './pair';
 import type { PlayerIntent, ShotIntent, ShotKind, TeamId } from './types';
 
 /**
@@ -112,6 +112,16 @@ export interface Player extends PlayerSetup {
   homeMode: 'back' | 'net';
   /** Doubles: the side of the pair it plays on, as the sign of world x. */
   lane: 1 | -1;
+  /**
+   * Doubles, a pair of computer players only: out of place for this exchange.
+   * 'stay': it did not follow its partner up or back, and waits where the pair
+   * was (`astrayHome`). 'halfway': it stopped in no man's land. It is what the
+   * other side can punish, and it lasts until its pair strikes the ball again.
+   */
+  astray: Astray | null;
+  astrayHome: 'back' | 'net';
+  /** Doubles: until this time it hesitates over a ball through the middle, and so does its partner. */
+  doubtUntil: number;
   /** Doubles: what it last told its partner, and when. Only for show: it is always true. */
   call: CallKind | null;
   callAt: number;
@@ -148,6 +158,9 @@ export function createPlayer(id: number, team: TeamId, index: number, setup: Pla
     anim: { kind: 'idle', t0: 0, duration: 0, contactAt: Infinity, side: 1, shot: 'drive', reachX: 0.6, reachY: 0.2, reachZ: 0.9 },
     homeMode: 'back',
     lane: startingLane(team, index),
+    astray: null,
+    astrayHome: 'back',
+    doubtUntil: 0,
     call: null,
     callAt: 0,
     callTraj: -1,

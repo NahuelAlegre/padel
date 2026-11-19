@@ -9,6 +9,9 @@ import {
   BACK_LINE,
   CALL_BAND,
   chooseOwner,
+  closestPass,
+  DISORDER,
+  disorderChance,
   NET_LINE,
   createPairState,
   followPerson,
@@ -434,6 +437,8 @@ export class Match {
       player.strain = 0;
       player.pressure = 0;
       player.lane = startingLane(player.team, player.index);
+      player.astray = null;
+      player.doubtUntil = 0;
       player.call = null;
       player.callTraj = -1;
     }
@@ -450,6 +455,7 @@ export class Match {
       pair.home = team === this.score.servingTeam ? 'net' : 'back';
       pair.backSince = -1;
       pair.trajId = -1;
+      pair.doubted = -1;
     }
     this.serveIntent = null;
     this.holdBall();
@@ -935,6 +941,8 @@ export class Match {
 
     registerHit(this.rally, player.team, false, 1);
     this.lastHitter[player.team] = player.id;
+    // Striking the ball is the moment a pair gets back in order.
+    for (const mate of this.teams[player.team]) mate.astray = null;
     player.swing = null;
     player.anim.kind = 'swing';
     player.anim.t0 = this.time - SWING_LEAD;
@@ -1042,7 +1050,73 @@ export class Match {
     // A lob over a pair at the net that the owner lets bounce: the two of them go back together.
     const plan = plans[members.indexOf(owner)];
     if (!members.some((player) => player.manual) && pair.home === 'net' && plan && plan.kind !== 'volley' && Math.abs(plan.y) > BACK_LOB) {
-      pair.home = 'back';
+      this.shift(receiving, 'back', owner);
+    }
+    if (!members.some((player) => player.isHuman)) this.doubtOrNot(members, owner, trajectory, pair);
+  }
+
+  /**
+   * Two computer players may doubt over a ball: both look at the other and
+   * the one whose ball it is goes late. Through the middle that happens to
+   * those without much composure. Into the hole of a pair that is out of
+   * place (split, or somebody half way) it happens far more: nobody knows
+   * whose it is. And whoever is out of place is caught flat-footed by a ball
+   * of its own. A pair with a person in it never doubts: the person decides.
+   */
+  private doubtOrNot(members: readonly Player[], owner: Player, trajectory: Trajectory, pair: PairState): void {
+    const a = members[0]!;
+    const b = members[1]!;
+    a.doubtUntil = 0;
+    b.doubtUntil = 0;
+    const composure = (a.composure + b.composure) / 2;
+    const strain = (a.strain + b.strain) / 2;
+    const loose = a.astray !== null || b.astray !== null || shapeOf(a) !== shapeOf(b);
+    const highest = this.config.player.maxContactZ;
+    const passA = closestPass(trajectory, a, this.time, highest);
+    const passB = closestPass(trajectory, b, this.time, highest);
+    const hole = loose && passA > DISORDER.holeGap && passB > DISORDER.holeGap;
+    const base = hole ? DISORDER.hole : pair.why === 'middle' ? DISORDER.doubt : 0;
+    if (base > 0 && this.rng.chance(disorderChance(base, composure, strain))) {
+      // Into the hole, now and then nobody goes at all: the ball goes between them.
+      const neither = hole && this.rng.chance(disorderChance(DISORDER.neither, composure, strain));
+      const doubt = hole ? DISORDER.holeTime : DISORDER.doubtTime;
+      for (const player of members) player.doubtUntil = neither ? Infinity : this.time + player.reaction + doubt;
+      pair.doubted = trajectory.id;
+      // Neither of them takes a second look at it either.
+      if (neither) pair.switchChecked = true;
+      return;
+    }
+    if (owner.astray && (owner === a ? passA : passB) < DISORDER.holeGap) {
+      // Out of place, and the ball comes at it: caught flat-footed.
+      owner.doubtUntil = this.time + owner.reaction + DISORDER.caught;
+    }
+  }
+
+  /**
+   * A pair of computer players changes where it waits, as `leader` decided.
+   * The other one may not follow: it stays where the pair was, or stops half
+   * way. That is the hole the other side can punish, and the one who went
+   * says so to its partner, which is how the other side sees it. A pair with a
+   * person in it never comes apart by itself: the person leads it.
+   */
+  private shift(team: TeamId, home: 'back' | 'net', leader: Player): void {
+    const pair = this.pairs[team];
+    if (pair.home === home) return;
+    const before = pair.home;
+    pair.home = home;
+    const members = this.teams[team];
+    if (members.length !== 2 || members.some((player) => player.isHuman)) return;
+    const other = members[0] === leader ? members[1]! : members[0]!;
+    other.astray = null;
+    const stay = disorderChance(DISORDER.stay, other.composure, other.strain);
+    const halfway = disorderChance(DISORDER.halfway, other.composure, other.strain);
+    const roll = this.rng.next();
+    if (roll < stay) {
+      other.astray = 'stay';
+      other.astrayHome = before;
+      this.say(leader, home === 'net' ? 'up' : 'back', this.trajectory?.id ?? -1);
+    } else if (roll < stay + halfway) {
+      other.astray = 'halfway';
     }
   }
 
@@ -1079,7 +1153,7 @@ export class Match {
       } else if (rally.hitter === team) {
         // While the ball is theirs, the pair goes where the one who struck it decided to wait.
         const last = this.lastHitter[team];
-        if (last >= 0) pair.home = this.players[last]!.homeMode;
+        if (last >= 0) this.shift(team, this.players[last]!.homeMode, this.players[last]!);
       }
 
       const incoming = trajectory !== null && rally.live && rally.hitter !== team && pair.trajId === trajectory.id;
@@ -1107,6 +1181,11 @@ export class Match {
 
       // What the computer players say about this ball, once they have read it.
       const ambiguous = Math.abs(pair.offMiddle) <= CALL_BAND;
+      if (pair.doubted === trajectory.id) {
+        // They doubt: each one points at the other.
+        for (const player of members) if (this.time >= trajectory.t0 + player.reaction) this.say(player, 'yours', trajectory.id);
+        continue;
+      }
       const plan = owner.plan;
       if (!owner.isHuman && partner.manual && plan && !plan.reachable && owner.callTraj !== trajectory.id && this.time >= trajectory.t0 + owner.reaction) {
         // Honest about what it does not get to: if the person can, it is the person's, and it says so at once.
@@ -1198,7 +1277,7 @@ export class Match {
         continue;
       }
       // The player needs a moment to read a new ball.
-      if (this.time < trajectory.t0 + player.reaction) continue;
+      if (this.time < trajectory.t0 + player.reaction || this.time < player.doubtUntil) continue;
 
       const plan = player.plan;
       const current = plan !== null && plan.trajId === trajectory.id;
@@ -1312,3 +1391,10 @@ export class Match {
     this.afterPause = then;
   }
 }
+
+/** Where a player stands, for a pair: at the net, half way or at the back. */
+function shapeOf(player: Player): 'net' | 'mid' | 'back' {
+  const depth = Math.abs(player.y);
+  return depth < NET_LINE ? 'net' : depth > BACK_LINE ? 'back' : 'mid';
+}
+

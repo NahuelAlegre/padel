@@ -76,6 +76,29 @@ export type CallKind =
 /** Why the owner of a ball is who it is. */
 export type OwnerReason = 'alone' | 'side' | 'middle' | 'cover' | 'switch';
 
+/** How a computer player of a pair is out of place for an exchange (see `Player.astray`). */
+export type Astray = 'stay' | 'halfway';
+
+/** Where somebody stuck in no man's land stands, in metres from the net. */
+export const HALFWAY = 5.8;
+
+/**
+ * How often a pair of computer players comes apart, for somebody with no
+ * composure at all and no strain (see `disorderChance`):
+ *   stay      the pair goes up (or back) and it does not follow;
+ *   halfway   it follows, and stops in no man's land;
+ *   doubt     a ball through the middle, and both hesitate for `doubtTime` s;
+ *   hole      the same, for a ball into the hole of a pair out of place: one
+ *             that passes further than `holeGap` m from both of them. Nobody
+ *             knows whose it is: they hesitate for `holeTime` s, and
+ *   neither   of those doubts, how often nobody goes at all: they look at
+ *             each other and the ball goes between them.
+ * Whoever is out of place and gets a ball of its own is caught flat-footed
+ * for `caught` s. A ball "into the hole" never passes within `holeGap` m of
+ * either of them while it can be hit (see `closestPass`).
+ */
+export const DISORDER = { stay: 0.3, halfway: 0.2, doubt: 0.35, hole: 0.9, neither: 0.5, doubtTime: 0.3, holeTime: 0.5, holeGap: 2.2, caught: 0.3 };
+
 export interface PairState {
   /** Where the pair waits: both at the net or both at the back. */
   home: 'net' | 'back';
@@ -88,10 +111,12 @@ export interface PairState {
   offMiddle: number;
   /** The partner has taken its second look at this ball (see `secondLook`). */
   switchChecked: boolean;
+  /** The ball the two of a pair of computer players doubted over, or -1. */
+  doubted: number;
 }
 
 export function createPairState(): PairState {
-  return { home: 'back', backSince: -1, trajId: -1, why: 'alone', offMiddle: 0, switchChecked: false };
+  return { home: 'back', backSince: -1, trajId: -1, why: 'alone', offMiddle: 0, switchChecked: false, doubted: -1 };
 }
 
 const depthOf = (player: Player): number => Math.abs(player.y);
@@ -274,10 +299,43 @@ export function pairSpot(
     const personSide = partner.x - slide;
     if (personSide * me.lane > 0.6) me.lane = (personSide > 0 ? -1 : 1) as 1 | -1;
   }
-  const net = state.home === 'net';
-  const depth = net ? config.player.homeNet : config.player.homeBack;
+  // Out of place for this exchange: where it stayed, or half way.
+  const home = me.astray === 'stay' ? me.astrayHome : state.home;
+  const net = home === 'net';
+  const depth = me.astray === 'halfway' ? HALFWAY : net ? config.player.homeNet : config.player.homeBack;
   out.x = slide + me.lane * (net ? LANE_NET : LANE);
   out.y = -dir * depth;
+}
+
+/**
+ * Doubles, a pair of computer players: how likely it is to come apart at a
+ * moment of change, 0..1. A player without composure, deep into a point that
+ * has been hard on it, is the one who stays behind, stops half way or doubts.
+ * `base` is the chance for somebody with no composure at all and no strain.
+ */
+export function disorderChance(base: number, composure: number, strain: number): number {
+  return clamp(base * (1 - composure) * (1 + Math.min(strain, STRAIN_CAP)), 0, 0.9);
+}
+
+/** Strain counts toward coming apart up to this much (it doubles the chance at most). */
+const STRAIN_CAP = 1;
+
+/**
+ * How close the ball comes to where `player` stands, while its team may hit
+ * it and low enough to be reached with a racket. A ball into the hole of a
+ * pair is one that passes far from both of them: over the head of the one at
+ * the net, between the two, out of reach of either.
+ */
+export function closestPass(trajectory: Trajectory, player: Player, now: number, highest: number): number {
+  let best = Infinity;
+  for (const point of trajectory.points) {
+    // On its way in: once it comes off a wall, the one at the back has it anyway.
+    if (point.walls > 0) break;
+    if (point.t < now || point.hittable !== player.team || point.z > highest) continue;
+    const gap = Math.hypot(point.x - player.x, point.y - player.y);
+    if (gap < best) best = gap;
+  }
+  return best;
 }
 
 /** The side of the court a player of a pair plays on to begin with: index 0 is the right, seen from its own end. */

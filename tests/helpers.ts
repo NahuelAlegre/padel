@@ -367,14 +367,14 @@ export class ScriptedHuman implements Controller {
     } else if (sitter) {
       // A ball to attack: finish it where nobody is.
       swing(open, rng.range(0.3, 0.5));
-    } else if (halfway) {
-      // Somebody half way between the net and the back: at the feet.
-      swing(aimAt(halfway.x), Math.max(0.28, Math.min(1, (netOf(halfway) - spec.depthNear) / (spec.depthFar - spec.depthNear))));
-    } else if (split && !meAtNet) {
-      // A pair split in two: over the one at the net, or into the hole between them.
-      const front = atNet(a) ? a : b;
-      if (rng.chance(0.55)) swing(aimAt(front.x), 1, true);
-      else swing(middle, 0.35);
+    } else if (halfway || split) {
+      // A pair out of place: where neither of them is. Now and then over the one at the net.
+      const front = atNet(a) ? a : atNet(b) ? b : null;
+      if (front && !meAtNet && rng.chance(0.25)) swing(aimAt(front.x), 1, true);
+      else {
+        const [aim, depth] = this.emptiest(rivals, spec.depthNear, spec.depthFar, range);
+        swing(aim, depth);
+      }
     } else if (atNet(a) && atNet(b) && !meAtNet) {
       // Both at the net: over them, and now and then at their feet through the middle.
       if (rng.chance(0.2)) swing(middle, 0.1);
@@ -389,6 +389,30 @@ export class ScriptedHuman implements Controller {
       else if (pick < 0.37) swing(middle, 0.1);
       else swing(middle + rng.range(-0.25, 0.25), rng.range(0.7, 0.95));
     }
+  }
+
+  /**
+   * Where on the other half the ball would land furthest from both rivals:
+   * an aim (-1..1) and a depth (0..1) of an ordinary shot. A person reading
+   * the court sees the empty space; the noise is the eye.
+   */
+  private emptiest(rivals: readonly Player[], near: number, far: number, range: number): [number, number] {
+    let best: [number, number] = [0, 0.7];
+    let bestGap = -Infinity;
+    for (let aim = -1; aim <= 1.001; aim += 0.25) {
+      for (const depth of [0.3, 0.5, 0.75, 0.95]) {
+        const x = aim * range;
+        const y = near + (far - near) * depth;
+        let gap = Infinity;
+        for (const rival of rivals) gap = Math.min(gap, Math.hypot(rival.x - x, Math.abs(rival.y) - y));
+        gap += this.rng.range(0, 0.6);
+        if (gap > bestGap) {
+          bestGap = gap;
+          best = [aim, depth];
+        }
+      }
+    }
+    return best;
   }
 
   /** Lateral aim (-1..1) of the widest gap in the other pair: a sideline or between them. */

@@ -8,6 +8,20 @@ Propuesta de diseño y prototipo jugable. La versión visual, con los diagramas 
 
 ---
 
+## El principio: el alcance real es lo que hace que la posición importe
+
+El usuario lo dijo así: reducir el alcance «es para forzar al jugador a jugar más posicional y que no se confíe en que va a llegar a todos lados. Y que juegue con el compañero. Y eso también aplicaría al enemigo, así como el enemigo puede castigar al jugador, el jugador puede castigar al enemigo».
+
+Esto ordena todo lo demás:
+
+1. **Si se llega a todo corriendo, la posición no vale nada.** Con el alcance real (1,15 m parado, 1,60 m con zancada, igual para todos), estar bien parado y con el compañero gana más que correr a todas. Medido con un jugador simulado de manos promedio, al revés y con el alcance real: jugar posicional le suma +12 pp contra correr a todas (+17 con manos de principiante, +8 de experto); con el motor de hoy le restaba 38.
+2. **Jugar en pareja rinde.** Dejársela al compañero, cubrir cada uno su zona y subir juntos se ven en el resultado: con el motor de hoy, jugar así costaba −26 a −49 pp; ahora suma.
+3. **Simetría total.** La pareja rival tiene el mismo alcance y las mismas reglas de posición que la tuya. Si vos te quedás mal parado, te castiga; si se queda mal parada ella, la castigás vos.
+   - **A veces se desordena**, según su entereza (`composure`) y la presión que acumuló en el punto: uno sube y el otro se queda atrás, uno se queda en tierra de nadie, o dudan en una pelota al medio. Romina y Beto se desordenan seguido; Chela, casi nunca. Tu compañero nunca: la pareja la llevás vos.
+   - **Se ve sin leer.** La pareja partida se ve en la cancha, y el que subió solo le hace señas al compañero. El que quedó en tierra de nadie está a mitad de cancha. Si la pelota va al hueco, se miran y se señalan los dos («¡tuya!», «¡tuya!»), y a veces no va ninguno.
+   - **Se castiga.** La pareja rival está desordenada en uno de cada cinco golpes tuyos. Tirándole al hueco ganás el 74 % de esos puntos (contra una pareja ordenada, el 64 %), el 37 % en el acto, y el 21 % de esas pelotas ni las devuelve (ordenada: 8 %). Del otro lado, una pareja partida o con alguien en tierra de nadie pierde el punto en el acto 12 pp más seguido que una pareja junta: vale para la tuya y para la rival.
+4. **En el prototipo se sienten las dos cosas:** con `?dobles&alcance=real`, quedarte en tierra de nadie o subir solo te cuesta pelotas a los pies y globos, y la pareja rival desordenada te deja huecos para ganar el punto.
+
 ## 1. Las reglas de posición del pádel, como reglas del juego
 
 | Regla del pádel | En el juego | Por qué vale (medido, 30 partidos) |
@@ -48,7 +62,7 @@ Los avisos salen cuando el compañero terminó de leer la pelota (su reacción, 
 
 **Su personalidad.** El mismo personaje que como rival, con su estilo y sus piernas, pero jugando a ganar y con manos más firmes (40 % menos de dispersión de timing, con tope de 0,07 s; 25 % menos de dispersión de golpes; lee la pelota un 25 % antes). Lo que propone `docs/personajes.md`, y todavía no está en el prototipo, donde los tres avisan igual: Beto «avisa temprano y siempre» y te deja definir; Romina sube y remata lo alto de su zona; Chela es la maestra de la pared y la que dice «¡arriba!» después de su globo.
 
-**Tu lado.** Por defecto, **revés**: tomás el medio con la derecha, como el más fuerte de una pareja de pádel, y es el lado donde jugar posicional paga más (+6 a +20 pp al revés contra −3 a +11 al drive, con Beto de compañero). Al drive, el medio es de tu compañero; se elige en Opciones o con `?lado=drive`.
+**Tu lado.** Por defecto, **revés**: tomás el medio con la derecha, como el más fuerte de una pareja de pádel, y es el lado donde jugar posicional paga más (+8 a +25 pp al revés contra −3 a +3 al drive, con Beto de compañero y la rival que se desordena). Al drive, el medio es de tu compañero; se elige en Opciones o con `?lado=drive`.
 
 ## 3. La pareja rival
 
@@ -64,7 +78,18 @@ La dificultad sale de cómo decide, no de que llegue a todo: nadie corre más qu
 
 Detrás del saque la pareja rival sube casi siempre (60 % como mínimo, más según su gusto por la red). Una pelota que se pega desde adentro de la cancha (a menos de 6 m de la red) lleva a la red a quien la pegó, como en el pádel. Dos de la misma pareja encima de la misma pelota se estorban: la pelota les sale más difícil.
 
-**Más adelante:** las parejas con poca química dudan en el medio (los dos van o ninguno), una debilidad que se lee y se aprende a usar (`docs/personajes.md`, 3.5).
+**La pareja rival también se desordena**, y eso es lo que se le castiga. Pasa en los momentos de cambio y en las pelotas difíciles de repartir, más cuanto menos entereza tiene y más presión acumuló en el punto. Dura hasta que la pareja vuelve a pegarle a la pelota.
+
+| Qué le pasa | Cuándo | Cómo se ve | Cómo se castiga |
+| --- | --- | --- | --- |
+| **Sube uno solo** (o baja uno solo) | La pareja cambia de lugar y uno no acompaña. | Uno en la red, otro atrás; el que fue le hace señas al otro. | Por arriba del que está en la red, o entre los dos. |
+| **Se queda en tierra de nadie** | Acompaña y se frena a mitad de camino (5,8 m). | Uno a mitad de cancha. | A sus pies: queda clavado y la levanta. |
+| **Dudan en el medio** | Una pelota por el medio, entre dos con poca entereza. | Se señalan los dos. | Por el medio: llegan tarde. |
+| **Nadie sabe de quién es** | Una pelota que pasa lejos de los dos (a más de 2,2 m de cada uno) cuando están desordenados. | Se señalan los dos; a veces no va ninguno. | Al hueco. |
+
+Con entereza 0,2 (Beto, Romina) una pareja se desordena unas 45 veces cada 100 golpes suyos, con la de Chela (0,78) 12 y con 0,9, 5. Los números están en `DISORDER` de `src/sim/pair.ts`. Nada de esto le pasa a una pareja con una persona: tu compañero no se desordena ni duda.
+
+**Más adelante:** que la química de la pareja (además de la entereza de cada uno) decida cuánto dudan en el medio (`docs/personajes.md`, 3.5).
 
 ## 4. Un alcance de persona real
 
@@ -113,6 +138,7 @@ Propuesta, todavía no está en el prototipo. Mismo formato que el tutorial actu
 | D2 | El medio | Pelotas por el medio. Beto avisa con la mano o te señala. | Le hacés caso al gesto. |
 | D3 | Subir juntos | Tu globo pasa a la pareja rival; Beto te hace señas. | Llegás a la red con él antes del golpe rival. |
 | D4 | El cambio | Un globo te pasa por arriba; Beto barre el brazo. | Cruzás al otro lado sin ir a buscarla. |
+| D5 | Castigar el hueco | La pareja del profe se desordena a propósito: uno sube solo o se queda en tierra de nadie. | Le tirás al hueco o a los pies, y el punto se gana. |
 
 **En el partido, las pistas son el compañero:** sus gestos ya dicen dónde ir. Como pista de una sola vez: si te quedás en tierra de nadie cuando el rival va a pegar, Beto te hace la seña de «arriba» o «atrás».
 
@@ -120,17 +146,22 @@ Propuesta, todavía no está en el prototipo. Mismo formato que el tutorial actu
 
 `npm run sim` tiene un informe nuevo, `doubles` (`tests/sim/doubles.sim.ts`), con un jugador simulado que pasa por los mismos controles que una persona. «Posicional» juega su lado, sube y baja con su compañero, hace caso a los avisos y tira donde no está la otra pareja. «Sin táctica» corre a todas las pelotas que puede y se queda atrás: el velocista.
 
-Vos y Beto contra Romina y Chela, 30 partidos por casilla. «Antes» es el motor de hoy (el de `main`) con el mismo jugador simulado y el mismo arnés; «ahora» es esta rama. Las manos son las del jugador promedio salvo donde dice otra cosa.
+Vos y Beto contra Romina y Chela, 30 partidos por casilla. «Antes» es el motor de hoy (el de `main`) con el mismo jugador simulado y el mismo arnés; «ahora» es esta rama, con vos al revés (el lado por defecto). Las manos son las del jugador promedio salvo donde dice otra cosa.
 
 | Métrica | Meta | Antes | Ahora, alcance de hoy | Ahora, alcance real |
 | --- | --- | --- | --- | --- |
-| Red contra fondo: los gana la red | 60 % o más | 21 % (en el 5 % de los puntos) | 76 % (en el 50 %) | 73 % (en el 53 %) |
+| Cuánto paga jugar posicional (principiante / promedio / experto) | +15 pp | −26 / −38 / −49 (al drive) | +12 / +25 / +21 | +17 / +12 / +8 |
+| Lo mismo, al drive | +15 pp | −26 / −38 / −49 | — | +3 / −3 / −1 |
+| Castigando el hueco rival: ganás el punto | +10 pp sobre la pareja ordenada | — (no se desordenaba) | 83 % (ordenada, 76 %) | 74 % (ordenada, 64 %) |
+| Castigando el hueco rival: no la devuelven | — | — | 18 % (ordenada, 6 %) | 21 % (ordenada, 8 %) |
+| Un hueco (pareja partida o en tierra de nadie) pierde en el acto, de más | 10 pp o más | 7 pp | 11–12 pp | 12 pp |
+| Red contra fondo: los gana la red | 60 % o más | 21 % (en el 5 % de los puntos) | 82 % (en el 41 %) | 68 % (en el 44 %) |
 | Tu pareja, junta (tiempo de pelota viva) | — | 49 % | 74 % | 74 % |
-| La pareja rival, junta | 75 % o más | 77 % | 89 % | 87 % |
-| Pelotas por el medio que nadie de tu pareja tocó | — | 181 | 61 | 81 |
-| Cuánto paga jugar posicional, al drive (principiante / promedio / experto) | +15 pp | −26 / −38 / −49 | +7 / +5 / +11 | −3 / +2 / +3 |
-| Cuánto paga jugar posicional, al revés | +15 pp | — | +12 / +20 / +6 | +11 / +12 / +13 |
-| Segundos por punto, media | 8 a 14 | 9,9 (los perdía rápido) | 23,4 | 17,4 |
+| La pareja rival, junta | — | 77 % | 72 % | 71 % |
+| Pelotas que nadie de tu pareja tocó (por el medio) | — | 232 (181) | 71 (42) | 141 (75) |
+| Segundos por punto, media | 8 a 14 | 9,9 (los perdía rápido) | 20,0 | 15,7 |
+
+La pareja rival junta baja de 77 % a 71 % a propósito: ahora se desordena, y eso es lo que se le castiga.
 
 **El hueco y la tierra de nadie**, con pelotas tiradas a mano a una pareja quieta (porque en un partido, ahora, una pareja partida casi no aparece: 1 a 6 % de las pelotas):
 
@@ -141,9 +172,9 @@ Vos y Beto contra Romina y Chela, 30 partidos por casilla. «Antes» es el motor
 | Romina | 70 % | 45 % | 35 % | 15 % |
 | Chela | 65 % | 58 % | 55 % | 52 % |
 
-**Cuatro IA medias**, sin persona: la pareja junta pasa de 62–63 % a 80–82 % del tiempo; el punto termina con una pareja en la red y la otra atrás en el 42 % de los puntos (antes, 18 %), y ahí gana la red el 66–71 %; los puntos duran 16,0 s con el alcance de hoy y **12,1 s** con el real (antes, 21,6 s).
+**Cuatro IA medias**, sin persona, con el alcance real: el punto termina con una pareja en la red y la otra atrás en el 40 % de los puntos (antes, 18 %), y ahí gana la red el 62 %; los puntos duran **12,6 s** (antes, 21,6 s).
 
-**Con un compañero parejo** (IA media de compañero y de rivales), jugar posicional paga +5 / +16 / +12 pp con el alcance de hoy y +8 / +8 / +12 con el real, y los puntos duran 13,2 s con el real.
+**Con un compañero parejo** (IA media de compañero y de rivales, medido antes de que las parejas rivales se desordenaran), jugar posicional pagaba +5 / +16 / +12 pp con el alcance de hoy y +8 / +8 / +12 con el real.
 
 **1 contra 1**, jugador simulado promedio con táctica, contra Beto / Romina / Chela:
 
@@ -155,7 +186,7 @@ Vos y Beto contra Romina y Chela, 30 partidos por casilla. «Antes» es el motor
 
 Con el alcance de hoy el 1 contra 1 da exactamente los mismos números que antes, golpe por golpe: lo nuevo de dobles no lo toca.
 
-**Qué dicen.** Antes, jugar posicional en dobles se pagaba caro: el compañero no compartía ninguna regla, la pelota del medio no era de nadie y la pareja no subía junta. Ahora paga, sobre todo si tomás el medio (revés): +11 a +20 pp con manos de principiante y de promedio. Al drive con Beto, correr a todas rinde casi lo mismo que jugar posicional, porque vos sos mejor que Beto y cubrir más cancha compensa. La meta de +15 pp se cumple en algunas casillas, no en todas. Los puntos con Romina y Chela siguen largos (17 a 23 s; Chela devuelve todo); con rivales parejos y el alcance real entran en la meta. En 1 contra 1, el alcance real acorta los puntos y achica lo que paga la táctica contra Chela (+20 → +9): solo en la cancha entera, gana más el que corre. Es otro argumento para el Cruzado.
+**Qué dicen.** Antes, jugar posicional en dobles se pagaba caro: el compañero no compartía ninguna regla, la pelota del medio no era de nadie y la pareja no subía junta. Ahora paga, y paga de los dos lados: estar bien parado gana puntos y castigar a la pareja rival desordenada también. Paga sobre todo si tomás el medio (revés): +12 a +25 pp con manos de principiante y de promedio. Al drive con Beto, correr a todas rinde lo mismo que jugar posicional, porque vos sos mejor que Beto y cubrir más cancha compensa. Con manos de experto, castigar el hueco no suma: ese jugador gana casi todo igual. La meta de +15 pp se cumple en algunas casillas, no en todas. Los puntos con Romina y Chela siguen algo largos (16 a 20 s; Chela devuelve todo); con rivales parejos y el alcance real entran en la meta (12,6 s). En 1 contra 1, el alcance real acorta los puntos y achica lo que paga la táctica contra Chela (+20 → +9): solo en la cancha entera, gana más el que corre. Es otro argumento para el Cruzado.
 
 ## 8. Rendimiento
 
@@ -173,7 +204,7 @@ Un cuadro a 60 fps tiene 16,7 ms. Ningún cuadro tardó más de 17,5 ms en ningu
 
 **Fases.**
 
-1. **Prototipo** (esta rama): reglas de pareja, compañero y pareja rival, alcance real como interruptor, avisos con el cuerpo, opciones experimentales y mediciones.
+1. **Prototipo** (esta rama): reglas de pareja, compañero y pareja rival (que también se desordena), alcance real como interruptor, avisos con el cuerpo, opciones experimentales y mediciones.
 2. **Animación:** zancada con el pie plantado, flexión profunda, geometría del contacto. Sin esto, el alcance real se juega bien pero se ve igual que hoy.
 3. **Aprender dobles:** las cuatro lecciones, la pista de tierra de nadie, la elección de compañero en el inicio, las frases y festejos de pareja.
 4. **Dobles por defecto:** si el usuario lo decide, la partida rápida pasa a dobles, se recalibran los rivales y el 1 contra 1 pasa a «Cruzado».
@@ -182,8 +213,9 @@ Un cuadro a 60 fps tiene 16,7 ms. Ningún cuadro tardó más de 17,5 ms en ningu
 
 - Con el alcance real hay que pararse bien, y el joystick en el celular puede quedarse corto. Solo se sabe jugando.
 - Un compañero que se percibe tonto o que «roba» arruina el modo. Los avisos y la regla del medio son lo que hay que mirar en el celular.
-- Al drive con Beto de compañero, que es lento, correr a todas paga casi lo mismo que jugar posicional. Al revés, o con un compañero parejo, posicional paga +8 a +20 pp.
-- Los puntos contra Romina y Chela siguen largos (17 a 23 s de media; la meta es 8 a 14): Chela devuelve todo.
+- Al drive con Beto de compañero, que es lento, correr a todas paga lo mismo que jugar posicional. Al revés paga +8 a +25 pp.
+- Cuánto se desordena la rival es un número a afinar jugando: hoy, una de cada cinco pelotas tuyas la encuentra desordenada. Si es poco no hay nada que castigar; si es mucho, parece torpe.
+- Los puntos contra Romina y Chela siguen algo largos (16 a 20 s de media; la meta es 8 a 14): Chela devuelve todo.
 - La brecha de +15 pp se cumple solo en algunas casillas, y es la de un jugador simulado: nadie midió todavía a una persona.
 
 **Decisiones que te quedan.**
@@ -195,3 +227,4 @@ Un cuadro a 60 fps tiene 16,7 ms. Ningún cuadro tardó más de 17,5 ms en ningu
 | ¿Qué es el 1 contra 1? | **Cruzado**, en media cancha y en diagonal. |
 | ¿Tu lado por defecto? | **Revés**: tomás el medio, como el más fuerte de una pareja, y es donde la posición paga más. Drive en Opciones. |
 | ¿Quién es el compañero por defecto? | **Beto**, el profe, que avisa todo. Los demás se eligen después de haberlos enfrentado. |
+| ¿Cuánto se desordena la pareja rival? | **Como ahora** (una de cada cinco pelotas tuyas, según la entereza de cada rival), y afinarlo jugando en el celular: que se note y que no parezca torpe. |

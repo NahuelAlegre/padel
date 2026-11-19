@@ -2,6 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { describe, it } from 'vitest';
 import type { GameConfig, RivalId } from '../../src/config';
 import { Match, type PlayerEntry } from '../../src/sim/match';
+import { closestPass, DISORDER } from '../../src/sim/pair';
 import type { Player } from '../../src/sim/player';
 import { aiEntry, humanEntry, partnerEntry, SKILLS, testConfig, withTactics, type SkillName } from '../helpers';
 
@@ -62,6 +63,18 @@ function shapeOf(pair: readonly Player[]): Shape {
 }
 
 const bothAt = (pair: readonly Player[], zone: 'net' | 'back'): boolean => pair.every((player) => zoneOf(player) === zone);
+const HOLE_GAP = DISORDER.holeGap;
+
+/**
+ * Whether a shot went into the hole of a pair that is out of place: it passes
+ * further than `HOLE_GAP` metres from both of them while they could hit it
+ * (the same rule the computer pairs doubt by).
+ */
+function intoTheHole(pair: readonly Player[], match: Match): boolean {
+  const trajectory = match.trajectory;
+  if (!trajectory) return false;
+  return pair.every((player) => closestPass(trajectory, player, match.time, match.config.player.maxContactZ) > HOLE_GAP);
+}
 
 interface Faced {
   /** Balls faced in this shape, and how many of them lost the point at once (on that ball or the next). */
@@ -92,6 +105,16 @@ interface Stats {
   kinds: Record<string, number>;
   /** Seconds of live ball with both pairs at the back, one of them at the net, both at the net, or anything else. */
   phases: Record<string, number>;
+  /**
+   * The other side of the hole: the balls the near pair (the person's) struck,
+   * by how the far pair stood then, whether the shot went into its hole, and
+   * how many of those points the near pair won, in all and at once.
+   */
+  struck: Record<'formed' | 'punished' | 'spared', { n: number; won: number; now: number; notBack: number }>;
+  /** Near-pair shots that found the far pair split or somebody half way, and balls through the middle the far pair doubted over. */
+  rivalLoose: number;
+  rivalDoubts: number;
+  doubtsWon: number;
   winningShot: Record<string, number>;
   missedShot: Record<string, number>;
   stalled: number;
@@ -121,6 +144,10 @@ function play(title: string, setup: Setup): Stats {
     hitsAtNet: [0, 0],
     kinds: {},
     phases: {},
+    struck: { formed: { n: 0, won: 0, now: 0, notBack: 0 }, punished: { n: 0, won: 0, now: 0, notBack: 0 }, spared: { n: 0, won: 0, now: 0, notBack: 0 } },
+    rivalLoose: 0,
+    rivalDoubts: 0,
+    doubtsWon: 0,
     winningShot: {},
     missedShot: {},
     stalled: 0,
@@ -140,6 +167,8 @@ function play(title: string, setup: Setup): Stats {
     });
     // The balls struck at each pair in this point: its shape then, and how many touches it had made before.
     let facing: Array<{ team: 0 | 1; shape: Shape; touches: number }> = [];
+    /** The near pair's shots in this point: how the far pair stood, and the far pair's touches before it. */
+    let strikes: Array<{ kind: 'formed' | 'punished' | 'spared'; doubt: boolean; touches: number }> = [];
     const touches: [number, number] = [0, 0];
     let shots = 0;
     let startedAt = 0;
@@ -173,6 +202,15 @@ function play(title: string, setup: Setup): Stats {
             if (Math.abs(me.y) < NET) stats.hitsAtNet[event.team]++;
             stats.kinds[event.kind] = (stats.kinds[event.kind] ?? 0) + 1;
             facing.push({ team: receiving, shape: shapeOf(match.teams[receiving]), touches: touches[receiving] });
+            if (event.team === 0 && match.trajectory) {
+              const far = match.teams[1];
+              const doubt = match.pairs[1].doubted === match.trajectory.id;
+              const loose = shapeOf(far) !== 'together' || far.some((player) => player.astray !== null);
+              if (loose) stats.rivalLoose++;
+              if (doubt) stats.rivalDoubts++;
+              const kind = !loose ? 'formed' : doubt || intoTheHole(far, match) ? 'punished' : 'spared';
+              strikes.push({ kind, doubt, touches: touches[1] });
+            }
           }
           lastShapes = [shapeOf(match.teams[0]), shapeOf(match.teams[1])];
           lastNet = [bothAt(match.teams[0], 'net'), bothAt(match.teams[1], 'net')];
@@ -203,6 +241,14 @@ function play(title: string, setup: Setup): Stats {
             stats.untouched[loser]++;
             if (bounceX !== null && Math.abs(bounceX - lastMid) < 1.2) stats.untouchedMiddle[loser]++;
           }
+          for (const strike of strikes) {
+            const entry = stats.struck[strike.kind];
+            entry.n++;
+            if (event.winner === 0) entry.won++;
+            if (event.winner === 0 && touches[1] - strike.touches <= 1) entry.now++;
+            if (event.winner === 0 && touches[1] === strike.touches) entry.notBack++;
+            if (strike.doubt && event.winner === 0) stats.doubtsWon++;
+          }
           for (const ball of facing) {
             const entry = stats.faced[ball.team][ball.shape];
             entry.n++;
@@ -218,11 +264,13 @@ function play(title: string, setup: Setup): Stats {
           }
           void lastShapes;
           facing = [];
+          strikes = [];
           touches[0] = 0;
           touches[1] = 0;
           shots = 0;
         } else if (event.type === 'fault' || event.type === 'let') {
           facing = [];
+          strikes = [];
           touches[0] = 0;
           touches[1] = 0;
           shots = 0;
@@ -279,6 +327,16 @@ function indicators(stats: Stats): Record<string, number> {
     netHits: ratio(sum(stats.hitsAtNet), sum(stats.hits)),
     errors: ratio(stats.byError, points),
     untouchedMiddleA: ratio(stats.untouchedMiddle[0], stats.pointsWon[1]),
+    rivalLoose: ratio(stats.rivalLoose, stats.hits[0]),
+    punishedWin: ratio(stats.struck.punished.won, stats.struck.punished.n),
+    punishedNow: ratio(stats.struck.punished.now, stats.struck.punished.n),
+    sparedWin: ratio(stats.struck.spared.won, stats.struck.spared.n),
+    formedWin: ratio(stats.struck.formed.won, stats.struck.formed.n),
+    punishPays: ratio(stats.struck.punished.won, stats.struck.punished.n) - ratio(stats.struck.formed.won, stats.struck.formed.n),
+    punishedNotBack: ratio(stats.struck.punished.notBack, stats.struck.punished.n),
+    formedNotBack: ratio(stats.struck.formed.notBack, stats.struck.formed.n),
+    formedNow: ratio(stats.struck.formed.now, stats.struck.formed.n),
+    doubtWin: ratio(stats.doubtsWon, stats.rivalDoubts),
   };
 }
 
@@ -306,6 +364,10 @@ function describeStats(stats: Stats): string {
     `nadie la tocó           A ${stats.untouched[0]} (por el medio ${stats.untouchedMiddle[0]})   B ${stats.untouched[1]} (por el medio ${stats.untouchedMiddle[1]})`,
     `desde la red    ${asPct(values.netHits!)}   golpes ${top(stats.kinds)}`,
     `fases           ${top(stats.phases)}`,
+    `la pareja B, desordenada en ${pct(stats.rivalLoose, stats.hits[0])} de los golpes de A; dudó en el medio ${stats.rivalDoubts} veces (A ganó ${pct(stats.doubtsWon, stats.rivalDoubts)} de esos puntos)`,
+    `A castigando el hueco: ${stats.struck.punished.n} golpes, gana el punto ${pct(stats.struck.punished.won, stats.struck.punished.n)} (en el acto ${pct(stats.struck.punished.now, stats.struck.punished.n)}, no la devuelven ${pct(stats.struck.punished.notBack, stats.struck.punished.n)})` +
+      ` · con el hueco y sin castigarlo: gana ${pct(stats.struck.spared.won, stats.struck.spared.n)} (en el acto ${pct(stats.struck.spared.now, stats.struck.spared.n)})` +
+      ` · contra B ordenada: gana ${pct(stats.struck.formed.won, stats.struck.formed.n)} (en el acto ${pct(stats.struck.formed.now, stats.struck.formed.n)}, no la devuelven ${pct(stats.struck.formed.notBack, stats.struck.formed.n)})`,
     `golpe que gana  ${top(stats.winningShot)}   golpe errado ${top(stats.missedShot)}`,
   ].join('\n');
 }
@@ -324,6 +386,7 @@ const asPp = (value: number): string => `${Math.round(value * 100)} pp`;
 /** docs/dobles.md, "Cómo se mide". */
 const TARGETS: Target[] = [
   { key: 'netWins', label: 'red contra fondo: gana la red', min: 0.6, max: 1, show: asPct },
+  { key: 'punishPays', label: 'castigar el hueco rival (vs ordenada)', min: 0.1, max: 1, show: asPp },
   { key: 'holeCost', label: 'el hueco cuesta (partidos − juntos)', min: 0.1, max: 1, show: asPp },
   { key: 'togetherB', label: 'pareja rival junta (tiempo)', min: 0.75, max: 1, show: asPct },
   { key: 'seconds', label: 'segundos de peloteo, media', min: 8, max: 14, show: asNumber },
@@ -391,7 +454,8 @@ Vos (${REVES ? 'revés' : 'drive'}) y ${mate} contra ${rivalA} y ${rivalB}`);
       const b = indicators(thinking);
       const gap = Math.round((b.pointsA! - a.pointsA!) * 100);
       out.push(
-        `  ${skill.padEnd(9)} puntos ${asPct(a.pointsA!)} → ${asPct(b.pointsA!)}  (${gap >= 0 ? '+' : ''}${gap} pp${gap < 15 ? ', FUERA: la meta es +15' : ''})   partidos ${a.winsA}/${MATCHES} → ${b.winsA}/${MATCHES}   seg/punto ${a.seconds!.toFixed(1)} → ${b.seconds!.toFixed(1)}   juntos ${asPct(a.togetherA!)} → ${asPct(b.togetherA!)}`,
+        `  ${skill.padEnd(9)} puntos ${asPct(a.pointsA!)} → ${asPct(b.pointsA!)}  (${gap >= 0 ? '+' : ''}${gap} pp${gap < 15 ? ', FUERA: la meta es +15' : ''})   partidos ${a.winsA}/${MATCHES} → ${b.winsA}/${MATCHES}   seg/punto ${a.seconds!.toFixed(1)} → ${b.seconds!.toFixed(1)}   juntos ${asPct(a.togetherA!)} → ${asPct(b.togetherA!)}` +
+          `   castigando el hueco gana ${asPct(b.punishedWin!)} (sin castigarlo ${asPct(b.sparedWin!)}, B ordenada ${asPct(b.formedWin!)}; el velocista castigando ${asPct(a.punishedWin!)})`,
       );
     }
     console.log(out.join('\n'));

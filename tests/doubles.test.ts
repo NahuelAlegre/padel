@@ -130,7 +130,8 @@ describe('dobles: cada pelota tiene dueño', () => {
   it('en un partido entero, el compañero solo pega una pelota que era tuya después de avisar, y nunca la que te dejó', () => {
     let checked = 0;
     let covered = 0;
-    for (const seed of [1, 2, 3]) {
+    // Covering a ball of the person's is rare: these matches have some.
+    for (const seed of [3, 4, 5, 6]) {
       const config = createConfig();
       const match = new Match({
         config,
@@ -411,5 +412,118 @@ describe('dobles: partidos enteros', () => {
     };
     expect(record(12)).toEqual(record(12));
     expect(record(12)).not.toEqual(record(13));
+  });
+});
+
+describe('dobles: la pareja rival también se desordena, y se le puede castigar', () => {
+  /** Two plain players of the given composure against two steady ones, and what came apart in their pair. */
+  function disorder(composure: number, seeds: number[]) {
+    let astray = 0;
+    let doubts = 0;
+    let beckons = 0;
+    let exchanges = 0;
+    for (const seed of seeds) {
+      const config = createConfig();
+      const loose = (n: number): PlayerEntry => ({ ...aiEntry(config, 'medium', n), composure });
+      const match = new Match({
+        config,
+        seed,
+        teams: [
+          { name: 'A', players: [{ ...aiEntry(config, 'medium', seed + 10), composure: 0.9 }, { ...aiEntry(config, 'medium', seed + 11), composure: 0.9 }] },
+          { name: 'B', players: [loose(seed + 12), loose(seed + 13)] },
+        ],
+      });
+      const far = match.teams[1];
+      const was = [null, null] as Array<string | null>;
+      let doubted = -1;
+      while (match.phase !== 'matchOver' && match.tick < 1800 * 120) {
+        match.step();
+        for (const event of match.events) if (event.type === 'hit' && event.team === 1) exchanges++;
+        match.events.length = 0;
+        far.forEach((player, i) => {
+          if (player.astray && player.astray !== was[i]) astray++;
+          was[i] = player.astray;
+          if (player.call === 'up' && player.callAt === match.time) beckons++;
+        });
+        if (match.pairs[1].doubted !== doubted) {
+          doubted = match.pairs[1].doubted;
+          if (doubted >= 0) doubts++;
+        }
+      }
+    }
+    return { astray, doubts, beckons, exchanges };
+  }
+
+  it('se desordena más quien tiene menos entereza: se queda atrás, a mitad de camino o duda en el medio', () => {
+    const shaky = disorder(0.2, [3, 4]);
+    const steady = disorder(0.9, [3, 4]);
+    expect(shaky.astray).toBeGreaterThan(10);
+    expect(shaky.doubts).toBeGreaterThan(5);
+    expect(shaky.astray).toBeGreaterThan(steady.astray * 2.5);
+    expect(shaky.doubts).toBeGreaterThan(steady.doubts * 2);
+    // When one goes up without the other, it calls the partner up: that is how the other side sees it.
+    expect(shaky.beckons).toBeGreaterThan(0);
+  });
+
+  it('tu compañero nunca se desordena ni duda: la pareja con una persona la lleva la persona', () => {
+    for (const seed of [5, 6]) {
+      const config = createConfig();
+      const match = new Match({
+        config,
+        seed,
+        teams: [
+          { name: 'A', players: [humanEntry(seed, withTactics(SKILLS.average, 1)), { ...partnerEntry(config, 'beto', seed + 1), composure: 0 }] },
+          { name: 'B', players: [aiEntry(config, 'romina', seed + 2), aiEntry(config, 'chela', seed + 3)] },
+        ],
+      });
+      const mate = match.players[1]!;
+      while (match.phase !== 'matchOver' && match.tick < 1800 * 120) {
+        match.step();
+        match.events.length = 0;
+        expect(mate.astray).toBeNull();
+        expect(mate.doubtUntil).toBe(0);
+        expect(match.pairs[0].doubted).toBe(-1);
+      }
+    }
+  });
+
+  /** Lobs into one spot of the far half, against a far pair standing where it is put: how many it does not return. */
+  function notReturned(far: Array<{ x: number; y: number }>, composure: number, target: { x: number; y: number }, balls = 60): number {
+    const config = createConfig();
+    const match = new Match({
+      config,
+      seed: 41,
+      practice: true,
+      teams: [
+        { name: 'A', players: [person(), person({ name: 'B' })] },
+        { name: 'B', players: [{ ...aiEntry(config, 'medium', 51), composure }, { ...aiEntry(config, 'medium', 52), composure }] },
+      ],
+    });
+    let missed = 0;
+    for (let n = 0; n < balls; n++) {
+      match.rest([{ x: 2.3, y: -7.4 }, { x: -2.3, y: -7.4 }, ...far], 0, true);
+      match.feed({ targetX: target.x, targetY: target.y, kind: 'lob', params: { clearance: 2, apex: 5.2, speed: 30 } });
+      let back = false;
+      for (let i = 0; i < 4 * 120 && match.rally.live; i++) {
+        match.step();
+        if (match.events.some((event) => event.type === 'hit' && event.team === 1)) back = true;
+        match.events.length = 0;
+        if (back) break;
+      }
+      if (!back) missed++;
+    }
+    return missed / balls;
+  }
+
+  it('el hueco de una pareja partida se castiga: un globo por arriba del que subió solo vuelve menos, y menos todavía si no tiene entereza', () => {
+    const split = [{ x: 2, y: 3.2 }, { x: -2.3, y: 7.6 }];
+    const together = [{ x: 2.3, y: 7.6 }, { x: -2.3, y: 7.6 }];
+    // Over the one at the net, deep on its side: the one at the back has to cross the whole diagonal.
+    const hole = { x: 2.6, y: 8.4 };
+    const shaky = notReturned(split, 0.2, hole);
+    const steady = notReturned(split, 0.9, hole);
+    const formed = notReturned(together, 0.2, hole);
+    expect(shaky).toBeGreaterThan(formed + 0.1);
+    expect(shaky).toBeGreaterThan(steady + 0.05);
   });
 });

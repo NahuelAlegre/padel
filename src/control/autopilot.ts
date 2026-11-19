@@ -27,7 +27,8 @@ export function autoMove(match: Match, me: Player, intent: PlayerIntent): void {
   const incoming = rally.live && rally.hitter !== me.team;
   if (incoming && match.assigned[me.team] === me.id) {
     const trajectory = match.trajectory;
-    const stillReading = trajectory !== null && match.time < trajectory.t0 + me.reaction;
+    // Still reading it, or doubting over a ball through the middle.
+    const stillReading = (trajectory !== null && match.time < trajectory.t0 + me.reaction) || match.time < me.doubtUntil;
     if (stillReading || match.shouldLeave(me.team)) {
       // Not read yet, or it is going out by itself: hold the position.
       intent.targetX = me.x;

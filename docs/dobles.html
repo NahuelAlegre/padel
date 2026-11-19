@@ -109,6 +109,14 @@ figcaption { font-size: 13px; color: var(--muted); line-height: 1.35; }
 figcaption b { color: var(--ink); font-weight: 600; }
 .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 .note { font-size: 13.5px; color: var(--muted); }
+.principle { display: grid; gap: 16px; padding: 20px; border-radius: 12px; background: var(--panel); border: 1px solid var(--rule); }
+.principle blockquote { margin: 0; padding-left: 14px; border-left: 3px solid var(--you); color: var(--ink); font-size: 15.5px; }
+.pillars { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.pillar { display: grid; gap: 6px; align-content: start; }
+.pillar .num { font: 700 26px/1 var(--display); color: var(--you); font-variant-numeric: tabular-nums; }
+.pillar .num small { font: 500 13px/1.3 var(--text); color: var(--muted); display: block; margin-top: 3px; }
+.compare { display: grid; gap: 10px; }
+@media (max-width: 640px) { .pillars { grid-template-columns: minmax(0, 1fr); } }
 .tag { font: 600 11px/1 var(--text); letter-spacing: .1em; text-transform: uppercase; padding: 4px 7px; border-radius: 4px; background: var(--zone); color: #3a2a00; }
 @media (max-width: 640px) {
   .rule, .pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -203,6 +211,29 @@ figcaption b { color: var(--ink); font-weight: 600; }
       <span><i class="dot d-you">V</i> vos</span><span><i class="dot d-mate">B</i> tu compañero</span><span><i class="dot d-rival">R</i> pareja rival</span>
     </div>
   </header>
+
+  <section aria-labelledby="s-principle" class="principle">
+    <span class="eyebrow">El principio</span>
+    <h2 id="s-principle">El alcance real hace que la posición importe</h2>
+    <blockquote>«Es para forzar al jugador a jugar más posicional y que no se confíe en que va a llegar a todos lados. Y que juegue con el compañero. Y eso también aplicaría al enemigo.»</blockquote>
+    <div class="pillars">
+      <div class="pillar">
+        <h3>No llegás a todo</h3>
+        <p>1,15 m parado y 1,60 m con zancada, para todos. Si se llega a todo corriendo, la posición no vale nada.</p>
+        <div class="num">+12 pp<small>paga estar bien parado y con tu compañero, contra correr a todas (manos promedio, al revés; antes restaba 38)</small></div>
+      </div>
+      <div class="pillar">
+        <h3>Rinde jugar en pareja</h3>
+        <p>Dejársela al compañero, cubrir cada uno su zona y subir juntos se ve en el resultado.</p>
+        <div class="num">74 %<small>del tiempo tu pareja está junta (antes, 49 %)</small></div>
+      </div>
+      <div class="pillar">
+        <h3>Te castigan y castigás</h3>
+        <p>La pareja rival tiene tu mismo alcance y tus mismas reglas. A veces se desordena, según su entereza, y su hueco se castiga.</p>
+        <div class="num">74 %<small>de los puntos ganás tirándole al hueco (contra la pareja ordenada, 64 %)</small></div>
+      </div>
+    </div>
+  </section>
 
   <section aria-labelledby="s-rules">
     <h2 id="s-rules">Las reglas del pádel, como reglas del juego</h2>
@@ -401,6 +432,35 @@ figcaption b { color: var(--ink); font-weight: 600; }
       </figure>
     </div>
     <p>La dificultad sale de cómo decide, no de que llegue a todo: nadie corre más que una persona. Detrás del saque la pareja sube casi siempre, y quien pega desde adentro de la cancha sigue a la red. Dos de la misma pareja encima de la misma pelota se estorban.</p>
+    <h3>Y también se desordena: ahí la castigás vos</h3>
+    <div class="two">
+      <figure style="margin:0;display:grid;gap:8px">
+        <svg class="court" viewBox="-58 -108 116 120" role="img" aria-label="La pareja rival partida: uno subió solo, el otro quedó atrás; tu pelota pasa entre los dos y se señalan">
+          <use href="#court"/>
+          <path class="hole" d="M -50 -44 L 6 -44 L 50 -62 L 50 -100 L 12 -100 L -50 -70 Z"/>
+          <line class="rope" x1="20" y1="-32" x2="-23" y2="-80"/>
+          <g class="p rival" transform="translate(22 -32)"><circle r="6"/><text>R</text></g>
+          <g class="p rival" transform="translate(-23 -80)"><circle r="6"/><text>C</text></g>
+          <path class="path" d="M -4 6 L 2 -56" marker-end="url(#arrow-b)"/>
+          <text class="lbl" x="34" y="-44" style="font-size:6.5px">¡TUYA!</text>
+          <text class="lbl" x="-34" y="-92" style="font-size:6.5px">¡TUYA!</text>
+          <text class="lbl" x="-14" y="-58">EL HUECO</text>
+        </svg>
+        <figcaption>Romina subió sola y Chela quedó atrás. Tu pelota pasa lejos de las dos: se señalan y llegan tarde, o no va ninguna.</figcaption>
+      </figure>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Le pasa</th><th>Se ve</th><th>Se castiga</th></tr></thead>
+          <tbody>
+            <tr><td><b>Sube uno solo</b></td><td>Uno en la red, otro atrás; el que fue le hace señas.</td><td>Por arriba del de la red, o entre los dos.</td></tr>
+            <tr><td><b>Queda en tierra de nadie</b></td><td>Uno a mitad de cancha.</td><td>A sus pies: queda clavado.</td></tr>
+            <tr><td><b>Dudan en el medio</b></td><td>Se señalan los dos.</td><td>Por el medio: llegan tarde.</td></tr>
+            <tr><td><b>Nadie sabe de quién es</b></td><td>Se señalan; a veces no va ninguno.</td><td>Al hueco.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p class="note">Pasa más cuanto menos entereza tiene cada rival y más presión acumuló en el punto: con la entereza de Beto o Romina, unas 45 veces cada 100 golpes de su pareja; con la de Chela, 12. Dura hasta que la pareja vuelve a pegarle. Tu compañero nunca se desordena: la pareja la llevás vos.</p>
   </section>
 
   <section aria-labelledby="s-reach">
@@ -496,7 +556,7 @@ figcaption b { color: var(--ink); font-weight: 600; }
       <div class="txt" style="display:grid;gap:10px">
         <p><b>Acompaña:</b> panea con tu jugador y abre el zoom lo que haga falta para que entren los cuatro, la pelota, dónde pica y tu vidrio. En la red se cierra si entran todos.</p>
         <p><b>Fija:</b> la cancha entera, quieta.</p>
-        <p class="note">En la prueba de punta a punta, en 4536 miradas de un partido de dobles jugado con toques, los cuatro, la pelota y tu vidrio siempre estuvieron en pantalla. Tu jugador se distingue sin anillo: lo mueve tu pulgar y siempre está de tu lado.</p>
+        <p class="note">En la prueba de punta a punta, en 8375 miradas de un partido de dobles jugado con toques, los cuatro, la pelota y tu vidrio siempre estuvieron en pantalla. Tu jugador se distingue sin anillo: lo mueve tu pulgar y siempre está de tu lado.</p>
       </div>
     </div>
   </section>
@@ -523,24 +583,30 @@ figcaption b { color: var(--ink); font-weight: 600; }
     <p class="muted">Partidos simulados, 30 por casilla: vos y Beto contra Romina y Chela, con un jugador simulado que pasa por los mismos controles que una persona. «Posicional» juega su lado, sube y baja con su compañero, le hace caso a los avisos y tira donde no está la otra pareja. «Velocista» corre a todas.</p>
     <div class="key"><span><i style="background:var(--muted);opacity:.45"></i>antes (motor de hoy)</span><span><i style="background:var(--you)"></i>ahora, alcance real</span><span><i style="background:var(--ink);opacity:.55;width:2px;height:12px"></i>meta</span></div>
     <div class="bars">
-      <div class="bar"><div class="label"><span>Red contra fondo: los gana la red</span><b>21 % → 73 %</b></div><div class="track"><i class="before" style="width:21%"></i><i class="after" style="width:73%"></i><span class="mid" style="left:60%" title="meta"></span></div></div>
+      <div class="bar"><div class="label"><span>Red contra fondo: los gana la red</span><b>21 % → 68 %</b></div><div class="track"><i class="before" style="width:21%"></i><i class="after" style="width:68%"></i><span class="mid" style="left:60%" title="meta"></span></div></div>
       <div class="bar"><div class="label"><span>Tu pareja, junta (tiempo de pelota viva)</span><b>49 % → 74 %</b></div><div class="track"><i class="before" style="width:49%"></i><i class="after" style="width:74%"></i></div></div>
-      <div class="bar"><div class="label"><span>La pareja rival, junta</span><b>77 % → 87 %</b></div><div class="track"><i class="before" style="width:77%"></i><i class="after" style="width:87%"></i><span class="mid" style="left:75%" title="meta"></span></div></div>
-      <div class="bar"><div class="label"><span>Puntos que gana la persona promedio jugando posicional, al drive</span><b>16 % → 61 %</b></div><div class="track"><i class="before" style="width:16%"></i><i class="after" style="width:61%"></i></div></div>
+      <div class="bar"><div class="label"><span>Puntos que gana la persona promedio jugando posicional (antes al drive, ahora al revés)</span><b>16 % → 58 %</b></div><div class="track"><i class="before" style="width:16%"></i><i class="after" style="width:58%"></i></div></div>
+    </div>
+    <h3>Castigar el hueco rival</h3>
+    <div class="key"><span><i style="background:var(--muted);opacity:.45"></i>contra la pareja ordenada</span><span><i style="background:var(--you)"></i>tirándole al hueco de la desordenada</span></div>
+    <div class="bars">
+      <div class="bar"><div class="label"><span>Ganás el punto</span><b>64 % → 74 %</b></div><div class="track"><i class="before" style="width:64%"></i><i class="after" style="width:74%"></i></div></div>
+      <div class="bar"><div class="label"><span>Lo ganás en el acto (esa pelota o la siguiente)</span><b>19 % → 37 %</b></div><div class="track"><i class="before" style="width:19%"></i><i class="after" style="width:37%"></i></div></div>
+      <div class="bar"><div class="label"><span>No la devuelven</span><b>8 % → 21 %</b></div><div class="track"><i class="before" style="width:8%"></i><i class="after" style="width:21%"></i></div></div>
     </div>
     <div class="scroll">
       <table>
         <thead><tr><th>Cuánto paga jugar posicional contra correr a todas</th><th>Principiante</th><th>Promedio</th><th>Experto</th></tr></thead>
         <tbody>
-          <tr><td>Antes (motor de hoy), al drive</td><td class="n">−26 pp</td><td class="n">−38 pp</td><td class="n">−49 pp</td></tr>
-          <tr><td>Ahora, al drive, alcance de hoy / real</td><td class="n">+7 / −3</td><td class="n">+5 / +2</td><td class="n">+11 / +3</td></tr>
-          <tr><td><b>Ahora, al revés</b>, alcance de hoy / real</td><td class="n"><b>+12 / +11</b></td><td class="n"><b>+20 / +12</b></td><td class="n"><b>+6 / +13</b></td></tr>
-          <tr><td>Con un compañero parejo, alcance de hoy / real</td><td class="n">+5 / +8</td><td class="n">+16 / +8</td><td class="n">+12 / +12</td></tr>
-          <tr><td>Segundos por punto (posicional, promedio)</td><td class="n" colspan="3">antes 9,9 (perdía rápido) · ahora 23,4 con el alcance de hoy, 17,4 con el real · meta 8 a 14</td></tr>
+          <tr><td>Antes (motor de hoy)</td><td class="n">−26 pp</td><td class="n">−38 pp</td><td class="n">−49 pp</td></tr>
+          <tr><td><b>Ahora, al revés</b>, alcance de hoy / real</td><td class="n"><b>+12 / +17</b></td><td class="n"><b>+25 / +12</b></td><td class="n"><b>+21 / +8</b></td></tr>
+          <tr><td>Ahora, al drive, alcance real</td><td class="n">+3</td><td class="n">−3</td><td class="n">−1</td></tr>
+          <tr><td>Un hueco propio (partida o en tierra de nadie) pierde en el acto, de más</td><td class="n" colspan="3">antes 7 pp · ahora 12 pp · meta 10 pp o más</td></tr>
+          <tr><td>Segundos por punto (posicional, promedio)</td><td class="n" colspan="3">antes 9,9 (perdía rápido) · ahora 20,0 con el alcance de hoy, 15,7 con el real · meta 8 a 14</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="note">Al revés tomás el medio y ahí la posición paga más. Al drive con Beto, correr a todas rinde casi igual porque vos sos mejor que Beto y cubrir más cancha compensa. La meta de +15 pp se cumple en algunas casillas, no en todas. Con cuatro IA parejas y el alcance real los puntos duran 12,1 s (antes 21,6); con Romina y Chela, 17 a 23 s. El 1 contra 1 con el alcance de hoy da exactamente los mismos números que antes.</p>
+    <p class="note">Una de cada cinco pelotas tuyas encuentra a la pareja rival desordenada. Al revés tomás el medio y ahí la posición paga más; al drive con Beto, correr a todas rinde lo mismo. Con manos de experto castigar el hueco no suma: ese jugador gana casi todo igual. La meta de +15 pp se cumple en algunas casillas, no en todas. Con cuatro IA parejas y el alcance real los puntos duran 12,6 s (antes 21,6). El 1 contra 1 con el alcance de hoy da exactamente los mismos números que antes.</p>
   </section>
 
   <section aria-labelledby="s-perf">

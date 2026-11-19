@@ -36,6 +36,8 @@ export const TEXT = {
   title: 'Pádel',
   subtitle: 'Prototipo de mecánicas',
   you: 'Vos',
+  /** The name of a pair on the scoreboard. */
+  pair: (a: string, b: string): string => `${a} y ${b}`,
 
   quality: {
     perfect: '¡Perfecto!',
@@ -185,6 +187,25 @@ export const TEXT = {
     off: 'No',
     data: 'Datos de este dispositivo',
     dataNote: 'Se guardan solo acá. No hay cuentas ni se envía nada.',
+    experimental: 'Experimental',
+    experimentalNote: 'Para probar. Se aplica desde el próximo partido.',
+    doubles: 'Dobles',
+    doublesHint: 'Vos y un compañero contra una pareja, cada uno en su lado.',
+    reach: 'Alcance',
+    reachGenerous: 'Actual',
+    reachReal: 'Real',
+    reachHint: {
+      generous: 'Llegás un poco más lejos que una persona: alcanza con acercarse.',
+      real: 'Como una persona: lo que el cuerpo no alcanza no se pega. Igual para todos.',
+    },
+    side: 'Tu lado',
+    sideDrive: 'Drive',
+    sideReves: 'Revés',
+    sideHint: {
+      drive: 'A la derecha. Las pelotas del medio son de tu compañero.',
+      reves: 'A la izquierda. Las del medio son tuyas: te quedan de derecha.',
+    },
+    partner: 'Compañero',
   },
 
   stats: {

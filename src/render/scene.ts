@@ -1,6 +1,7 @@
 import type { CharacterId, MannerismClip, TellCue, TellPose } from '../characters/types';
 import type { Insets } from '../core/layout';
 import type { SimEvent } from '../sim/match';
+import type { CallKind } from '../sim/pair';
 import type { ShotKind, TeamId } from '../sim/types';
 import type { CameraName } from './view';
 
@@ -111,6 +112,21 @@ export interface ScenePlayer {
   tell: SceneTell | null;
   /** A tic it is in the middle of, between points. It never delays anything. */
   act: SceneAct | null;
+  /** Doubles: what it is telling its partner about the ball, with the body. Null while it says nothing. */
+  call: SceneCall | null;
+}
+
+/**
+ * Doubles: what a player tells its partner about the ball that is coming
+ * ("¡mía!", "¡tuya!", "¡voy!", "¡arriba!", "¡atrás!"). It is shown with the
+ * body, never with words, and it is always true.
+ */
+export interface SceneCall {
+  kind: CallKind;
+  /** Seconds since it said it. */
+  t: number;
+  /** Where its partner is, in metres across the court from it. */
+  towardX: number;
 }
 
 /** What the windup of a player gives away, before it swings. */

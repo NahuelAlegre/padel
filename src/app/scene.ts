@@ -16,6 +16,7 @@ import {
   type Scene,
   type SceneAct,
   type SceneAim,
+  type SceneCall,
   type ScenePlayer,
   type SceneTell,
   type SceneTutorial,
@@ -67,6 +68,10 @@ const aim: SceneAim = { x: 0, y: 0, kind: 'drive', forehand: true, risk: 0, arme
 const guide = { x: 0, y: 0 };
 /** One per player, reused: what its windup is giving away. */
 const tells: SceneTell[] = [];
+/** One per player, reused: what it is telling its partner. */
+const calls: SceneCall[] = [];
+/** Seconds a call is shown for. */
+const CALL_SHOWS = 0.9;
 const intent: ShotIntent = { aim: 0, depth: 0.6, lob: false, power: 1 };
 const context: ShotContext = {
   team: 0,
@@ -155,6 +160,7 @@ export function fillScene(
         character: null,
         tell: null,
         act: null,
+        call: null,
       };
       scene.players[i] = out;
     }
@@ -197,6 +203,18 @@ export function fillScene(
       out.tell = tell;
     } else {
       out.tell = null;
+    }
+    // Doubles: what it is telling its partner, for a moment.
+    const said = time - player.callAt;
+    const mate = player.call ? match.teams[player.team].find((other) => other !== player) : undefined;
+    if (player.call && mate && said >= 0 && said < CALL_SHOWS) {
+      const call = (calls[i] ??= { kind: 'mine', t: 0, towardX: 0 });
+      call.kind = player.call;
+      call.t = said;
+      call.towardX = lerp(mate.px, mate.x, alpha) - x;
+      out.call = call;
+    } else {
+      out.call = null;
     }
   }
   scene.players.length = match.players.length;

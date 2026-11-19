@@ -63,7 +63,7 @@ async function main() {
   /** What the bot needs to know about the game to play it, read from the page. */
   const look = () =>
     phone.evaluate(`(() => {
-      const g = window.padel, m = g.match, me = m.players[0], rival = m.players[1];
+      const g = window.padel, m = g.match, me = m.players.find((p) => p.isHuman) ?? m.players[0], rival = m.teams[me.team === 0 ? 1 : 0][0];
       const incoming = m.phase === 'rally' && m.rally.live && m.rally.hitter !== me.team;
       return {
         state: g.state,
@@ -83,6 +83,8 @@ async function main() {
         armed: me.swing !== null,
         aiming: g.scene.aim !== null,
         rivalX: rival.x,
+        // Doubles: the ball on its way is this player's to play (in singles it always is).
+        mine: m.assigned[me.team] === me.id,
         score: m.score.points.concat(m.score.games),
         introDone: g.profile.introDone,
         tutorial: m.tutorial,
@@ -212,7 +214,7 @@ async function main() {
    * best to stand; the right one presses, drags to aim and lets go: half the
    * time right away (the shot stays armed), half the time as the ball arrives.
    */
-  async function playTwoThumbs({ until, maxMs, shots = {} }) {
+  async function playTwoThumbs({ until, maxMs, shots = {}, watch = null }) {
     let aimHeld = false;
     let aimMode = 'timed';
     let aimSince = 0;
@@ -222,6 +224,7 @@ async function main() {
     while (Date.now() - started < maxMs) {
       const s = await look();
       if (await until(s)) break;
+      if (watch) await watch(s);
       if (s.state !== 'playing') {
         await sleep(30);
         continue;
@@ -241,7 +244,7 @@ async function main() {
       }
 
       // Left thumb: run to the advised spot while the ball is coming.
-      const target = s.incoming && s.guide ? s.guide : null;
+      const target = s.incoming && s.guide && s.mine ? s.guide : null;
       if (target) {
         const dx = target[0] - s.me[0];
         const dy = target[1] - s.me[1];
@@ -265,7 +268,7 @@ async function main() {
 
       // Right thumb: press, aim away from the rival, let go.
       const ball = s.incoming ? Math.round(s.time * 2) : -1;
-      if (s.incoming && !aimHeld && !s.armed && ball !== lastBall) {
+      if (s.incoming && s.mine && !aimHeld && !s.armed && ball !== lastBall) {
         lastBall = ball;
         aimHeld = true;
         aimSince = Date.now();
@@ -849,6 +852,94 @@ async function main() {
     } else {
       console.log('        (este navegador no permite emular la zona segura: sin verificar)');
     }
+
+    // ------------------------------------------------------------ doubles
+    section('Dobles (experimental): vos y Beto contra Romina y Chela, con el alcance real');
+    // Whatever was chosen before, the default side: revés.
+    await phone.evaluate(`(() => { const g = window.padel; g.settings.side = 'reves'; g.settings.partner = 'beto'; g.applySettings(); })()`);
+    await phone.goto(`${preview.url}?dobles&alcance=real`);
+    await sleep(300);
+    await phone.evaluate(`(() => { const g = window.padel; Object.assign(g.settings, { scheme: 'two', camera: 'follow', aids: 'minimal', reduceMotion: false }); g.applySettings(); })()`);
+    await tapButton('Partida rápida');
+    const lineup = await phone.evaluate(`(() => {
+      const g = window.padel, m = g.match;
+      return {
+        playing: g.state === 'playing',
+        players: m.players.map((p) => ({ name: p.name, human: p.isHuman, team: p.team, index: p.index })),
+        cast: g.scene.players.map((p) => p.character),
+        board: [...document.querySelectorAll('.score .name')].map((n) => n.textContent),
+        real: m.config.player.realReach,
+      };
+    })()`);
+    check(
+      'con ?dobles, "Partida rápida" es un dos contra dos: Beto al drive y vos al revés, contra Romina y Chela',
+      lineup.playing && lineup.players.length === 4 && lineup.players[1].human && lineup.players[1].index === 1 && lineup.players.filter((p) => p.team === 1).length === 2,
+      lineup.players.map((p) => `${p.name}${p.human ? ' (vos)' : ''}`).join(', '),
+    );
+    check('el marcador nombra a las dos parejas', lineup.board[0] === 'Vos y Beto' && lineup.board[1] === 'Romina y Chela', lineup.board.join(' / '));
+    check('cada uno es quien es: tu compañero y los rivales con su cuerpo y sus colores', lineup.cast.join(',') === 'beto,,romina,chela', lineup.cast.join(','));
+    check('y con ?alcance=real, el alcance de una persona para todos', lineup.real === true);
+    await phone.evaluate(`(() => {
+      const g = window.padel;
+      window.__pairs = [];
+      g.onSimEvent = (e) => {
+        if (e.type !== 'hit' && e.type !== 'point') return;
+        const p = e.type === 'hit' ? g.match.players[e.player] : null;
+        window.__pairs.push({ ...e, human: p ? p.isHuman : false, gap: p ? Math.hypot(e.x - p.x, e.y - p.y) : 0 });
+      };
+    })()`);
+    const four = { samples: 0, not3d: 0, out: 0, ballOut: 0, glassLow: 0, calls: new Set(), together: 0 };
+    // Doubles points are long: three of them, and at least one call of the partner, are enough to see it work.
+    await playTwoThumbs({
+      maxMs: 120000,
+      until: async () => {
+        const list = await phone.evaluate('window.__pairs');
+        return list.filter((e) => e.type === 'point').length >= 3 && four.calls.size > 0;
+      },
+      watch: async () => {
+        const v = await phone.evaluate(`(() => {
+          const g = window.padel, m = g.match, at = { x: 0, y: 0 };
+          const on = (x, y, z) => { g.renderer.project(x, y, z, at); return [at.x, at.y]; };
+          return {
+            look: g.renderer.look,
+            bodies: m.players.map((p) => [on(p.x, p.y, 0), on(p.x, p.y, 2.2)]),
+            ball: m.rally.live && Math.abs(m.ball.x) <= 5.2 && Math.abs(m.ball.y) <= 10.2 ? on(m.ball.x, m.ball.y, m.ball.z) : null,
+            glass: on(0, -10, 0),
+            calls: g.scene.players.map((p) => (p.call ? p.call.kind : null)).filter(Boolean),
+            zones: m.teams[0].map((p) => (Math.abs(p.y) < 5 ? 'net' : Math.abs(p.y) > 6.5 ? 'back' : 'mid')),
+          };
+        })()`);
+        const inside = (p) => p[0] >= 0 && p[0] <= WIDTH && p[1] >= 0 && p[1] <= HEIGHT;
+        four.samples++;
+        if (v.look !== '3d') four.not3d++;
+        if (v.bodies.some(([feet, head]) => !inside(feet) || !inside(head))) four.out++;
+        if (v.ball && !inside(v.ball)) four.ballOut++;
+        if (v.glass[1] > HEIGHT - 20) four.glassLow++;
+        for (const call of v.calls) four.calls.add(call);
+        if (four.samples === 60) await shot('11-dobles');
+      },
+    });
+    const played = await phone.evaluate('window.__pairs');
+    const hits = played.filter((e) => e.type === 'hit' && e.kind !== 'serve');
+    const ours = hits.filter((e) => e.team === 0);
+    const farthest = Math.max(0, ...hits.map((e) => e.gap));
+    const lowest = Math.min(9, ...hits.map((e) => e.z));
+    check('se juegan puntos de dobles', played.filter((e) => e.type === 'point').length >= 3, `${played.filter((e) => e.type === 'point').length} puntos`);
+    check('vos pegás y tu compañero también', ours.some((e) => e.human) && ours.some((e) => !e.human), `${ours.filter((e) => e.human).length} tuyos, ${ours.filter((e) => !e.human).length} de Beto`);
+    check('tu compañero avisa con el cuerpo de quién es la pelota', four.calls.size > 0, [...four.calls].join(', '));
+    check('los cuatro, la pelota y tu vidrio, siempre en pantalla', four.out === 0 && four.ballOut === 0 && four.glassLow === 0 && four.samples > 100, `${four.samples} miradas`);
+    check('todo en 3D, con cuatro personajes', four.not3d === 0);
+    check('con el alcance real nadie le pega a una pelota a más de 1,6 m del cuerpo ni al ras del piso', farthest <= 1.61 && lowest >= 0.19, `lo más lejos ${farthest.toFixed(2)} m, lo más bajo ${lowest.toFixed(2)} m, en ${hits.length} golpes`);
+    await tapButton('Pausa');
+    await reaches('paused');
+    await tapButton('Opciones');
+    const experimental = await phone.evaluate(`(() => ['doubles', 'reach'].map((key) => !!document.querySelector('[data-key="' + key + '"]')))()`);
+    check('en Opciones hay una sección "Experimental" con dobles y alcance', experimental.every(Boolean));
+    await tapButton('Sí', 'doubles');
+    const sides = await phone.evaluate(`(() => ['side', 'partner'].map((key) => !!document.querySelector('[data-key="' + key + '"]')))()`);
+    check('con dobles prendido aparecen tu lado y tu compañero', sides.every(Boolean));
+    await tapButton('No', 'doubles');
+    await tapButton('Volver');
 
     // ------------------------------------------------------------ desktop
     section('Computadora: mouse y teclado');

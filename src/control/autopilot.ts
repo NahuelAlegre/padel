@@ -1,6 +1,7 @@
 import { clamp } from '../core/math';
 import { homeSpot } from '../sim/formation';
 import type { Match } from '../sim/match';
+import { pairSpot } from '../sim/pair';
 import { clampToHalf, type Player } from '../sim/player';
 import type { PlayerIntent } from '../sim/types';
 
@@ -40,8 +41,18 @@ export function autoMove(match: Match, me: Player, intent: PlayerIntent): void {
     return;
   }
 
+  const team = match.teams[me.team];
+  if (team.length === 2) {
+    // A pair: at the pair's depth, on its own side, slid toward the ball (see src/sim/pair.ts).
+    const partner = team[0] === me ? team[1]! : team[0]!;
+    pairSpot(me, partner, match.pairs[me.team], match.ball.x, match.config, spot);
+    intent.targetX = spot.x;
+    intent.targetY = spot.y;
+    return;
+  }
+
   // Recover: back to the resting position, shaded toward the side the ball is on.
-  const teamSize = match.teams[me.team].length;
+  const teamSize = team.length;
   homeSpot(me.team, me.index, teamSize, me.homeMode, match.config, spot);
   const shade = teamSize === 1 ? clamp(match.ball.x * 0.25, -1.2, 1.2) : 0;
   intent.targetX = spot.x + shade;

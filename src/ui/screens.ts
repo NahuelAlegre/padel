@@ -289,6 +289,41 @@ export class Screens {
     if (info.canGoFullscreen) panel.append(this.choice(s.fullscreen, 'fullscreen', onOff));
     panel.append(this.choice(s.fps, 'showFps', onOff));
 
+    panel.append(
+      el('h3', '', s.experimental),
+      el('p', 'note', s.experimentalNote),
+      this.choice(s.doubles, 'doubles', onOff, s.doublesHint),
+    );
+    if (this.settings.doubles) {
+      panel.append(
+        this.choice<'side'>(
+          s.side,
+          'side',
+          [
+            ['drive', s.sideDrive],
+            ['reves', s.sideReves],
+          ],
+          s.sideHint[this.settings.side],
+        ),
+        this.choice(
+          s.partner,
+          'partner',
+          RIVALS.map((id) => [id, CAST[id].name] as const),
+        ),
+      );
+    }
+    panel.append(
+      this.choice<'reach'>(
+        s.reach,
+        'reach',
+        [
+          ['generous', s.reachGenerous],
+          ['real', s.reachReal],
+        ],
+        s.reachHint[this.settings.reach],
+      ),
+    );
+
     const data = el('div', 'field');
     for (const line of info.stats) data.append(el('p', 'note', line));
     data.append(el('p', 'note', s.dataNote));

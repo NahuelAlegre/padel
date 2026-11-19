@@ -1,3 +1,4 @@
+import type { CallKind } from '../../sim/pair';
 import type { MannerismClip, TellCue, TellPose } from '../../characters/types';
 import { clamp, smoothstep } from '../../core/math';
 import type { ScenePlayer } from '../scene';
@@ -95,6 +96,8 @@ const CROUCH_FREE = 0.1;
 const MAX_CROUCH = 0.36;
 /** How far the arm takes the racket from where the clip has it, in metres at life size. */
 const MAX_ARM = 0.5;
+/** A call to the partner gives the arm back this long before the player's own contact, in seconds. */
+const CALL_CLEAR = 0.3;
 /** Seconds a gesture of a character takes to show, and to go away. */
 const GESTURE_IN = 0.14;
 const GESTURE_OUT = 0.12;
@@ -276,6 +279,39 @@ function tellGesture(pose: TellPose, kind: TellCue, across: number, out: Gesture
       // A small step toward the net, standing tall.
       out.racket = [-0.4, -0.3, 1.02];
       out.step = 0.25;
+      break;
+  }
+}
+
+/**
+ * Doubles: what a player tells its partner, with the free arm, `t` seconds
+ * after it said it. `toward` is where the partner is, in metres to the
+ * character's left. Every character does it the same way, so it is learnt once.
+ */
+function callGesture(kind: CallKind, t: number, toward: number, out: Gesture): void {
+  const beat = Math.sin(t * 14);
+  const side = clamp(toward / 2.4, -1, 1);
+  switch (kind) {
+    case 'mine':
+      // The free hand straight up: this one is mine.
+      out.free = [0.16, -0.12, 2.12 + beat * 0.03];
+      break;
+    case 'yours':
+      // The free hand points at the partner, and the head goes with it: yours.
+      out.free = [side * 0.55, -0.32, 1.32];
+      out.tip = side * 0.18;
+      break;
+    case 'switch':
+      // The arm sweeps across, to where the partner has to go: I go, you cross.
+      out.free = [side * (0.35 + 0.1 * (beat + 1)), -0.15, 1.55];
+      break;
+    case 'up':
+      // Beckoning forward: up to the net, together.
+      out.free = [0.18, -0.5, 1.5 + beat * 0.12];
+      break;
+    case 'back':
+      // Pointing back over the shoulder: back, together.
+      out.free = [0.22, 0.32, 1.8];
       break;
   }
 }
@@ -848,6 +884,13 @@ export class FigureAnimator implements AnimatedFigure {
       this.gesture = noGesture();
       // Where the ball is meant to go is measured across the court; the character has its own left.
       tellGesture(tell.pose, tell.kind, s * tell.aimX, this.gesture);
+      return true;
+    }
+    const call = player.call;
+    // What it tells its partner, as long as its own stroke is not about to need the arm.
+    if (call && !(player.contactIn < CALL_CLEAR && player.contactIn > -0.2)) {
+      this.gesture = noGesture();
+      callGesture(call.kind, call.t, s * call.towardX, this.gesture);
       return true;
     }
     const act = player.act;

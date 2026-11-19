@@ -99,3 +99,29 @@ export function toAILevel(character: Character, firstMatch = false): AILevel {
   }
   return level;
 }
+
+/**
+ * How much steadier a character is on your side of the net: the spread of its
+ * timing and of its shots, against what it has as a rival. A partner who
+ * misses the easy ones is the first thing people complain about in other
+ * padel games; this one plays its style, with the same legs and the same
+ * head, and does not give the easy ones away.
+ */
+const PARTNER_STEADIER = { timingSigma: 0.6, mostTimingSigma: 0.07, errorScale: 0.75, reaction: 0.75 } as const;
+
+/**
+ * The same character as somebody's partner. A coach plays to win when he is
+ * on your side (no feeding the other pair), the impatient wait two shots
+ * longer, and every one of them has steadier hands and reads sooner (see
+ * `PARTNER_STEADIER`). Its legs are its own.
+ */
+export function asPartner(level: AILevel): AILevel {
+  return {
+    ...level,
+    feed: 0,
+    impatientAfter: level.impatientAfter + 2,
+    timingSigma: Math.min(level.timingSigma * PARTNER_STEADIER.timingSigma, PARTNER_STEADIER.mostTimingSigma),
+    errorScale: level.errorScale * PARTNER_STEADIER.errorScale,
+    reaction: level.reaction * PARTNER_STEADIER.reaction,
+  };
+}

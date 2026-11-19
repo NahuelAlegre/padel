@@ -206,6 +206,7 @@ function createWebLaunch(): Launch {
   return {
     elapsed: () => performance.now(),
     flag: (name) => params.has(name),
+    value: (name) => params.get(name),
   };
 }
 

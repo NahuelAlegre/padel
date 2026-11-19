@@ -3,6 +3,7 @@ import { clamp, lerp } from '../core/math';
 import type { Rng } from '../core/rng';
 import type { InterceptPlan } from '../sim/intercept';
 import type { Controller, Match } from '../sim/match';
+import { BACK_LINE, NET_LINE } from '../sim/pair';
 import type { Player } from '../sim/player';
 import { otherTeam, type PlayerIntent, type ShotIntent } from '../sim/types';
 import { autoMove } from './autopilot';
@@ -21,6 +22,23 @@ const ATTACK_SLACK = 0.1;
 const FINISH_DEPTH = [0.3, 0.55] as const;
 /** Somebody who does not finish the ball puts it back this much slower. */
 const SAFE_POWER = 0.8;
+/**
+ * Doubles: how often somebody waiting half way gets the ball at the feet, and
+ * the depth asked for (0..1) to land it there: from how far from the net it
+ * stands, over the span of an ordinary shot, within these limits (below the
+ * lower one it would be a chiquita).
+ */
+const FEET_CHANCE = 0.7;
+const FEET_FROM = 4.8;
+const FEET_SPAN = 3.4;
+const FEET_DEPTH = [0.28, 0.6] as const;
+/** Doubles: the depth asked for (0..1) to land the ball in the hole of a pair split in two. */
+const HOLE_DEPTH = 0.35;
+/** Doubles: how often even somebody who never goes to the net goes up behind its serve. */
+const DOUBLES_SERVE_UP = 0.6;
+/** Doubles, both pairs at the back: how much more than its taste a player lobs and plays short, to go up. */
+const BUILD_LOB = 1;
+const BUILD_DROP = 1.5;
 
 /**
  * Computer opponent.
@@ -59,6 +77,8 @@ export class AIController implements Controller {
   private followLob = false;
   /** The shot decided for the contact in `lastPlan`, once it is time to decide. */
   private cue: ShotIntent | null = null;
+  /** It plays doubles, with a partner. */
+  private pair = false;
 
   constructor(
     /** Can be swapped while a match is running (rival changed in the options). */
@@ -82,6 +102,7 @@ export class AIController implements Controller {
     // After each of its own shots it decides where to wait for the next ball.
     if (match.rallyHits !== this.seenHits) {
       this.seenHits = match.rallyHits;
+      this.pair = match.teams[me.team].length === 2;
       if (rally.live && rally.hitter === me.team) {
         this.ownHits++;
         this.home = this.whereToWait(me);
@@ -159,6 +180,9 @@ export class AIController implements Controller {
       case 'smash':
         // It is at the net already: holding it is staying there.
         return this.rng.chance(lerp(0.5, 1, level.holdNet)) ? 'net' : 'back';
+      case 'serve':
+        // In doubles the serving pair goes up behind the serve: it is the first thing anybody learns.
+        return this.rng.chance(this.pair ? lerp(DOUBLES_SERVE_UP, 1, level.netRush) : level.netRush) ? 'net' : 'back';
       default:
         return this.rng.chance(level.netRush) ? 'net' : 'back';
     }
@@ -232,6 +256,8 @@ export class AIController implements Controller {
       return shot(middle(), rng.range(0.45, 0.85), false);
     }
 
+    if (opponents.length === 2) return this.pairShot(opponents, inTheAir, myNetDistance, range, shot, away);
+
     if (rivalAtNet && !inTheAir) {
       // Somebody at the net: over their head, or at their feet.
       if (rng.chance(0.3 + level.lobChance)) return shot(away(), 1, true);
@@ -249,6 +275,63 @@ export class AIController implements Controller {
     // length for the rest.
     if (rng.chance(level.aggression)) return shot(away(), rng.range(0.8, 1), false);
     return shot(away(), rng.range(0.55, 0.85), false);
+  }
+
+  /**
+   * Doubles: the ball goes where the other pair is not. At the feet of
+   * whoever waits half way; into the hole of a pair split in two, or over the
+   * one at the net; over a pair at the net, or low through the middle; and,
+   * to a pair at the back, through the middle and deep, which is the safe
+   * ball and the one that makes two people doubt.
+   */
+  private pairShot(
+    opponents: readonly Player[],
+    inTheAir: boolean,
+    myNetDistance: number,
+    range: number,
+    shot: (aim: number, depth: number, lob: boolean, power?: number) => ShotIntent,
+    away: () => number,
+  ): ShotIntent {
+    const level = this.level;
+    const rng = this.rng;
+    const a = opponents[0]!;
+    const b = opponents[1]!;
+    const depthOf = (player: Player): number => Math.abs(player.y);
+    const atNet = (player: Player): boolean => depthOf(player) < NET_LINE;
+    const atBack = (player: Player): boolean => depthOf(player) > BACK_LINE;
+    const aimAt = (x: number): number => clamp(x / range, -1, 1);
+    const between = aimAt((a.x + b.x) / 2);
+    const halfway = opponents.find((player) => !atNet(player) && !atBack(player));
+    const split = (atNet(a) && atBack(b)) || (atNet(b) && atBack(a));
+
+    if (halfway && rng.chance(FEET_CHANCE)) {
+      // Half way between the net and the back: at the feet.
+      return shot(aimAt(halfway.x), clamp((depthOf(halfway) - FEET_FROM) / FEET_SPAN, FEET_DEPTH[0], FEET_DEPTH[1]), false);
+    }
+    if (split && rng.chance(lerp(0.3, 1, level.punish))) {
+      // A pair split in two: over the one at the net, or into the hole between them.
+      const front = atNet(a) ? a : b;
+      if (!inTheAir && myNetDistance > NET_LINE && rng.chance(0.5)) return shot(aimAt(front.x), 1, true);
+      return shot(between, HOLE_DEPTH, false);
+    }
+    // Where the pair is not: between the two when they stand well apart, the open side when they do not.
+    const hole = away();
+    if (atNet(a) && atNet(b) && !inTheAir && myNetDistance > NET_LINE) {
+      // Both at the net: over them, at their feet, or low through the hole.
+      if (rng.chance(0.3 + level.lobChance)) return shot(clamp(between + rng.range(-0.35, 0.35), -1, 1), 1, true);
+      if (rng.chance(level.dropChance * 2.5)) return shot(between, 0.1, false);
+      return shot(hole, rng.range(0.3, 0.5), false, level.power * 0.9);
+    }
+    if (atBack(a) && atBack(b)) {
+      // Both at the back. From the net the short ball is the one. From the back, build: a lob or a
+      // chiquita now and then to go up behind it, and otherwise deep into the hole.
+      if (myNetDistance < NET_LINE && rng.chance(level.dropChance * 2.5)) return shot(hole, 0.1, false);
+      if (!inTheAir && myNetDistance > NET_LINE && rng.chance(level.lobChance * BUILD_LOB)) return shot(clamp(between + rng.range(-0.4, 0.4), -1, 1), 1, true);
+      if (rng.chance(level.dropChance * BUILD_DROP)) return shot(between, 0.1, false);
+      return shot(hole, rng.range(0.75, 0.95), false);
+    }
+    // Anything else: into the hole, deep.
+    return shot(hole, rng.range(0.7, 0.95), false);
   }
 
   /** Lateral aim (-1..1) that lands the ball as far as possible from the opponents. */

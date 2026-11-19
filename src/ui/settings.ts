@@ -5,6 +5,10 @@ import type { AidLevel } from '../render/scene';
 import type { CameraName } from '../render/view';
 
 export type QualityName = 'auto' | 'high' | 'medium' | 'low';
+/** How far a player gets to the ball: today's generous reach, or a real person's, the same for everybody. */
+export type ReachName = 'generous' | 'real';
+/** Doubles: the side of the pair the person plays, seen from its own end. */
+export type SideName = 'drive' | 'reves';
 /** How often the rival has something to say after a point. */
 export type LineFrequency = 'many' | 'few' | 'none';
 
@@ -36,6 +40,22 @@ export interface Settings {
   quality: QualityName;
   fullscreen: boolean;
   showFps: boolean;
+  /**
+   * Experimental, off by default: a quick match is played in doubles, the
+   * person and a partner of the cast against the other two. It takes effect
+   * from the next match.
+   */
+  doubles: boolean;
+  /** Experimental: today's generous reach, or a real person's for everybody (see `realReach` in src/config.ts). */
+  reach: ReachName;
+  /**
+   * Doubles: drive (right) or revés (left, the one with the forehand toward
+   * the middle). Revés by default: the person takes the middle, as the
+   * stronger of a pair does, and that is where playing positionally pays.
+   */
+  side: SideName;
+  /** Doubles: who plays with the person. The other two of the cast are the pair against it. */
+  partner: RivalId;
 }
 
 export const SPEEDS = [0.6, 0.8, 1] as const;
@@ -66,6 +86,10 @@ export function defaultSettings(reduceMotion: boolean): Settings {
     quality: 'auto',
     fullscreen: false,
     showFps: false,
+    doubles: false,
+    reach: 'generous',
+    side: 'reves',
+    partner: 'beto',
   };
 }
 
@@ -96,5 +120,9 @@ export function readSettings(saved: unknown, reduceMotion: boolean): Settings {
     quality: pick(data.quality, ['auto', 'high', 'medium', 'low'] as const, base.quality),
     fullscreen: flag('fullscreen'),
     showFps: flag('showFps'),
+    doubles: flag('doubles'),
+    reach: pick(data.reach, ['generous', 'real'] as const, base.reach),
+    side: pick(data.side, ['drive', 'reves'] as const, base.side),
+    partner: pick(data.partner, RIVALS, base.partner),
   };
 }

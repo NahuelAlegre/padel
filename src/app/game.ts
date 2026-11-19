@@ -1,6 +1,6 @@
 import { CAST } from '../characters/cast';
 import { CHARACTER_TEXT } from '../characters/lines.es';
-import { toAILevel } from '../characters/style';
+import { asPartner, toAILevel } from '../characters/style';
 import {
   CONTROLS,
   FORMATS,
@@ -20,7 +20,7 @@ import { Rng } from '../core/rng';
 import { KeyboardInput } from '../input/keyboard';
 import { PointerInput } from '../input/pointer';
 import { InputState } from '../input/state';
-import type { Platform } from '../platform/types';
+import type { Launch, Platform } from '../platform/types';
 import type { Renderer, Scene, SceneTutorial } from '../render/scene';
 import { figureScale } from '../render/stage/camera';
 import { StageRenderer } from '../render/stage/renderer';
@@ -31,7 +31,7 @@ import { SoundDirector } from '../audio/director';
 import { isGoldenPoint, pointLabel } from '../sim/score';
 import { Hud } from '../ui/hud';
 import { Screens, type ScreenInfo } from '../ui/screens';
-import { QUALITY_SCALE, RIVALS, type Settings } from '../ui/settings';
+import { QUALITY_SCALE, RIVALS, type ReachName, type Settings, type SideName } from '../ui/settings';
 import { shotName, TEXT } from '../ui/text';
 import {
   newRivalRecord,
@@ -99,6 +99,35 @@ function today(): string {
 }
 
 /**
+ * Experimental switches of one launch, on the web from the query string:
+ *   ?dobles            a quick match in doubles
+ *   ?alcance=real      the reach of a real person, for everybody (?alcance=actual, today's)
+ *   ?lado=reves        in doubles, play the left side (?lado=drive, the right one)
+ *   ?companero=chela   in doubles, who plays with you (beto, romina or chela)
+ * They win over the options while the page is open and are never saved.
+ */
+interface Trial {
+  doubles?: boolean;
+  reach?: ReachName;
+  side?: SideName;
+  partner?: RivalId;
+}
+
+function readTrial(launch: Launch): Trial {
+  const trial: Trial = {};
+  if (launch.flag('dobles')) trial.doubles = launch.value('dobles') !== 'no';
+  const reach = launch.value('alcance');
+  if (reach === 'real') trial.reach = 'real';
+  else if (reach === 'actual') trial.reach = 'generous';
+  const side = launch.value('lado');
+  if (side === 'reves' || side === 'revés') trial.side = 'reves';
+  else if (side === 'drive') trial.side = 'drive';
+  const partner = launch.value('companero') ?? launch.value('compañero');
+  if (partner && (RIVALS as readonly string[]).includes(partner)) trial.partner = partner as RivalId;
+  return trial;
+}
+
+/**
  * Glue between the simulation and the device: owns the match, feeds it the
  * input, runs it at a fixed step and asks the renderer for frames in between.
  * Everything that depends on where the game runs comes in through `platform`.
@@ -150,6 +179,12 @@ export class Game {
     acts: [],
   };
   private ais: AIController[] = [];
+  /** Experimental switches of this launch. They are not saved (see `readTrial`). */
+  private readonly trial: Trial;
+  /** The match being played is one of doubles. */
+  private doubles = false;
+  /** Doubles: who each player of the match is, by position in `match.players` (null for the person). */
+  private lineup: Array<RivalId | null> = [];
   /** The lesson being played, when the mode is the tutorial. */
   private drill: Drill | null = null;
   private lessonAt = 0;
@@ -186,6 +221,7 @@ export class Game {
     // Its own dice: what is said and when never shares a generator with the simulation.
     this.personality = new Personality(new Rng((Date.now() ^ 0x9e3779b9) >>> 0));
     this.config = createConfig();
+    this.trial = readTrial(platform.launch);
     this.director = new SoundDirector(platform.sound);
     this.viewport = new Viewport(canvas, VIEW.dprCap);
     this.renderer = new StageRenderer(
@@ -278,7 +314,7 @@ export class Game {
     if (mode !== 'demo' && !saved) {
       this.profile.matchesStarted++;
       saveProfile(this.platform.storage, this.profile);
-      this.platform.analytics.track('match_start', { format: mode, rival: this.rival });
+      this.platform.analytics.track('match_start', { format: mode, rival: this.rival, doubles: this.doubles });
     }
     if (this.settings.fullscreen) this.setImmersive(true);
     this.drainEvents();
@@ -295,6 +331,7 @@ export class Game {
     const lesson = LESSONS[index];
     if (!lesson) return;
     this.mode = 'tutorial';
+    this.doubles = false;
     this.lessonAt = index;
     this.lessonJustDone = null;
     const config = createConfig();
@@ -408,6 +445,16 @@ export class Game {
       acts.push(null);
     }
     this.golden = false;
+    if (this.doubles) {
+      // Doubles, for now without words: everybody is who it is, and nobody talks.
+      for (let i = 0; i < players.length; i++) {
+        const id = this.lineup[i];
+        cast[i] = id ? CAST[id] : null;
+      }
+      this.rivalIndex = -1;
+      this.personality.clear();
+      return null;
+    }
     if (this.mode === 'demo') {
       // Two of the cast play each other, and nobody talks.
       cast[0] = CAST[this.demoRival()];
@@ -524,7 +571,7 @@ export class Game {
     this.stopLoop();
     const games = this.match.score.games;
     const won = this.match.score.winner === 0;
-    const line = this.mode === 'demo' ? null : this.personality.rematchLine(won);
+    const line = this.mode === 'demo' || this.doubles ? null : this.personality.rematchLine(won);
     this.screens.show('over', {
       won,
       games: [games[0], games[1]],
@@ -558,15 +605,23 @@ export class Game {
   private createMatch(mode: Exclude<PlayMode, 'tutorial'>, saved: SavedMatch | null): Match {
     const config = createConfig();
     config.rules.format = { ...FORMATS[mode === 'demo' ? 'quick' : mode] };
+    // Experimental: the reach of a real person, the same for everybody.
+    const real = (this.trial.reach ?? this.settings.reach) === 'real';
+    config.player.realReach = real;
     this.config = config;
     this.ais = [];
+    // A match picked up again is the one it was: one against one.
+    this.doubles = (this.trial.doubles ?? this.settings.doubles) && !saved;
+    this.lineup = [];
 
     const seed = (Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0;
-    const ai = (id: RivalId, offset: number, firstMatch = false): PlayerEntry => {
+    const ai = (id: RivalId, offset: number, firstMatch = false, partner = false): PlayerEntry => {
       const who = CAST[id];
-      const level = config.rivals[id];
+      let level = config.rivals[id];
       // A coach feeds more balls to somebody he has just met.
       if (firstMatch) level.feed = toAILevel(who, true).feed;
+      // On your side, the same character plays to win and with steadier hands.
+      if (partner) level = asPartner(level);
       const controller = new AIController(level, new Rng(seed + offset));
       this.ais.push(controller);
       return {
@@ -585,6 +640,8 @@ export class Game {
       };
     };
 
+    if (this.doubles) return this.createDoubles(mode, config, seed, ai);
+
     if (mode === 'demo') {
       const other = this.demoRival();
       return new Match({
@@ -597,29 +654,63 @@ export class Game {
       });
     }
 
+    return new Match({
+      config,
+      seed,
+      teams: [
+        { name: TEXT.you, players: [this.humanEntry(real)] },
+        { name: CAST[this.rival].name, players: [ai(this.rival, 1, !this.profile.rivals[this.rival]?.played)] },
+      ],
+      resume: saved?.snapshot,
+      // The first rally ever is the tutorial: the rival goes easy until a point is won.
+      tutorial: !this.profile.introDone && !saved,
+      record: this.platform.launch.flag('record'),
+    });
+  }
+
+  /** The person's player. With the real reach it gets exactly what everybody gets. */
+  private humanEntry(real: boolean): PlayerEntry {
     const assisted = this.settings.assistedMovement;
-    const human: PlayerEntry = {
+    return {
       name: TEXT.you,
       isHuman: true,
       manual: !assisted,
       speedFactor: 1,
       reaction: assisted ? ASSISTED_REACTION : 0,
       errorScale: 1,
-      reachScale: HUMAN_REACH,
+      reachScale: real ? 1 : HUMAN_REACH,
       hand: 1,
       holdNet: HUMAN_HOLD_NET,
       controller: new HumanController(this.input),
     };
+  }
+
+  /**
+   * Doubles (experimental): the person and a partner of the cast against the
+   * other two. The person plays the side it chose: drive, on the right, or
+   * revés, on the left. In the demo a plain player takes the person's place.
+   */
+  private createDoubles(
+    mode: Exclude<PlayMode, 'tutorial'>,
+    config: GameConfig,
+    seed: number,
+    ai: (id: RivalId, offset: number, firstMatch?: boolean, partner?: boolean) => PlayerEntry,
+  ): Match {
+    const partnerId = this.trial.partner ?? this.settings.partner;
+    const [rivalA, rivalB] = RIVALS.filter((id) => id !== partnerId) as [RivalId, RivalId];
+    const mate = ai(partnerId, 3, false, true);
+    const reves = (this.trial.side ?? this.settings.side) === 'reves';
+    const demo = mode === 'demo';
+    const me: PlayerEntry = demo ? { ...ai(this.rival, 4), name: TEXT.you } : this.humanEntry(config.player.realReach);
+    const near = reves ? [mate, me] : [me, mate];
+    this.lineup = reves ? [partnerId, null, rivalA, rivalB] : [null, partnerId, rivalA, rivalB];
     return new Match({
       config,
       seed,
       teams: [
-        { name: TEXT.you, players: [human] },
-        { name: CAST[this.rival].name, players: [ai(this.rival, 1, !this.profile.rivals[this.rival]?.played)] },
+        { name: TEXT.pair(TEXT.you, CAST[partnerId].name), players: near },
+        { name: TEXT.pair(CAST[rivalA].name, CAST[rivalB].name), players: [ai(rivalA, 1), ai(rivalB, 2)] },
       ],
-      resume: saved?.snapshot,
-      // The first rally ever is the tutorial: the rival goes easy until a point is won.
-      tutorial: !this.profile.introDone && !saved,
       record: this.platform.launch.flag('record'),
     });
   }
@@ -641,7 +732,8 @@ export class Game {
     if (settings.lines === 'none') this.hud.hush();
 
     // A new rival takes over the match in progress, unless it is a continued one against somebody else.
-    const match = this.mode !== 'demo' && this.mode !== 'tutorial';
+    // A doubles lineup stays as it is until the next match.
+    const match = this.mode !== 'demo' && this.mode !== 'tutorial' && !this.doubles;
     if (match && this.state !== 'paused') this.rival = settings.rival;
     if (match && this.state === 'paused' && settings.rival !== this.rival) {
       this.rival = settings.rival;
@@ -694,8 +786,9 @@ export class Game {
     const { storage, analytics } = this.platform;
     // A lesson is played by the person, but nothing in it is a match: no rival, no score, nothing to save.
     const playing = this.mode !== 'demo' && this.mode !== 'tutorial';
-    const record = playing ? this.profile.rivals[this.rival] : undefined;
-    if (playing) {
+    // Doubles is a trial for now: it counts as a match, but not in the history with a rival, and it is not saved.
+    const record = playing && !this.doubles ? this.profile.rivals[this.rival] : undefined;
+    if (playing && !this.doubles) {
       // The rival has its say. The serve closes its bubble: nothing waits for it.
       const reaction = this.personality.onEvent(event, this.match);
       if (reaction?.hush) this.hud.hush();
@@ -707,7 +800,7 @@ export class Game {
         // A touch that began during the pause must not turn into the serve.
         this.pointer.release();
         this.input.takeSwing();
-        if (playing) {
+        if (playing && !this.doubles) {
           // Saved at every point: closing the game loses nothing.
           this.saved = {
             version: PHYSICS_VERSION,
@@ -746,7 +839,7 @@ export class Game {
         this.saved = null;
         saveMatch(storage, null);
         saveProfile(storage, this.profile);
-        analytics.track('match_end', { won: event.winner === 0, rival: this.rival, format: this.mode });
+        analytics.track('match_end', { won: event.winner === 0, rival: this.rival, format: this.mode, doubles: this.doubles });
         break;
       default:
         break;

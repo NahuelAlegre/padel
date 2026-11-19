@@ -1,9 +1,12 @@
 import { createConfig, type AILevel, type GameConfig, type RivalId } from '../src/config';
+import { asPartner } from '../src/characters/style';
 import { AIController } from '../src/control/ai';
 import { HumanController } from '../src/control/human';
 import { Rng } from '../src/core/rng';
 import { InputState } from '../src/input/state';
 import type { InterceptPlan } from '../src/sim/intercept';
+// Doubles: a person who plays positionally stands where the game's own pairs stand (see src/sim/pair.ts).
+import { LANE, LANE_NET, MIDDLE_BAND, SLIDE, SLIDE_MAX } from '../src/sim/pair';
 import { Match, type Controller, type PlayerEntry, type SimEvent } from '../src/sim/match';
 import type { Player } from '../src/sim/player';
 import type { Trajectory } from '../src/sim/trajectory';
@@ -44,6 +47,16 @@ export type LevelName = keyof typeof LEVELS;
 /** A computer player: one of the plain levels, or a character of the cast as the game sets it up. */
 export function aiEntry(config: GameConfig, who: LevelName | RivalId, seed: number, name = 'IA'): PlayerEntry {
   const level: AILevel = who in LEVELS ? LEVELS[who as LevelName] : config.rivals[who as RivalId];
+  return levelEntry(level, seed, name);
+}
+
+/** A computer player as somebody's partner, the way the game sets it up (see `asPartner`). */
+export function partnerEntry(config: GameConfig, who: LevelName | RivalId, seed: number, name = 'IA'): PlayerEntry {
+  const base: AILevel = who in LEVELS ? LEVELS[who as LevelName] : config.rivals[who as RivalId];
+  return levelEntry(asPartner(base), seed, name);
+}
+
+function levelEntry(level: AILevel, seed: number, name: string): PlayerEntry {
   return {
     name,
     isHuman: false,
@@ -94,6 +107,10 @@ export function withTactics(skill: ScriptedSkill, tactics = 1): ScriptedSkill {
 
 /** Closer to the net than this, a player is "at the net" for whoever decides a shot. */
 const NET_ZONE = 5;
+/** Further from the net than this, a player is at the back; in between, in no man's land. */
+const BACK_ZONE = 6.5;
+
+const clampTo = (value: number, most: number): number => Math.max(-most, Math.min(most, value));
 /** A ball met this close to the net and this far over the tape is one to attack. */
 const ATTACK_ZONE = 6.5;
 const ATTACK_ABOVE_TAPE = 0.25;
@@ -130,6 +147,8 @@ export class ScriptedHuman implements Controller {
   private serveAt = -1;
   /** Whether the shot it has just played was thought out: then it follows it to the net. */
   private thinking = false;
+  /** Doubles: whether the ball on its way is this player's, once it has read it. */
+  private mine: boolean | null = null;
 
   constructor(
     private readonly rng: Rng,
@@ -142,7 +161,48 @@ export class ScriptedHuman implements Controller {
     this.released = false;
     this.serveAt = -1;
     this.thinking = this.thinks();
+    this.mine = null;
     this.input.clear();
+  }
+
+  /**
+   * Doubles, played the way padel is played: the ball on my side of the pair
+   * is mine, and the one through the middle belongs to whoever has the
+   * forehand toward it (for two right-handers, the one on the left). Without
+   * tactics every ball it can get to is its own: a sprinter.
+   */
+  private isMine(me: Player, partner: Player, guide: InterceptPlan | null): boolean {
+    if (!guide) return false;
+    if (!this.thinking) return true;
+    const dir = me.team === 0 ? 1 : -1;
+    const mid = (me.x + partner.x) / 2;
+    const off = guide.x - mid;
+    if (Math.abs(off) <= MIDDLE_BAND) {
+      const forehand = (who: Player): boolean => (mid - who.x) * who.hand * dir > 0;
+      const mineF = forehand(me);
+      const theirsF = forehand(partner);
+      if (mineF !== theirsF) return mineF;
+      // Both or neither: the one closer to the net.
+      return Math.abs(me.y) <= Math.abs(partner.y);
+    }
+    return Math.sign(off) === Math.sign(me.x - mid || (me.index === 0 ? dir : -dir));
+  }
+
+  /** Doubles: where to wait. With tactics, tied to the partner (up and down together) and sliding with the ball. */
+  private doublesSpot(match: Match, me: Player, partner: Player, out: { x: number; y: number }): void {
+    const dir = me.team === 0 ? 1 : -1;
+    const ownSide = me.index === 0 ? dir : -dir;
+    if (!this.thinking) {
+      out.x = ownSide * LANE;
+      out.y = -dir * 7.2;
+      return;
+    }
+    const side = Math.sign(me.x - partner.x) || ownSide;
+    // Tied to the partner: up when it is up, and back when it says so; up behind a shot of its own that takes it there.
+    const told = match.trajectory !== null && partner.callTraj === match.trajectory.id ? partner.call : null;
+    const up = told === 'back' ? false : told === 'up' || Math.abs(partner.y) < NET_ZONE || me.homeMode === 'net';
+    out.x = side * (up ? LANE_NET : LANE) + clampTo(match.ball.x * SLIDE, SLIDE_MAX);
+    out.y = -dir * (up ? 3.4 : 7.2);
   }
 
   /** Is this decision a padel one? Draws nothing at the two ends, so 0 plays exactly as it always did. */
@@ -168,22 +228,34 @@ export class ScriptedHuman implements Controller {
       this.offsetY = rng.gauss() * this.skill.position;
       this.thumbOffset = null;
       this.released = false;
+      this.mine = null;
     }
 
+    const mates = match.teams[me.team];
+    const partner = mates.length > 1 ? (mates[0] === me ? mates[1]! : mates[0]!) : null;
     let targetX = 0;
     // Where it waits for the next ball: at the net behind a shot that takes it there, when it is thinking.
     const rest = this.thinking && me.homeMode === 'net' ? 3.4 : 7.2;
     let targetY = -rest * (me.team === 0 ? 1 : -1);
+    if (partner) {
+      this.doublesSpot(match, me, partner, waitSpot);
+      targetX = waitSpot.x;
+      targetY = waitSpot.y;
+    }
     let moving = true;
     if (incoming && this.trajectory) {
       const guide: InterceptPlan | null = me.guide;
       if (match.time < this.trajectory.t0 + this.skill.reaction) {
-        moving = false;
-      } else if (guide) {
-        targetX = guide.stanceX + this.offsetX;
-        targetY = guide.stanceY + this.offsetY;
+        // Still reading the ball. In doubles it keeps its place in the pair meanwhile.
+        moving = partner !== null;
       } else {
-        moving = false;
+        if (partner && this.mine === null) this.mine = this.isMine(me, partner, guide);
+        if (guide && (!partner || this.mine)) {
+          targetX = guide.stanceX + this.offsetX;
+          targetY = guide.stanceY + this.offsetY;
+        } else if (!partner) {
+          moving = false;
+        }
       }
     }
     const dx = targetX - me.x;
@@ -194,7 +266,15 @@ export class ScriptedHuman implements Controller {
     if (moving && distance > 0.3) this.input.setMove('stick', (dx / distance) * flip, (dy / distance) * flip);
     else this.input.setMove('stick', 0, 0);
 
-    if (incoming && !this.released) {
+    // In doubles a ball that is the partner's is left to the partner, even if it goes by within reach.
+    if (partner && incoming && this.mine === null && me.plan && this.trajectory && match.time >= this.trajectory.t0) {
+      this.mine = this.isMine(me, partner, me.guide ?? me.plan);
+    }
+    // What the partner says about the ball settles it, with tactics: "¡mía!", "¡voy!", "¡atrás!" or "¡tuya!".
+    if (partner && incoming && this.thinking && this.trajectory && partner.callTraj === this.trajectory.id && partner.call) {
+      this.mine = partner.call === 'yours';
+    }
+    if (incoming && !this.released && (!partner || this.mine !== false)) {
       // The person watches the timing ring, which follows the ball that can be
       // hit from where the player is standing right now. How far off the thumb
       // will be is decided once per ball.
@@ -209,7 +289,10 @@ export class ScriptedHuman implements Controller {
         const open = rival.x > 0 ? rng.range(-1, -0.5) : rng.range(0.5, 1);
         const aim = rng.chance(this.skill.aimSmart) ? open : rng.range(-1, 1);
         this.thinking = this.thinks();
-        if (!this.thinking) {
+        const rivals = match.teams[me.team === 0 ? 1 : 0];
+        if (this.thinking && rivals.length > 1) {
+          this.doublesShot(match, contact, rivals);
+        } else if (!this.thinking) {
           const pick = rng.next();
           if (pick < 0.15) this.input.pushSwing({ aim, depth: 1, lob: true, power: 1 });
           else if (pick < 0.2) this.input.pushSwing({ aim, depth: 0.1, lob: false, power: 1 });
@@ -250,7 +333,83 @@ export class ScriptedHuman implements Controller {
     }
     this.inner.update(match, me, intent);
   }
+
+  /**
+   * Doubles, with tactics: the ball goes where the other pair is not. Through
+   * the middle to a pair that is together, over a pair at the net, into the
+   * hole of a pair that is split, at the feet of whoever waits half way.
+   */
+  private doublesShot(match: Match, contact: InterceptPlan, rivals: readonly Player[]): void {
+    const rng = this.rng;
+    const config = match.config;
+    const spec = config.shots.specs.drive;
+    const range = spec.aimRange;
+    const aimAt = (x: number): number => clampTo(x / range, 1);
+    const swing = (aim: number, depth: number, lob = false): void =>
+      this.input.pushSwing({ aim: clampTo(aim, 1), depth, lob, power: 1 });
+    const a = rivals[0]!;
+    const b = rivals[1]!;
+    const netOf = (p: Player): number => Math.abs(p.y);
+    const atNet = (p: Player): boolean => netOf(p) < NET_ZONE;
+    const atBack = (p: Player): boolean => netOf(p) > BACK_ZONE;
+    const middle = aimAt((a.x + b.x) / 2);
+    const open = this.widestGap(rivals, range);
+    const myNet = Math.abs(contact.y);
+    const meAtNet = myNet < NET_ZONE;
+    const high = contact.z >= config.player.overheadZ;
+    const sitter = myNet < ATTACK_ZONE && contact.z >= config.court.netCenter + ATTACK_ABOVE_TAPE;
+    const halfway = rivals.find((p) => !atNet(p) && !atBack(p));
+    const split = (atNet(a) && atBack(b)) || (atNet(b) && atBack(a));
+    if (high) {
+      // Over the head: down. Close to the net, away from both; from further back, deep through the middle.
+      if (myNet < 4.5) swing(open, rng.range(0.85, 1));
+      else swing(middle + rng.range(-0.15, 0.15), rng.range(0.85, 1));
+    } else if (sitter) {
+      // A ball to attack: finish it where nobody is.
+      swing(open, rng.range(0.3, 0.5));
+    } else if (halfway) {
+      // Somebody half way between the net and the back: at the feet.
+      swing(aimAt(halfway.x), Math.max(0.28, Math.min(1, (netOf(halfway) - spec.depthNear) / (spec.depthFar - spec.depthNear))));
+    } else if (split && !meAtNet) {
+      // A pair split in two: over the one at the net, or into the hole between them.
+      const front = atNet(a) ? a : b;
+      if (rng.chance(0.55)) swing(aimAt(front.x), 1, true);
+      else swing(middle, 0.35);
+    } else if (atNet(a) && atNet(b) && !meAtNet) {
+      // Both at the net: over them, and now and then at their feet through the middle.
+      if (rng.chance(0.2)) swing(middle, 0.1);
+      else swing(middle + rng.range(-0.35, 0.35), 1, true);
+    } else if (meAtNet) {
+      // At the net with a ball that is not one to finish: deep through the middle.
+      swing(middle + rng.range(-0.2, 0.2), rng.range(0.75, 0.95));
+    } else {
+      // Both pairs at the back: build through the middle, and look for the moment to go up.
+      const pick = rng.next();
+      if (pick < 0.25) swing(middle + rng.range(-0.4, 0.4), 1, true);
+      else if (pick < 0.37) swing(middle, 0.1);
+      else swing(middle + rng.range(-0.25, 0.25), rng.range(0.7, 0.95));
+    }
+  }
+
+  /** Lateral aim (-1..1) of the widest gap in the other pair: a sideline or between them. */
+  private widestGap(rivals: readonly Player[], range: number): number {
+    let best = 0;
+    let bestGap = -Infinity;
+    for (let aim = -1; aim <= 1.001; aim += 0.25) {
+      const x = aim * range;
+      let gap = Infinity;
+      for (const rival of rivals) gap = Math.min(gap, Math.abs(rival.x - x));
+      gap += this.rng.range(0, 0.4);
+      if (gap > bestGap) {
+        bestGap = gap;
+        best = aim;
+      }
+    }
+    return best;
+  }
 }
+
+const waitSpot = { x: 0, y: 0 };
 
 export function humanEntry(seed: number, skill: ScriptedSkill, overrides: Partial<PlayerEntry> = {}): PlayerEntry {
   return {
@@ -336,6 +495,14 @@ export function playMatch(match: Match, maxSimSeconds = 3600, onEvent?: (event: 
   return summary;
 }
 
+/**
+ * The configuration the tests and the reports play with. `SIM_REACH=real` in
+ * the environment gives everybody the reach of a real person (the reports use
+ * it to compare; the tests set it themselves where they need it).
+ */
 export function testConfig(): GameConfig {
-  return createConfig();
+  const config = createConfig();
+  const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env;
+  if (env?.SIM_REACH === 'real') config.player.realReach = true;
+  return config;
 }

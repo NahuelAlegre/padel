@@ -1,0 +1,589 @@
+<meta charset="utf-8">
+<title>Dobles posicional</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: one reading column. Each padel rule is a court seen from above (your half at the bottom, as in the game) next to two or three short lines; on a phone they stack. */
+:root {
+  --bg: #eff3f9;
+  --panel: #ffffff;
+  --ink: #17213a;
+  --muted: #56627d;
+  --rule: #d6ddea;
+  --court: #2c5ec2;
+  --court-hi: #3a6cd3;
+  --line: #f4f7ff;
+  --net: #0f1a33;
+  --glass: #92d4e8;
+  --fence: #23345a;
+  --you: #f2782f;
+  --mate: #1f9e8f;
+  --rival: #c2456a;
+  --ball: #e5f23a;
+  --hole: #ff5a3c;
+  --zone: #ffd166;
+  --good: #2c8f62;
+  --bad: #c8414f;
+  --display: 'Barlow Condensed', 'Arial Narrow', 'Roboto Condensed', sans-serif;
+  --text: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1221; --panel: #151c30; --ink: #e8edf9; --muted: #9ba7c6; --rule: #27314f;
+    --court: #2753ad; --court-hi: #3060bd; --line: #e6ecff; --net: #070c18; --glass: #6dbdd4; --fence: #0b1326;
+    --you: #ff9550; --mate: #3cc4b2; --rival: #e46a8d; --ball: #e5f23a; --hole: #ff6b4f; --zone: #ffcf5a;
+    --good: #4cc08a; --bad: #ef6b78;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1221; --panel: #151c30; --ink: #e8edf9; --muted: #9ba7c6; --rule: #27314f;
+  --court: #2753ad; --court-hi: #3060bd; --line: #e6ecff; --net: #070c18; --glass: #6dbdd4; --fence: #0b1326;
+  --you: #ff9550; --mate: #3cc4b2; --rival: #e46a8d; --ball: #e5f23a; --hole: #ff6b4f; --zone: #ffcf5a;
+  --good: #4cc08a; --bad: #ef6b78;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.55 var(--text);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px;
+}
+main { max-width: 860px; margin: 0 auto; display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--display); font-weight: 700; letter-spacing: .01em; margin: 0; text-wrap: balance; line-height: 1.05; }
+h1 { font-size: clamp(40px, 9vw, 64px); text-transform: uppercase; }
+h2 { font-size: 30px; text-transform: uppercase; }
+h3 { font-size: 21px; font-weight: 600; }
+p { margin: 0; max-width: 62ch; }
+.lede { font-size: 17px; color: var(--ink); }
+.muted { color: var(--muted); }
+.eyebrow { font: 600 12px/1 var(--text); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+header { display: grid; gap: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font: 500 13px/1 ui-monospace, 'SF Mono', Consolas, monospace; padding: 7px 10px; border-radius: 6px; background: var(--panel); border: 1px solid var(--rule); color: var(--ink); }
+section { display: grid; gap: 18px; }
+.rules { display: grid; gap: 22px; }
+.rule { display: grid; grid-template-columns: minmax(0, 170px) minmax(0, 1fr); gap: 18px; align-items: start; padding-top: 18px; border-top: 1px solid var(--rule); }
+.rule .txt { display: grid; gap: 6px; min-width: 0; }
+.rule .num { font: 700 26px/1 var(--display); color: var(--you); font-variant-numeric: tabular-nums; }
+.rule .num small { font: 500 13px/1.3 var(--text); color: var(--muted); display: block; margin-top: 3px; }
+.pair { grid-template-columns: minmax(0, 170px) minmax(0, 170px) minmax(0, 1fr); }
+svg.court { width: 100%; height: auto; display: block; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font: 700 11px/1 var(--text); color: #fff; }
+.d-you { background: var(--you); } .d-mate { background: var(--mate); } .d-rival { background: var(--rival); }
+.calls { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.call { display: grid; gap: 4px; justify-items: center; text-align: center; background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 6px 10px; }
+.call b { font: 700 20px/1 var(--display); }
+.call span { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+.call svg { width: 64px; height: 76px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 9px 10px 9px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font: 600 12px/1.2 var(--text); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+td.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scroll { overflow-x: auto; }
+.bars { display: grid; gap: 14px; }
+.bar { display: grid; gap: 6px; }
+.bar .label { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.bar .label b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.track { position: relative; height: 22px; border-radius: 4px; background: var(--rule); overflow: hidden; }
+.track i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+.track .before { background: var(--muted); opacity: .45; height: 9px; top: 2px; }
+.track .after { background: var(--you); height: 9px; top: 11px; }
+.track .mid { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); opacity: .55; }
+.key { display: flex; gap: 16px; font-size: 13px; color: var(--muted); }
+.key i { display: inline-block; width: 18px; height: 8px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+.decisions { display: grid; gap: 12px; }
+.decision { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 18px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; }
+.decision .q { font-weight: 600; }
+.decision .a { color: var(--ink); }
+.decision .a b { color: var(--you); }
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.grid4 figure { margin: 0; display: grid; gap: 6px; }
+figcaption { font-size: 13px; color: var(--muted); line-height: 1.35; }
+figcaption b { color: var(--ink); font-weight: 600; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.note { font-size: 13.5px; color: var(--muted); }
+.tag { font: 600 11px/1 var(--text); letter-spacing: .1em; text-transform: uppercase; padding: 4px 7px; border-radius: 4px; background: var(--zone); color: #3a2a00; }
+@media (max-width: 640px) {
+  .rule, .pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .rule .txt { grid-column: 1 / -1; }
+  .rule > svg:only-of-type { grid-column: 1 / 2; }
+  .calls { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .two, .decision { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .rope { animation: sway 2.6s ease-in-out infinite; }
+  @keyframes sway { 50% { stroke-dashoffset: 6; } }
+}
+/* Court pieces, shared by every diagram. */
+.c-floor { fill: var(--court); }
+.c-box { fill: var(--court-hi); }
+.c-line { stroke: var(--line); stroke-width: 1.4; fill: none; }
+.c-net { stroke: var(--net); stroke-width: 3; }
+.c-glass { stroke: var(--glass); stroke-width: 4; }
+.c-fence { stroke: var(--fence); stroke-width: 1.6; }
+.p circle { stroke: var(--line); stroke-width: 1.6; }
+.p text { font: 700 8.5px/1 var(--text); fill: #fff; text-anchor: middle; dominant-baseline: central; }
+.you circle { fill: var(--you); } .mate circle { fill: var(--mate); } .rival circle { fill: var(--rival); }
+.ghost circle { fill: none; stroke: var(--line); stroke-dasharray: 2 2; opacity: .8; }
+.ball { fill: var(--ball); stroke: #2b2b00; stroke-width: .6; }
+.path { stroke: var(--ball); stroke-width: 1.6; fill: none; }
+.path.lob { stroke-dasharray: 4 3; }
+.move { stroke: var(--line); stroke-width: 1.6; fill: none; }
+.cover { stroke: var(--zone); stroke-width: 1.2; stroke-dasharray: 3 3; fill: none; }
+.hole { fill: var(--hole); opacity: .38; }
+.band { fill: var(--zone); opacity: .32; }
+.mid-band { fill: var(--line); opacity: .16; }
+.lbl { font: 600 8px/1 var(--text); fill: var(--line); text-anchor: middle; }
+.lbl.dark { fill: var(--ink); }
+.rope { stroke: var(--zone); stroke-width: 1.5; stroke-dasharray: 3 3; fill: none; }
+.fig { stroke: var(--ink); stroke-width: 3; stroke-linecap: round; fill: none; }
+.fig-head { fill: var(--ink); }
+.fig-arm { stroke: var(--you); stroke-width: 3.2; stroke-linecap: round; fill: none; }
+.racket { fill: none; stroke: var(--muted); stroke-width: 2.4; }
+.axis { stroke: var(--muted); stroke-width: 1; }
+.axis-t { font: 500 9px/1 var(--text); fill: var(--muted); }
+.env-real { fill: var(--you); opacity: .32; }
+.env-lunge { fill: var(--you); opacity: .14; }
+.env-today { fill: none; stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.ring-real { fill: none; stroke: var(--you); stroke-width: 2.4; }
+.ring-lunge { fill: none; stroke: var(--you); stroke-width: 1.6; stroke-dasharray: 5 4; }
+.ring-today { fill: none; stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 2 3; }
+.phone { fill: var(--panel); stroke: var(--ink); stroke-width: 2; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- A padel court from above: 10 x 20 m, 10 units per metre, the net across the middle, your half at the bottom. -->
+    <g id="court">
+      <rect class="c-floor" x="-50" y="-100" width="100" height="200"/>
+      <rect class="c-box" x="-50" y="-69.5" width="100" height="139"/>
+      <line class="c-line" x1="-50" y1="-69.5" x2="50" y2="-69.5"/>
+      <line class="c-line" x1="-50" y1="69.5" x2="50" y2="69.5"/>
+      <line class="c-line" x1="0" y1="-69.5" x2="0" y2="69.5"/>
+      <line class="c-fence" x1="-50" y1="-60" x2="-50" y2="60"/>
+      <line class="c-fence" x1="50" y1="-60" x2="50" y2="60"/>
+      <line class="c-glass" x1="-50" y1="-100" x2="50" y2="-100"/>
+      <line class="c-glass" x1="-50" y1="100" x2="50" y2="100"/>
+      <line class="c-glass" x1="-50" y1="-100" x2="-50" y2="-60"/>
+      <line class="c-glass" x1="50" y1="-100" x2="50" y2="-60"/>
+      <line class="c-glass" x1="-50" y1="100" x2="-50" y2="60"/>
+      <line class="c-glass" x1="50" y1="100" x2="50" y2="60"/>
+      <line class="c-net" x1="-53" y1="0" x2="53" y2="0"/>
+    </g>
+    <marker id="arrow-l" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#f4f7ff"/>
+    </marker>
+    <marker id="arrow-you" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" style="fill: var(--you)"/>
+    </marker>
+    <marker id="arrow-b" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#e5f23a"/>
+    </marker>
+  </defs>
+</svg>
+
+<main>
+  <header>
+    <span class="eyebrow">Propuesta y prototipo · rama doubles-design</span>
+    <h1>Dobles posicional</h1>
+    <p class="lede">En dobles cada pelota tiene dueño, la pareja va atada con una cuerda y nadie llega a lo imposible. Así la posición importa y no hace falta ser un velocista.</p>
+    <div class="chips" aria-label="Cómo probarlo">
+      <span class="chip">?dobles</span><span class="chip">?alcance=real</span><span class="chip">?lado=drive</span><span class="chip">?companero=chela</span>
+    </div>
+    <p class="muted">También en Opciones → Experimental. La partida rápida de siempre no cambia. Por defecto jugás al revés con Beto, contra Romina y Chela.</p>
+    <div class="legend" aria-hidden="true">
+      <span><i class="dot d-you">V</i> vos</span><span><i class="dot d-mate">B</i> tu compañero</span><span><i class="dot d-rival">R</i> pareja rival</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="s-rules">
+    <h2 id="s-rules">Las reglas del pádel, como reglas del juego</h2>
+    <div class="rules">
+
+      <div class="rule">
+        <svg class="court" viewBox="-58 -108 116 216" role="img" aria-label="Tu pareja en la red, la rival al fondo">
+          <use href="#court"/>
+          <path class="path" d="M 20 30 Q 30 -20 38 -60" marker-end="url(#arrow-b)"/>
+          <g class="p you" transform="translate(23 32)"><circle r="6"/><text>V</text></g>
+          <g class="p mate" transform="translate(-18 32)"><circle r="6"/><text>B</text></g>
+          <g class="p rival" transform="translate(-23 -76)"><circle r="6"/><text>R</text></g>
+          <g class="p rival" transform="translate(23 -76)"><circle r="6"/><text>C</text></g>
+          <text class="lbl" x="0" y="50">ATACA</text>
+          <text class="lbl" x="0" y="-88">DEFIENDE</text>
+        </svg>
+        <div class="txt">
+          <h3>La red ataca, el fondo defiende</h3>
+          <p>Desde la red salen las voleas y los remates que definen. Desde el fondo se defiende con la pared y el globo.</p>
+          <div class="num">73–76 %<small>de los puntos de red contra fondo los gana la red</small></div>
+        </div>
+      </div>
+
+      <div class="rule pair">
+        <svg class="court" viewBox="-58 -6 116 112" role="img" aria-label="Pareja junta en la red">
+          <use href="#court"/>
+          <line class="rope" x1="-18" y1="32" x2="18" y2="32"/>
+          <g class="p you" transform="translate(18 32)"><circle r="6"/><text>V</text></g>
+          <g class="p mate" transform="translate(-18 32)"><circle r="6"/><text>B</text></g>
+          <text class="lbl" x="0" y="58">JUNTOS</text>
+        </svg>
+        <svg class="court" viewBox="-58 -6 116 112" role="img" aria-label="Pareja partida: uno en la red y otro atrás, con el hueco entre los dos">
+          <use href="#court"/>
+          <path class="hole" d="M -50 44 L 6 44 L 50 62 L 50 100 L 12 100 L -50 70 Z"/>
+          <line class="rope" x1="20" y1="32" x2="-23" y2="80"/>
+          <g class="p you" transform="translate(23 32)"><circle r="6"/><text>V</text></g>
+          <g class="p mate" transform="translate(-23 80)"><circle r="6"/><text>B</text></g>
+          <path class="path" d="M 8 0 L 6 58" marker-end="url(#arrow-b)"/>
+          <text class="lbl" x="-20" y="60">EL HUECO</text>
+        </svg>
+        <div class="txt">
+          <h3>Atados con una cuerda</h3>
+          <p>Los dos en la red o los dos atrás. Uno arriba y otro abajo deja una diagonal vacía, y la pareja rival la busca.</p>
+          <div class="num">74 %<small>del tiempo tu pareja está junta (antes, 49 %)</small></div>
+        </div>
+      </div>
+
+      <div class="rule">
+        <svg class="court" viewBox="-58 -6 116 112" role="img" aria-label="La tierra de nadie, entre la red y la línea de saque">
+          <use href="#court"/>
+          <rect class="band" x="-50" y="50" width="100" height="15"/>
+          <g class="p you" transform="translate(26 58)"><circle r="6"/><text>V</text></g>
+          <g class="p mate" transform="translate(-23 82)"><circle r="6"/><text>B</text></g>
+          <path class="path" d="M 36 0 Q 30 30 27 51" marker-end="url(#arrow-b)"/>
+          <circle class="ball" cx="27" cy="52" r="2"/>
+          <text class="lbl dark" x="-20" y="59.5" style="font-size:6.5px">TIERRA DE NADIE</text>
+        </svg>
+        <div class="txt">
+          <h3>La tierra de nadie</h3>
+          <p>Entre 5 y 6,5 m de la red la pelota viene a los pies. Nadie de la computadora espera ahí, y la pareja rival le tira a los pies a quien se queda.</p>
+          <div class="num">35–69 %<small>de las pelotas de la pareja rival van a los pies de quien se queda ahí</small></div>
+        </div>
+      </div>
+
+      <div class="rule">
+        <svg class="court" viewBox="-58 -108 116 216" role="img" aria-label="La pareja se desliza hacia el lado de la pelota">
+          <use href="#court"/>
+          <g class="p rival" transform="translate(36 -76)"><circle r="6"/><text>C</text></g>
+          <g class="p rival" transform="translate(-20 -74)"><circle r="6"/><text>R</text></g>
+          <circle class="ball" cx="40" cy="-80" r="2"/>
+          <path class="cover" d="M 38 -70 L 44 92"/>
+          <path class="cover" d="M 36 -70 L -14 92"/>
+          <g class="p ghost" transform="translate(23 74)"><circle r="6"/></g>
+          <g class="p ghost" transform="translate(-23 74)"><circle r="6"/></g>
+          <path class="move" d="M 26 80 L 30 80" marker-end="url(#arrow-l)"/>
+          <path class="move" d="M -20 82 L -15 82" marker-end="url(#arrow-l)"/>
+          <g class="p you" transform="translate(34 74)"><circle r="6"/><text>V</text></g>
+          <g class="p mate" transform="translate(-12 74)"><circle r="6"/><text>B</text></g>
+          <text class="lbl" x="34" y="94">PARALELO</text>
+          <text class="lbl" x="-14" y="64">MEDIO</text>
+        </svg>
+        <div class="txt">
+          <h3>Deslizarse con la pelota</h3>
+          <p>La pareja se corre en bloque hacia el lado de la pelota: el de ese lado cubre el paralelo y el otro se cierra al medio. En la red los dos van más juntos (3,6 m) que atrás (4,6 m).</p>
+        </div>
+      </div>
+
+      <div class="rule">
+        <svg class="court" viewBox="-58 -6 116 112" role="img" aria-label="La pelota por el medio es de la derecha que da al medio">
+          <use href="#court"/>
+          <rect class="mid-band" x="-9" y="0" width="18" height="100"/>
+          <g class="p mate" transform="translate(23 76)"><circle r="6"/><text>B</text></g>
+          <g class="p you" transform="translate(-23 76)"><circle r="6"/><text>V</text></g>
+          <path class="racket" d="M -15 70 q 9 -6 16 3"/>
+          <path class="path" d="M 4 16 L 2 66" marker-end="url(#arrow-b)"/>
+          <text class="lbl" x="23" y="94">DRIVE</text>
+          <text class="lbl" x="-23" y="94">REVÉS</text>
+          <text class="lbl" x="0" y="9">MEDIO</text>
+        </svg>
+        <div class="txt">
+          <h3>El medio es de la derecha</h3>
+          <p>Una pelota por el medio es del que tiene la derecha hacia el medio: con dos diestros, el de revés. Si el otro llega claramente mejor, es del otro, y se avisa.</p>
+          <p class="muted">Vos elegís el lado. Revés (por defecto): el medio es tuyo, te queda de derecha. Drive: el medio es de tu compañero.</p>
+        </div>
+      </div>
+
+      <div class="rule">
+        <svg class="court" viewBox="-58 -108 116 216" role="img" aria-label="Un globo pasa por arriba de vos y tu compañero cruza a buscarlo">
+          <use href="#court"/>
+          <g class="p rival" transform="translate(-23 -76)"><circle r="6"/><text>R</text></g>
+          <g class="p rival" transform="translate(23 -76)"><circle r="6"/><text>C</text></g>
+          <path class="path lob" d="M -22 -70 Q 10 -20 32 88" marker-end="url(#arrow-b)"/>
+          <path class="move" d="M -18 38 L 24 82" marker-end="url(#arrow-l)"/>
+          <path class="move" d="M 18 38 L -12 44" marker-end="url(#arrow-l)"/>
+          <g class="p you" transform="translate(23 32)"><circle r="6"/><text>V</text></g>
+          <g class="p mate" transform="translate(-18 32)"><circle r="6"/><text>B</text></g>
+          <text class="lbl" x="-28" y="60">¡VOY!</text>
+          <text class="lbl" x="30" y="20">CRUZÁS</text>
+        </svg>
+        <div class="txt">
+          <h3>Subir, bajar y el cambio</h3>
+          <p>Después de un buen globo, los dos suben. Ante un globo profundo, los dos bajan.</p>
+          <p>Si el globo te pasa por arriba y no vas vos, tu compañero cruza en diagonal a buscarlo y vos pasás al otro lado. Te avisa antes.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-mate">
+    <h2 id="s-mate">Tu compañero</h2>
+    <div class="two">
+      <div class="txt" style="display:grid;gap:10px">
+        <p><b>Te sigue.</b> Sube cuando subís y baja cuando te quedás atrás medio segundo, o en el instante en que corrés detrás de un globo. Nunca abre el hueco él.</p>
+        <p><b>Cubre su mitad</b> y se desliza con la pelota. Si cruzás al otro lado, toma el lado que dejaste.</p>
+        <p><b>Nunca te roba.</b> Una pelota tuya la juega solo si no llegás o si es un globo que te pasó por arriba, y siempre avisa antes. Un test lo verifica golpe por golpe en partidos enteros.</p>
+      </div>
+      <div class="txt" style="display:grid;gap:10px">
+        <p><b>Es el mismo personaje</b> que como rival, con su estilo y sus piernas, pero juega a ganar y con manos más firmes.</p>
+        <p class="note">Beto avisa todo y te deja definir. Romina sube y remata lo alto de su zona. Chela es la maestra de la pared y la que te dice «arriba» después de su globo.</p>
+      </div>
+    </div>
+    <h3>Avisa con el cuerpo, sin texto</h3>
+    <div class="calls">
+      <div class="call">
+        <svg viewBox="0 0 64 76" aria-hidden="true"><circle class="fig-head" cx="32" cy="14" r="7"/><path class="fig" d="M32 22 V48 M32 48 L24 70 M32 48 L40 70 M32 28 L44 40"/><path class="fig-arm" d="M32 28 L22 14 L20 2"/></svg>
+        <b>¡Mía!</b><span>La mano libre arriba</span>
+      </div>
+      <div class="call">
+        <svg viewBox="0 0 64 76" aria-hidden="true"><circle class="fig-head" cx="30" cy="14" r="7"/><path class="fig" d="M31 22 V48 M31 48 L23 70 M31 48 L39 70 M31 28 L40 42"/><path class="fig-arm" d="M31 28 L46 26 L60 24"/></svg>
+        <b>¡Tuya!</b><span>Te señala</span>
+      </div>
+      <div class="call">
+        <svg viewBox="0 0 64 76" aria-hidden="true"><circle class="fig-head" cx="32" cy="14" r="7"/><path class="fig" d="M32 22 V48 M32 48 L24 70 M32 48 L40 70 M32 28 L42 42"/><path class="fig-arm" d="M32 28 L14 30 L4 34"/><path class="fig-arm" d="M8 22 Q 2 30 6 40" marker-end="url(#arrow-you)"/></svg>
+        <b>¡Voy!</b><span>El brazo barre: cruzá</span>
+      </div>
+      <div class="call">
+        <svg viewBox="0 0 64 76" aria-hidden="true"><circle class="fig-head" cx="32" cy="16" r="7"/><path class="fig" d="M32 24 V50 M32 50 L24 72 M32 50 L40 72 M32 30 L42 44"/><path class="fig-arm" d="M32 30 L24 22 L22 10"/><path class="fig-arm" d="M14 8 L22 2 L30 8" /></svg>
+        <b>¡Arriba!</b><span>Te hace señas a la red</span>
+      </div>
+      <div class="call">
+        <svg viewBox="0 0 64 76" aria-hidden="true"><circle class="fig-head" cx="32" cy="14" r="7"/><path class="fig" d="M32 22 V48 M32 48 L24 70 M32 48 L40 70 M32 28 L42 42"/><path class="fig-arm" d="M32 28 L26 16 L36 6"/><path class="fig-arm" d="M42 4 L50 10 L42 16"/></svg>
+        <b>¡Atrás!</b><span>Señala por arriba del hombro</span>
+      </div>
+    </div>
+    <p class="note">Salen cuando terminó de leer la pelota: queda medio segundo o más para actuar. Duran 0,9 s. Las pelotas obvias de cada lado no llevan aviso: la pantalla queda limpia.</p>
+  </section>
+
+  <section aria-labelledby="s-rivals">
+    <h2 id="s-rivals">La pareja rival busca dónde no estás</h2>
+    <div class="grid4">
+      <figure>
+        <svg class="court" viewBox="-58 -6 116 112" role="img" aria-label="Alguien en tierra de nadie: a los pies"><use href="#court"/>
+          <rect class="band" x="-50" y="50" width="100" height="15"/>
+          <g class="p you" transform="translate(16 58)"><circle r="6"/><text>V</text></g><g class="p mate" transform="translate(-20 32)"><circle r="6"/><text>B</text></g>
+          <path class="path" d="M 24 0 Q 20 34 17 52" marker-end="url(#arrow-b)"/></svg>
+        <figcaption><b>Tierra de nadie:</b> a los pies.</figcaption>
+      </figure>
+      <figure>
+        <svg class="court" viewBox="-58 -6 116 112" role="img" aria-label="Pareja partida: por arriba del de la red o al hueco"><use href="#court"/>
+          <path class="hole" d="M -50 44 L 6 44 L 50 62 L 50 100 L 12 100 L -50 70 Z"/>
+          <g class="p you" transform="translate(23 32)"><circle r="6"/><text>V</text></g><g class="p mate" transform="translate(-23 80)"><circle r="6"/><text>B</text></g>
+          <path class="path lob" d="M 18 0 Q 30 30 28 86" marker-end="url(#arrow-b)"/><path class="path" d="M 0 0 L 4 56" marker-end="url(#arrow-b)"/></svg>
+        <figcaption><b>Partidos:</b> por arriba del de la red, o al hueco.</figcaption>
+      </figure>
+      <figure>
+        <svg class="court" viewBox="-58 -6 116 112" role="img" aria-label="Los dos en la red: globo o a los pies"><use href="#court"/>
+          <g class="p you" transform="translate(18 32)"><circle r="6"/><text>V</text></g><g class="p mate" transform="translate(-18 32)"><circle r="6"/><text>B</text></g>
+          <path class="path lob" d="M -6 0 Q -2 40 4 88" marker-end="url(#arrow-b)"/><path class="path" d="M 8 0 L 4 20" marker-end="url(#arrow-b)"/></svg>
+        <figcaption><b>Los dos en la red:</b> globo, o chiquita a los pies.</figcaption>
+      </figure>
+      <figure>
+        <svg class="court" viewBox="-58 -6 116 112" role="img" aria-label="Los dos atrás: por el medio y profundo"><use href="#court"/>
+          <g class="p you" transform="translate(23 76)"><circle r="6"/><text>V</text></g><g class="p mate" transform="translate(-23 76)"><circle r="6"/><text>B</text></g>
+          <path class="path" d="M 2 0 L 0 84" marker-end="url(#arrow-b)"/></svg>
+        <figcaption><b>Los dos atrás:</b> por el medio, profundo. Globo o chiquita para subir.</figcaption>
+      </figure>
+    </div>
+    <p>La dificultad sale de cómo decide, no de que llegue a todo: nadie corre más que una persona. Detrás del saque la pareja sube casi siempre, y quien pega desde adentro de la cancha sigue a la red. Dos de la misma pareja encima de la misma pelota se estorban.</p>
+  </section>
+
+  <section aria-labelledby="s-reach">
+    <h2 id="s-reach">Alcance de persona real, igual para todos</h2>
+    <div class="two">
+      <figure style="margin:0;display:grid;gap:8px">
+        <svg class="court" viewBox="-130 -130 260 260" role="img" aria-label="Alcance visto desde arriba: 1,15 m parado, 1,60 m con zancada; hoy 1,79 y 2,23 m">
+          <circle class="ring-today" r="89"/>
+          <circle class="ring-today" r="111.5"/>
+          <circle class="ring-lunge" r="80"/>
+          <circle class="ring-real" r="57.5"/>
+          <g class="p you"><circle r="9"/><text style="font-size:11px">V</text></g>
+          <text class="axis-t" x="0" y="-62" text-anchor="middle">1,15 m parado</text>
+          <text class="axis-t" x="0" y="92" text-anchor="middle">1,60 m con zancada</text>
+          <text class="axis-t" x="0" y="-93" text-anchor="middle" opacity=".8">hoy: 1,79 m</text>
+          <text class="axis-t" x="0" y="-116" text-anchor="middle" opacity=".8">hoy, tarde: 2,23 m</text>
+        </svg>
+        <figcaption>Desde arriba, a escala. Línea llena y rayada: el alcance real. Punteado: el de hoy de la persona.</figcaption>
+      </figure>
+      <figure style="margin:0;display:grid;gap:8px">
+        <svg class="court" viewBox="-22 -12 276 226" role="img" aria-label="Alcance de costado: de 20 cm a 2,70 m de alto, y más chico por arriba de la cabeza">
+          <!-- x: metres to the side (80 px per m from x=20), y: height (60 px per m, ground at 180). -->
+          <polygon class="env-lunge" points="112,160.8 148,160.8 148,78 116,18 80,18 112,78"/>
+          <polygon class="env-real" points="20,168 112,168 112,78 80,18 20,18"/>
+          <rect class="env-today" x="20" y="9" width="143" height="166.5"/>
+          <line class="axis" x1="20" y1="180" x2="250" y2="180"/>
+          <line class="axis" x1="20" y1="0" x2="20" y2="180"/>
+          <path class="fig" d="M 20 92 V 124 M 20 124 L 12 180 M 20 124 L 28 180" style="stroke-width:3.5"/>
+          <path class="fig-arm" d="M 22 96 L 62 100"/>
+          <path class="racket" d="M 62 100 L 92 99"/>
+          <ellipse class="racket" cx="102" cy="99" rx="10" ry="6"/>
+          <circle class="fig-head" cx="20" cy="83" r="8"/>
+          <text class="axis-t" x="114" y="194" text-anchor="middle">1,15</text>
+          <text class="axis-t" x="148" y="194" text-anchor="middle">1,60</text>
+          <text class="axis-t" x="20" y="194" text-anchor="middle">0</text>
+          <text class="axis-t" x="250" y="208" text-anchor="end">metros al costado</text>
+          <text class="axis-t" x="6" y="171" text-anchor="end">0,2</text>
+          <text class="axis-t" x="6" y="81" text-anchor="end">1,7</text>
+          <text class="axis-t" x="6" y="21" text-anchor="end">2,7</text>
+          <text class="axis-t" x="168" y="22">hoy</text>
+        </svg>
+        <figcaption>De costado. Lleno: parado. Claro: con zancada, que no llega tan abajo (32 cm). Rayado: hoy.</figcaption>
+      </figure>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th></th><th>Hoy, la persona</th><th>Hoy, la máquina</th><th>Real, para todos</th></tr></thead>
+        <tbody>
+          <tr><td>Parado</td><td class="n">1,79 m</td><td class="n">1,25 m</td><td class="n"><b>1,15 m</b></td></tr>
+          <tr><td>Estirándose o con zancada</td><td class="n">2,23 m tarde</td><td class="n">1,60 m; 1,85 m tarde</td><td class="n"><b>1,60 m</b>, y sale floja</td></tr>
+          <tr><td>Por arriba de la cabeza</td><td>igual</td><td>igual</td><td>se achica hasta <b>0,75 m</b> a 2,7 m de alto</td></tr>
+          <tr><td>La pelota más baja</td><td class="n">7,5 cm</td><td class="n">7,5 cm</td><td class="n"><b>20 cm</b>; con zancada, 32 cm</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><b>La regla de oro:</b> si el cuerpo no puede llegar en la animación, la simulación no deja pegar. Medido en partidos enteros: la pelota más lejana baja de 2,20 m a 1,56–1,60 m, y las pelotas al ras del piso, de 8–11 % a 3–4 % de los golpes.</p>
+    <div class="decision" style="grid-template-columns:minmax(0,1fr)">
+      <p class="q">Lo que falta está en la animación, y el prototipo no lo fuerza</p>
+      <p class="a">El «imán» no viene del alcance: el cuerpo se desliza hacia la pelota una mediana de 67 a 76 cm con los dos alcances, porque el clip de derecha toca la pelota 60 cm adelante del cuerpo y la simulación 20 cm. Hace falta una <b>zancada de verdad</b> (el pie de atrás plantado, el de adelante da el paso), alinear el punto de contacto con los clips y una <b>flexión profunda</b> de hasta unos 55 cm para las pelotas de 20 a 45 cm.</p>
+    </div>
+    <h3>¿Y el 1 contra 1?</h3>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Opción</th><th>Qué es</th><th>Costo</th></tr></thead>
+        <tbody>
+          <tr><td><b>Cruzado</b> <span class="tag">recomendada</span></td><td>Media cancha en diagonal, como el «cruzadito» de calentamiento. Cada uno cubre 5 m, lo mismo que en dobles, con el mismo alcance.</td><td>Reglas y apuntado de media cancha. Sin arte nuevo.</td></tr>
+          <tr><td>Cancha angosta de 6 m</td><td>Las pistas individuales existen, de 6 × 20 m.</td><td>Otra cancha horneada (unos 130 KB), paredes y cámara.</td></tr>
+          <tr><td>Alcance propio</td><td>El 1 contra 1 sigue con el alcance de hoy.</td><td>Rompe la regla de oro.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-camera">
+    <h2 id="s-camera">La cámara con cuatro</h2>
+    <div class="two">
+      <figure style="margin:0;display:grid;gap:8px">
+        <svg class="court" viewBox="0 0 300 220" role="img" aria-label="Dos celulares: la cámara que acompaña y la fija, con los cuatro jugadores a la vista">
+          <rect class="phone" x="20" y="6" width="110" height="208" rx="14"/>
+          <polygon class="c-floor" points="44,60 106,60 124,196 26,196"/>
+          <line class="c-net" x1="36" y1="118" x2="114" y2="118" style="stroke-width:2"/>
+          <g class="p rival" transform="translate(58 72)"><circle r="5"/></g><g class="p rival" transform="translate(92 74)"><circle r="5"/></g>
+          <g class="p mate" transform="translate(52 136)"><circle r="6"/></g><g class="p you" transform="translate(98 168)"><circle r="6"/></g>
+          <text class="axis-t" x="75" y="34" text-anchor="middle">ACOMPAÑA</text>
+          <rect class="phone" x="170" y="6" width="110" height="208" rx="14"/>
+          <polygon class="c-floor" points="198,66 252,66 268,190 182,190"/>
+          <line class="c-net" x1="190" y1="122" x2="260" y2="122" style="stroke-width:2"/>
+          <g class="p rival" transform="translate(212 78)"><circle r="4.5"/></g><g class="p rival" transform="translate(240 80)"><circle r="4.5"/></g>
+          <g class="p mate" transform="translate(206 138)"><circle r="5.5"/></g><g class="p you" transform="translate(246 166)"><circle r="5.5"/></g>
+          <text class="axis-t" x="225" y="34" text-anchor="middle">FIJA</text>
+        </svg>
+      </figure>
+      <div class="txt" style="display:grid;gap:10px">
+        <p><b>Acompaña:</b> panea con tu jugador y abre el zoom lo que haga falta para que entren los cuatro, la pelota, dónde pica y tu vidrio. En la red se cierra si entran todos.</p>
+        <p><b>Fija:</b> la cancha entera, quieta.</p>
+        <p class="note">En la prueba de punta a punta, en 4536 miradas de un partido de dobles jugado con toques, los cuatro, la pelota y tu vidrio siempre estuvieron en pantalla. Tu jugador se distingue sin anillo: lo mueve tu pulgar y siempre está de tu lado.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-learn">
+    <h2 id="s-learn">Se aprende jugando</h2>
+    <p class="muted">Propuesta, todavía no está en el prototipo. Mismo formato que el tutorial: el profe arma la situación, tres aciertos. Beto es tu compañero.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Lección</th><th>La situación</th><th>Acierto</th></tr></thead>
+        <tbody>
+          <tr><td><b>Tu lado</b></td><td>Pelotas a cada mitad. Beto levanta la mano en las suyas.</td><td>Pegás las tuyas, dejás las suyas.</td></tr>
+          <tr><td><b>El medio</b></td><td>Pelotas por el medio. Beto avisa o te señala.</td><td>Le hacés caso al gesto.</td></tr>
+          <tr><td><b>Subir juntos</b></td><td>Tu globo pasa a la pareja rival. Beto te hace señas.</td><td>Llegás a la red con él antes del golpe rival.</td></tr>
+          <tr><td><b>El cambio</b></td><td>Un globo te pasa por arriba. Beto barre el brazo.</td><td>Cruzás sin ir a buscarla.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>En el partido la pista es tu compañero: sus gestos dicen dónde ir. Una sola vez, si te quedás en tierra de nadie cuando el rival va a pegar, Beto te hace la seña.</p>
+  </section>
+
+  <section aria-labelledby="s-metrics">
+    <h2 id="s-metrics">¿La posición importa? Medido</h2>
+    <p class="muted">Partidos simulados, 30 por casilla: vos y Beto contra Romina y Chela, con un jugador simulado que pasa por los mismos controles que una persona. «Posicional» juega su lado, sube y baja con su compañero, le hace caso a los avisos y tira donde no está la otra pareja. «Velocista» corre a todas.</p>
+    <div class="key"><span><i style="background:var(--muted);opacity:.45"></i>antes (motor de hoy)</span><span><i style="background:var(--you)"></i>ahora, alcance real</span><span><i style="background:var(--ink);opacity:.55;width:2px;height:12px"></i>meta</span></div>
+    <div class="bars">
+      <div class="bar"><div class="label"><span>Red contra fondo: los gana la red</span><b>21 % → 73 %</b></div><div class="track"><i class="before" style="width:21%"></i><i class="after" style="width:73%"></i><span class="mid" style="left:60%" title="meta"></span></div></div>
+      <div class="bar"><div class="label"><span>Tu pareja, junta (tiempo de pelota viva)</span><b>49 % → 74 %</b></div><div class="track"><i class="before" style="width:49%"></i><i class="after" style="width:74%"></i></div></div>
+      <div class="bar"><div class="label"><span>La pareja rival, junta</span><b>77 % → 87 %</b></div><div class="track"><i class="before" style="width:77%"></i><i class="after" style="width:87%"></i><span class="mid" style="left:75%" title="meta"></span></div></div>
+      <div class="bar"><div class="label"><span>Puntos que gana la persona promedio jugando posicional, al drive</span><b>16 % → 61 %</b></div><div class="track"><i class="before" style="width:16%"></i><i class="after" style="width:61%"></i></div></div>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Cuánto paga jugar posicional contra correr a todas</th><th>Principiante</th><th>Promedio</th><th>Experto</th></tr></thead>
+        <tbody>
+          <tr><td>Antes (motor de hoy), al drive</td><td class="n">−26 pp</td><td class="n">−38 pp</td><td class="n">−49 pp</td></tr>
+          <tr><td>Ahora, al drive, alcance de hoy / real</td><td class="n">+7 / −3</td><td class="n">+5 / +2</td><td class="n">+11 / +3</td></tr>
+          <tr><td><b>Ahora, al revés</b>, alcance de hoy / real</td><td class="n"><b>+12 / +11</b></td><td class="n"><b>+20 / +12</b></td><td class="n"><b>+6 / +13</b></td></tr>
+          <tr><td>Con un compañero parejo, alcance de hoy / real</td><td class="n">+5 / +8</td><td class="n">+16 / +8</td><td class="n">+12 / +12</td></tr>
+          <tr><td>Segundos por punto (posicional, promedio)</td><td class="n" colspan="3">antes 9,9 (perdía rápido) · ahora 23,4 con el alcance de hoy, 17,4 con el real · meta 8 a 14</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Al revés tomás el medio y ahí la posición paga más. Al drive con Beto, correr a todas rinde casi igual porque vos sos mejor que Beto y cubrir más cancha compensa. La meta de +15 pp se cumple en algunas casillas, no en todas. Con cuatro IA parejas y el alcance real los puntos duran 12,1 s (antes 21,6); con Romina y Chela, 17 a 23 s. El 1 contra 1 con el alcance de hoy da exactamente los mismos números que antes.</p>
+  </section>
+
+  <section aria-labelledby="s-perf">
+    <h2 id="s-perf">Rendimiento con cuatro personajes</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Trabajo del juego por cuadro</th><th>CPU normal</th><th>4× más lenta</th><th>6× más lenta</th></tr></thead>
+        <tbody>
+          <tr><td>1 contra 1, en 3D</td><td class="n">0,15 ms</td><td class="n">0,53 ms</td><td class="n">1,14 ms</td></tr>
+          <tr><td><b>Dobles, en 3D</b> (cuatro personajes)</td><td class="n"><b>0,21 ms</b></td><td class="n"><b>0,80 ms</b></td><td class="n"><b>1,23 ms</b></td></tr>
+          <tr><td>Dobles, en 2D</td><td class="n">0,13 ms</td><td class="n">0,57 ms</td><td class="n">0,93 ms</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Un cuadro a 60 fps tiene 16,7 ms: con la CPU seis veces más lenta, los cuatro personajes con su esqueleto usan 1,2 ms. Ningún cuadro tardó más de 17,5 ms. Medido con <span class="chip">npm run perf -- --dobles</span> en un Chrome que emula un celular.</p>
+    <p class="note">Lo que esto no mide es la placa de video de un celular: son el doble de personajes, contornos y sombras. Hay que mirarlo con <b>?dobles&amp;fps</b> en un Android de gama media.</p>
+
+  </section>
+
+  <section aria-labelledby="s-decide">
+    <h2 id="s-decide">Lo que te queda decidir</h2>
+    <div class="decisions">
+      <div class="decision"><p class="q">¿La partida rápida pasa a ser de dobles?</p><p class="a"><b>Sí, después de probarlo en el celular.</b> Es el pádel que jugás y la posición se nota. El 1 contra 1 queda como opción.</p></div>
+      <div class="decision"><p class="q">¿Alcance real para todos, también en 1 contra 1?</p><p class="a"><b>Sí, junto con la zancada y la flexión.</b> Probalo antes con ?alcance=real para sentir la diferencia.</p></div>
+      <div class="decision"><p class="q">¿Qué es el 1 contra 1?</p><p class="a"><b>Cruzado</b>, en media cancha y en diagonal.</p></div>
+      <div class="decision"><p class="q">¿Tu lado por defecto?</p><p class="a"><b>Revés</b>: tomás el medio, como el más fuerte de una pareja, y es donde la posición paga más. Drive en Opciones.</p></div>
+      <div class="decision"><p class="q">¿Compañero por defecto?</p><p class="a"><b>Beto</b>, que avisa todo. Los demás, después de haberlos enfrentado.</p></div>
+    </div>
+    <p class="note">Fases: 1) este prototipo; 2) animación (zancada, flexión, contacto); 3) aprender dobles (lecciones, pista, elegir compañero, frases de pareja); 4) dobles por defecto, rivales recalibrados y Cruzado.</p>
+  </section>
+
+  <section aria-labelledby="s-try">
+    <h2 id="s-try">Qué probar en el celular</h2>
+    <div class="scroll">
+      <table>
+        <tbody>
+          <tr><td class="n"><span class="chip">?dobles</span></td><td>¿Se entiende de quién es cada pelota con los gestos? ¿Beto te roba alguna o te deja alguna sin avisar?</td></tr>
+          <tr><td class="n"><span class="chip">?dobles</span></td><td>Subí a la red y bajá: ¿te sigue sin que lo pienses? ¿Te sentís en pareja o solo?</td></tr>
+          <tr><td class="n"><span class="chip">?dobles&amp;alcance=real</span></td><td>¿Llegás a las tuyas con el joystick o se siente injusto? ¿Se nota que la posición importa?</td></tr>
+          <tr><td class="n"><span class="chip">?dobles&amp;lado=drive</span></td><td>Dejándole el medio a Beto, ¿cómo se siente?</td></tr>
+          <tr><td class="n"><span class="chip">?alcance=real</span></td><td>El 1 contra 1 con el alcance real: ¿se vuelve de velocista?</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>

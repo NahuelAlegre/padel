@@ -21,7 +21,7 @@ export const SIM_DT = 1 / SIM_HZ;
  * (physics, rules, shot maths, AI). Recorded matches carry the version they
  * were played with, so an old recording is replayed right or cleanly refused.
  */
-export const PHYSICS_VERSION = 2;
+export const PHYSICS_VERSION = 3;
 
 export interface SideSegment {
   /** Distance from the back wall where this segment ends. */
@@ -119,6 +119,34 @@ export interface PlayerConfig {
   holdNetDistance: number;
   holdNetBonus: number;
   holdNetMaxRetreat: number;
+  /**
+   * The reach of a real person, the same for everybody: what the body can be
+   * seen doing is what it can hit. Off, the reach is today's generous one
+   * (`reach` times each player's `reachScale`, plus a lunge for a late swing).
+   */
+  realReach: boolean;
+  real: RealReach;
+}
+
+/**
+ * How far a real person gets to the ball, in metres from the middle of the
+ * feet to the middle of the ball at the moment of contact.
+ *
+ *   standing    arm and racket, with the trunk leaning: up to `reach`.
+ *   lunge       one long step toward the ball: `lunge` more, and a weaker ball.
+ *   high        over the head the arm goes up, not out: from `highFrom` the
+ *               reach shrinks to `highReach` at the highest contact.
+ *   low         a ball under `floorZ` is lost; one under `lowZ` is dug out
+ *               with the knees bent, and comes out weak (see the pressure).
+ *               Lunging, the body cannot also get that low: `lungeFloorZ`.
+ */
+export interface RealReach {
+  reach: number;
+  lunge: number;
+  highFrom: number;
+  highReach: number;
+  floorZ: number;
+  lungeFloorZ: number;
 }
 
 export interface TimingConfig {
@@ -488,6 +516,8 @@ const defaults: GameConfig = {
     holdNetDistance: 6.6,
     holdNetBonus: 1.2,
     holdNetMaxRetreat: 2.5,
+    realReach: false,
+    real: { reach: 1.15, lunge: 0.45, highFrom: 1.7, highReach: 0.75, floorZ: 0.2, lungeFloorZ: 0.32 },
   },
   timing: {
     perfect: 0.06,

@@ -78,6 +78,8 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
 
 **Prototipo publicado el 2026-11-18** (merge `0fb3c31`): propuesta en `docs/dobles.md` y en el [Artifact](https://claude.ai/artifact/9c464BuRNAzAys6RQnxpGX) (privado). Se prueba con `?dobles&alcance=real` o en Opciones → Experimental; la partida rápida no cambió. Esperando que el usuario lo pruebe en el celular.
 
+- **Primera prueba en el celular** (2026-11-18): "Es más caótico pero me gusta, eso le da diversión." La IA necesita pulirse, "es base para un juego divertido". A veces una pelota iba derecho al compañero, "claramente era suya en su área", y no hacía nada. Pidió IA que se sienta humana, "tanto aciertos como errores", y actitudes de compañero elegibles: agresivo (a veces roba), pasivo y equilibrado.
+  - **En curso, en paralelo**: sesión `ia-humana` (rama `claude/ai-human-3120e8`) y sesión `animacion-zancada` (fase 2, rama `claude/lunge-animation-b1c4ea`).
 - **Decisiones del usuario, después de probarlo**: partida rápida en dobles, alcance real para todos, el 1 contra 1 como «Cruzado» (media cancha en diagonal), revés y Beto por defecto, cuánto se desordena la pareja rival.
 - **Pendiente** (revisión de la orquestadora):
   - **Fase 2, animación**: el cuerpo se sigue deslizando unos 70 cm hacia la pelota. Hace falta zancada con el pie plantado, flexión profunda hasta unos 55 cm y alinear dónde toca la pelota la simulación con los clips. Sin esto el alcance real se juega bien pero se ve igual.

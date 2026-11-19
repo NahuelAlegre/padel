@@ -63,6 +63,10 @@ export class StageRenderer implements Renderer {
   /** Files still on their way. */
   private pending = 2;
   private readonly animators: FigureAnimator[] = [];
+  /** Doubles: who hit a ball it stole from its partner, until it is known how that went; -1 for nobody. */
+  private stolen = -1;
+  /** Who is saying «perdón» for a stolen ball that went wrong, instead of sagging when the point ends. */
+  private sorry = -1;
   /** Who each of those animators was made for: somebody else in that place gets a new one. */
   private readonly animated: string[] = [];
   private readonly styles = new Map<string, Style>();
@@ -222,18 +226,72 @@ export class StageRenderer implements Renderer {
 
   onEvent(event: SimEvent, scene: Scene): void {
     this.director.onEvent(event, scene);
+    this.followSteal(event, scene);
     // Whoever won the point is glad and whoever lost it is not, for the moment the pause lasts.
     if (event.type === 'point') {
       for (let i = 0; i < scene.players.length; i++) {
+        if (i === this.sorry) continue;
         if (scene.players[i]!.team === event.winner) this.animators[i]?.cheer();
         else this.animators[i]?.lament();
       }
+      this.sorry = -1;
     }
+  }
+
+  /**
+   * Doubles: a ball somebody took from its partner («¡mía!»). If it went in,
+   * or the other side had to play it, a quick celebration; if it went out,
+   * into the net or the swing did not get there, «perdón» to the partner. The
+   * scene is still the one of the frame before the event: it says who was
+   * stealing the ball that was just hit.
+   */
+  private followSteal(event: SimEvent, scene: Scene): void {
+    const stolen = this.stolen;
+    switch (event.type) {
+      case 'hit': {
+        const by = scene.players[event.player];
+        if (stolen >= 0 && by && by.team !== scene.players[stolen]?.team) this.stealWent(stolen, true, scene);
+        this.stolen = by?.stealing && event.kind !== 'serve' ? event.player : -1;
+        break;
+      }
+      case 'whiff':
+        if (scene.players[event.player]?.stealing) this.stealWent(event.player, false, scene);
+        break;
+      case 'bounce': {
+        const by = scene.players[stolen];
+        // It went in: it bounced on the other side of the net.
+        if (by) this.stealWent(stolen, (event.y > 0) === (by.team === 0), scene);
+        break;
+      }
+      case 'point': {
+        const by = scene.players[stolen];
+        if (by) this.stealWent(stolen, event.winner === by.team, scene);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  private stealWent(player: number, well: boolean, scene: Scene): void {
+    this.stolen = -1;
+    const who = scene.players[player];
+    const animator = this.animators[player];
+    if (!who || !animator) return;
+    if (well) {
+      animator.stoleWell();
+      return;
+    }
+    const mate = scene.players.find((other) => other !== who && other.team === who.team);
+    animator.stoleBadly(mate ? mate.x - who.x : 0);
+    this.sorry = player;
   }
 
   reset(): void {
     this.director.reset();
     for (const animator of this.animators) animator.reset();
+    this.stolen = -1;
+    this.sorry = -1;
   }
 
   render(scene: Scene, dt: number): void {

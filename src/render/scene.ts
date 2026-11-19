@@ -114,7 +114,30 @@ export interface ScenePlayer {
   act: SceneAct | null;
   /** Doubles: what it is telling its partner about the ball, with the body. Null while it says nothing. */
   call: SceneCall | null;
+  /**
+   * The computer: what the stroke it is winding up for, or in the middle of,
+   * is like, when the body has something to show about it (docs/ia.md):
+   * a ball it gets to with no time to set up, or one at its body that it can
+   * only block. Null for an ordinary one.
+   */
+  why: SceneWhy | null;
+  /**
+   * The computer: 0..1, how much a ball it read later than it usually does
+   * has caught it. It is 1 while it should already be going and is not.
+   */
+  surprise: number;
+  /** 0..1: how much a long point has got to it. */
+  tension: number;
+  /** Doubles: it called «¡mía!» on a ball of its partner's and is going for it. */
+  stealing: boolean;
 }
+
+/**
+ * Why a stroke of the computer looks the way it does, in the words of the
+ * looks and not of the simulation: hurried (no time for a windup, the body
+ * still on its way) or a block (the racket put in front, no swing).
+ */
+export type SceneWhy = 'hurried' | 'block';
 
 /**
  * Doubles: what a player tells its partner about the ball that is coming

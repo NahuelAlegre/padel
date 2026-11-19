@@ -1,6 +1,6 @@
 import type { Character } from '../characters/types';
 import { SIM_DT } from '../config';
-import { lerp } from '../core/math';
+import { lerp, smoothstep } from '../core/math';
 import type { InputState } from '../input/state';
 import { teamDir } from '../sim/court';
 import type { Match } from '../sim/match';
@@ -8,7 +8,7 @@ import type { Player } from '../sim/player';
 import { backpedalOf } from '../sim/pressure';
 import { resolveShot, serveTarget, type ShotContext } from '../sim/shots';
 import { pointAt } from '../sim/trajectory';
-import type { ShotIntent } from '../sim/types';
+import type { ShotIntent, SwingWhy } from '../sim/types';
 import {
   createPointerFeedback,
   type AidLevel,
@@ -20,6 +20,7 @@ import {
   type ScenePlayer,
   type SceneTell,
   type SceneTutorial,
+  type SceneWhy,
 } from '../render/scene';
 
 export interface SceneOptions {
@@ -72,6 +73,26 @@ const tells: SceneTell[] = [];
 const calls: SceneCall[] = [];
 /** Seconds a call is shown for. */
 const CALL_SHOWS = 0.9;
+/** One per player: what the stroke it is winding up for, or in the middle of, is like (see `ScenePlayer.why`). */
+const whys: Array<SceneWhy | null> = [];
+/** A ball read this much more slowly than usual has caught a player by surprise. */
+const SURPRISED = 1.15;
+/** How much of a long point it takes to start showing in the body, and to show all of it (see `rules.strain`). */
+const TENSE_FROM = 0.35;
+const TENSE_FULL = 1;
+
+/**
+ * Why a swing of the computer is the way it is (docs/ia.md), in the words of
+ * the looks: a ball that forced it (no time to set up) is played hurried, one
+ * fired at its body before it read it is blocked. A gamble looks like any
+ * other stroke: what gives it away is where the ball goes.
+ */
+function sceneWhy(why: SwingWhy | undefined): SceneWhy | null {
+  if (why === 'forced') return 'hurried';
+  if (why === 'reflex') return 'block';
+  return null;
+}
+
 const intent: ShotIntent = { aim: 0, depth: 0.6, lob: false, power: 1 };
 const context: ShotContext = {
   team: 0,
@@ -161,6 +182,10 @@ export function fillScene(
         tell: null,
         act: null,
         call: null,
+        why: null,
+        surprise: 0,
+        tension: 0,
+        stealing: false,
       };
       scene.players[i] = out;
     }
@@ -216,6 +241,26 @@ export function fillScene(
     } else {
       out.call = null;
     }
+
+    // What the computer goes through, for the body to show why it hits or misses the way it does
+    // (docs/ia.md). It decides it with its shot, and shows it from the windup on (the cue); the swing
+    // says it for good, and what it said is kept until the stroke is over.
+    const told = player.swing?.intent ?? player.cue;
+    if (told) whys[i] = sceneWhy(told.why);
+    else if (anim.kind === 'idle' || out.animPhase >= 1) whys[i] = null;
+    out.why = player.isHuman ? null : (whys[i] ?? null);
+    // A ball it reads later than usual (a drop shot with it at the back, a perfect shot): from when it
+    // would have been off to when it is, it is caught.
+    const shot = match.trajectory;
+    const coming = match.rally.live && shot !== null && match.rally.hitter !== player.team;
+    if (!player.isHuman && coming && player.read > player.reaction * SURPRISED) {
+      const since = time - shot.t0;
+      out.surprise = smoothstep(player.reaction - 0.06, player.reaction + 0.02, since) * (1 - smoothstep(player.read - 0.02, player.read + 0.14, since));
+    } else {
+      out.surprise = 0;
+    }
+    out.tension = smoothstep(TENSE_FROM, TENSE_FULL, player.strain);
+    out.stealing = match.pairs[player.team]?.why === 'steal' && match.assigned[player.team] === player.id;
   }
   scene.players.length = match.players.length;
 

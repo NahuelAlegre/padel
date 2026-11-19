@@ -236,7 +236,7 @@ export class FlatPainter {
     const scale = p.scale * figure.k;
     // Where the ball of this stroke is met, in the metres of the drawn figure.
     const ball = frame.view.project(player.x + player.reachX, player.y + player.reachY, player.reachZ, this.q);
-    drawFigure(this.ctx, p.x, p.y, scale, player, (ball.x - p.x) / scale, (p.y - ball.y) / scale, this.tintFor(figure), PAL.ink);
+    drawFigure(this.ctx, p.x, p.y, scale, player, (ball.x - p.x) / scale, (p.y - ball.y) / scale, player.reachZ / figure.k, this.tintFor(figure), PAL.ink);
   }
 
   /** One side of the net, from the far end toward the camera, with the ball in its place among the players. */

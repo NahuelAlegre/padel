@@ -101,15 +101,75 @@ Con entereza 0,2 (Beto, Romina) una pareja se desordena unas 45 veces cada 100 g
 | La pelota más baja que se pega | 7,5 cm | 7,5 cm | **20 cm**; con zancada, 32 cm |
 | Entre 20 y 50 cm | — | — | se pega flexionando y sale floja (la presión «contra el piso» que ya existe) |
 
-**La regla de oro:** si el cuerpo no puede llegar en la animación, la simulación no deja pegar. Con el alcance real la pelota más lejana que se pega baja de 2,20 m a 1,56–1,60 m y las pelotas al ras del piso, de 8–11 % a 3–4 % de los golpes. El cuerpo dibujado alcanza eso con los clips que ya hay: la derecha toca la pelota a 0,96 m del cuerpo y la estirada a 1,39 m, a tamaño real, y los personajes se dibujan 1,2 a 1,5 veces más grandes.
+**La regla de oro:** si el cuerpo no puede llegar en la animación, la simulación no deja pegar. Con el alcance real la pelota más lejana que se pega baja de 2,20 m a 1,56–1,60 m y las pelotas al ras del piso, de 8–11 % a 3–4 % de los golpes.
 
-**Qué falta en la animación** (medido con `npm run sim`, informe `reach`):
+### El cuerpo llega como una persona (fase 2)
 
-1. **El imán no es el alcance.** El cuerpo se desliza hacia la pelota una mediana de 67 a 76 cm, con el alcance de hoy y con el real por igual. La causa es la geometría: el clip de derecha toca la pelota 60 cm adelante del cuerpo y la simulación, 20 cm. Hace falta una **zancada de verdad**: el pie de atrás queda plantado, el de adelante da el paso y la pelvis baja, en lugar de mover el cuerpo entero. Y alinear dónde toca la pelota la simulación con dónde la tocan los clips.
-2. **Flexión profunda** para las pelotas de 20 a 45 cm: hoy el cuerpo baja 36 cm como mucho y el remate y la bandeja no se agachan. Hace falta llegar a unos 55 cm, con la rodilla al piso en la pelota más baja.
-3. **La estirada para 1,15 a 1,6 m:** el clip ya existe; hay que elegirlo por la distancia real y no deslizar encima.
+**El problema.** El cuerpo dibujado se deslizaba entero, hasta 90 cm, para poner la pala en la pelota: la mediana era de 60 a 78 cm, los pies patinaban y en los golpes difíciles la pala igual quedaba lejos. La causa era la geometría: los clips tocaban la pelota 60 a 78 cm adelante del cuerpo y la simulación la pega a 20 cm. El «imán» no llevaba el cuerpo hacia la pelota: lo corría hacia atrás y hacia afuera.
 
-El prototipo no fuerza nada de esto: el alcance real ya rige en la simulación y la animación sigue como está.
+**Qué cambió.** El cuerpo ya no se mueve entero: llega con las piernas, la cadera y el brazo.
+
+1. **Los golpes tocan donde pega la simulación.** La simulación pega a unos 62 cm al costado y 20 cm adelante de los pies, y los personajes se dibujan 1,2 a 1,5 veces más grandes: a su escala, la pelota queda a medio metro al costado y más baja de lo que espera alguien parado. La derecha, el revés, las voleas, el globo, la bandeja, el remate y las estiradas se rehicieron en Blender para ese punto: la pala toca la pelota más cerca del cuerpo, más atrás y más baja, con las rodillas más flexionadas y la base corrida hacia atrás, así la pelota sigue quedando delante del pie de adelante. Son los mismos 24 clips.
+2. **Zancada de verdad.** Si la pelota está más lejos de lo que toma el brazo, primero la cadera se corre hacia ella con los pies donde están (hasta 12 cm). Si hace falta más, el pie de adelante da un paso hacia la pelota (hasta 45 cm; 50 en la estirada) y la cadera lo sigue. El paso sale un tercio de segundo antes del contacto, cae antes de pegar y vuelve después. El pie de atrás queda plantado.
+3. **Los pies no patinan.** Cada pie apoyado queda clavado en la cancha, sobre la bola del pie, como en los clips: el talón puede subir o girar, la punta no se mueve. Si el cuerpo lo quiere en otro lado (la zancada, un gesto que abre la base, un golpe que entra tarde, la simulación que corre al jugador unos centímetros), el pie da un paso: sube, cruza y baja. Los pies se turnan, nunca saltan los dos.
+4. **Flexión profunda.** Para una pelota baja la cadera baja hasta 55 cm desde parado, con la rodilla de atrás a unos 10 cm del piso y nunca a través de él. Un pie en el aire no baja con la cadera.
+5. **El remate y la bandeja se acomodan.** El remate a una pelota más baja salta menos: el cuerpo entero baja mientras los pies están en el aire. La bandeja flexiona para una pelota más baja y se estira para una más alta.
+6. **La estirada se elige por la distancia real:** una pelota a más de 1,15 m de los pies (lo que llega una persona parada) y al costado. Una pelota lejos pero adelante se juega con un paso hacia adelante. La estirada ya no espera con un pie en el aire: si sobra tiempo, espera parada y la zancada sale entera al final.
+7. **La pala en la pelota.** El brazo hace el resto con cinemática inversa, como antes, pero ahora el resto es chico. Corriendo, las piernas siguen la carrera y los brazos golpean: el contacto se calcula con ese cuerpo y la cadera se inclina hacia la pelota.
+8. **Lo que no alcanza**, el cuerpo entero lo cubre, y los pies lo siguen a pasos. Con el alcance real casi no pasa. Con el de hoy pasa en las pelotas que ninguna persona alcanza.
+9. **Funciona igual para los cuatro jugadores**, cada uno con su cuerpo y su escala: 1,2× el cercano, 1,5× el lejano y 0,9 en Chela.
+10. **En 2D** la figura tiene rodillas: se agacha para la pelota baja y da el paso con el pie del lado de la pelota, con los mismos tiempos que en 3D.
+
+**Cómo se mide.** `npm run sim`, informe `reach` (`tests/sim/reach.sim.ts`): 4 partidos por casilla, cada jugador dibujado como en el juego. «Parado» es quien pega a menos de 0,45 m/s. Los «antes» son el motor de `main` medido con el mismo informe.
+
+| Dobles, alcance real | Antes | Ahora |
+| --- | --- | --- |
+| El cuerpo se desliza, pegando parado (mediana / p90 / máximo) | 62 / 85 / 90 cm | **0** / 12 / 72 cm |
+| El cuerpo se desliza, pegando a la carrera | 58 / 82 / 89 cm | **0** / 32 / 98 cm |
+| La pala queda de la pelota en el contacto (mediana / p90) | 13 / 41 cm | **9** / 18 cm |
+| Un pie apoyado se mueve por cuadro, alrededor de un golpe parado (mediana / p99) | 24 / 191 mm | **0,0** / 2,0 mm |
+| Pelotas por debajo de 45 cm: cuánto baja la cadera desde parado (mediana) | 51 cm | **55 cm** |
+| La rodilla más baja (p10 / mínimo) | 9 / 6 cm | 11 / **8** cm |
+| Pelotas a más de 1,15 m jugadas a fondo | 4 de 47 | **11** de 47 |
+
+| 1 contra 1, alcance de hoy (la partida rápida) | Antes | Ahora |
+| --- | --- | --- |
+| El cuerpo se desliza, pegando parado | 86 / 89 / 90 cm | **0** / 18 / 142 cm |
+| La pala queda de la pelota | 17 / 79 cm | **10** / 32 cm |
+| Un pie apoyado se mueve por cuadro | 26 / 200 mm | **0,0** / 8,1 mm |
+
+**Qué quiere decir.**
+
+- Pegando parado, el cuerpo ya no se desliza: la mediana es cero. El p90 de 12 cm sale casi entero de pelotas que la simulación cambia en los últimos 10 cuadros (ver más abajo). Con el plan estable el deslizamiento es cero, salvo bandejas muy abiertas al costado.
+- Un pie apoyado no se mueve: antes patinaba una mediana de 24 mm por cuadro (1,4 m/s) alrededor de cada golpe.
+- La flexión ya llegaba a unos 50 cm, porque los clips viejos tocaban alto, pero la rodilla atravesaba el piso. Ahora llega a 55 cm y la rodilla queda a 8 cm o más.
+- Con el alcance de hoy, el máximo de deslizamiento sube a 1,42 m. Antes tenía un tope de 90 cm y la pala quedaba lejos; ahora el cuerpo va hasta la pelota imposible y los pies lo siguen. Con el alcance real no pasa.
+
+**Peso y rendimiento.**
+
+- El personaje pesa lo mismo: 107.384 bytes comprimido, 154 menos que antes. Son los mismos 24 clips; los golpes, 30,1 KB.
+- El código del juego, 2,7 KB más comprimido: de 80,2 a 82,9 KB.
+- Animar a los cuatro cuesta 27 µs por cuadro en la PC de prueba, antes 15. Lo nuevo es sobre todo mantener los pies plantados, que pide resolver las piernas casi en cada cuadro. En un Android de gama media eso es un 0,4 % del cuadro.
+- `npm run perf -- --dobles`, trabajo por cuadro en dobles 3D con la CPU 4× y 6× más lenta: antes 1,85 y 1,94 ms, ahora 1,34 y 1,91 ms. La medición es ruidosa: no empeoró de forma visible.
+
+**Qué mirar en el celular** (`?dobles&alcance=real`, y la partida rápida de siempre):
+
+- La pelota baja: que la flexión se lea como pádel, con la base larga y la rodilla de atrás cerca del piso, y no como una sentadilla.
+- La zancada de revés a una pelota abierta: el pie derecho cruza, el izquierdo queda plantado.
+- Los pasitos de acomodo: el jugador parado que se corre unos centímetros ahora da pasos en vez de deslizar. Que no se vea nervioso.
+- La derecha de todos los días, a la altura de la cintura: el contacto quedó más cerca del cuerpo. Desde atrás se ve compacta; que no se vea apretada.
+- El remate a una pelota no tan alta, con el salto más chico.
+- En 2D, con `?2d`.
+
+**Lo que no se resolvió.**
+
+- **Planes de último momento.** A veces la IA mantiene un contacto vencido hasta 0,15 s y después pega otra pelota, a más de un metro (por ejemplo, prepara una volea y pega la salida del vidrio). Ningún cuerpo puede prepararse para eso: ahí todavía hay un deslizamiento o un cambio brusco. La animación ya no muestra el golpe en el aire: la pala espera en el contacto. Es de la IA (`src/control/ai.ts`, `src/sim/match.ts`), no de la animación.
+- **A la carrera**, el cuerpo se inclina pero no cambia la última zancada de la carrera por una estocada. Con el alcance real queda un deslizamiento de 0 / 32 cm (mediana / p90).
+- **La flexión desde atrás** puede leerse como una sentadilla y no como una estocada: la base del clip es diagonal y la cámara la ve de espaldas.
+- **Pegarle a una pelota que viene muy al cuerpo** se resuelve con la cadera y el brazo, no con un paso atrás.
+- **El Artifact «Dobles posicional»** no se volvió a publicar: su fuente, `docs/dobles.html`, ya dice que la fase 2 está hecha.
+
+**Para revisar cuadro por cuadro:** `npm run frames` (o `node scripts/frames.mjs --url http://localhost:5183/` con el servidor de desarrollo) juega la demo con una semilla fija y guarda los momentos en que el cuerpo más trabaja: la pelota más baja, la más lejana, un revés bajo, una por arriba de la cabeza y una derecha común, de cada lado de la red. Saca 7 cuadros alrededor del contacto, recortados a la densidad del celular, en `.frames/`. Con `--label` se distinguen dos versiones y con `--2d` se mira el respaldo.
 
 **¿Y el 1 contra 1?** Con el alcance real, cubrir 10 m de ancho solo es ser un velocista. Opciones:
 
@@ -205,7 +265,7 @@ Un cuadro a 60 fps tiene 16,7 ms. Ningún cuadro tardó más de 17,5 ms en ningu
 **Fases.**
 
 1. **Prototipo** (esta rama): reglas de pareja, compañero y pareja rival (que también se desordena), alcance real como interruptor, avisos con el cuerpo, opciones experimentales y mediciones.
-2. **Animación:** zancada con el pie plantado, flexión profunda, geometría del contacto. Sin esto, el alcance real se juega bien pero se ve igual que hoy.
+2. **Animación** (hecha, ver la sección 4): zancada con el pie de atrás plantado, flexión profunda, pies que no patinan y golpes que tocan la pelota donde la pega la simulación. El cuerpo ya no se desliza para llegar.
 3. **Aprender dobles:** las cuatro lecciones, la pista de tierra de nadie, la elección de compañero en el inicio, las frases y festejos de pareja.
 4. **Dobles por defecto:** si el usuario lo decide, la partida rápida pasa a dobles, se recalibran los rivales y el 1 contra 1 pasa a «Cruzado».
 
@@ -223,7 +283,7 @@ Un cuadro a 60 fps tiene 16,7 ms. Ningún cuadro tardó más de 17,5 ms en ningu
 | Decisión | Recomendación |
 | --- | --- |
 | ¿La partida rápida pasa a ser de dobles? | **Sí, después de probarlo en el celular.** Es el pádel que jugás, y la posición se nota. El 1 contra 1 queda como opción. |
-| ¿El alcance real para todos, también en 1 contra 1? | **Sí, junto con la zancada y la flexión** (fase 2). Probalo primero con `?alcance=real` para sentir la diferencia. |
+| ¿El alcance real para todos, también en 1 contra 1? | **Sí.** La zancada y la flexión ya están (fase 2). Probalo primero con `?alcance=real` para sentir la diferencia. |
 | ¿Qué es el 1 contra 1? | **Cruzado**, en media cancha y en diagonal. |
 | ¿Tu lado por defecto? | **Revés**: tomás el medio, como el más fuerte de una pareja, y es donde la posición paga más. Drive en Opciones. |
 | ¿Quién es el compañero por defecto? | **Beto**, el profe, que avisa todo. Los demás se eligen después de haberlos enfrentado. |

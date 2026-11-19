@@ -380,6 +380,7 @@ function humanIndicators(stats: Stats): Record<string, number> {
     reflexPartnerPerMatch: human.reflexPartner / matches,
     stealsPerMatch: steals / matches,
     stealsGood: ratio(good, steals),
+    stalePerMatch: (human.stale[0] + human.stale[1]) / matches,
   };
   for (const side of [0, 1] as const) {
     const errors = human.errors[side];
@@ -459,6 +460,9 @@ function describeHuman(stats: Stats): string[] {
   };
   lines.push(`por qué erran    A: ${errors(0) || '-'}`, `                 B: ${errors(1) || '-'}`);
   lines.push(`no llegó (le pegó al aire, la compu)   A ${(human.lateMisses[0] / matches).toFixed(1)} por partido   B ${(human.lateMisses[1] / matches).toFixed(1)}`);
+  lines.push(
+    `planes vencidos   A ${(human.stale[0] / matches).toFixed(2)} por partido (${(human.staleSeconds[0] / Math.max(1, human.stale[0])).toFixed(2)} s cada uno)   B ${(human.stale[1] / matches).toFixed(2)} (${(human.staleSeconds[1] / Math.max(1, human.stale[1])).toFixed(2)} s)`,
+  );
   return lines;
 }
 

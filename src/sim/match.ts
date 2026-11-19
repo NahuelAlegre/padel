@@ -211,6 +211,8 @@ const REFLEX_MAX = 0.2;
 const REFLEX_AHEAD = 0.1;
 /** A computer player hands a ball it cannot get to over to the person only if the person gets there with this much to spare. */
 const HANDOFF_SLACK = 0.3;
+/** Seconds a run to a contact is taken to last at least, to tell how fast it goes away from the net. */
+const PLANNED_RUN = 0.2;
 /**
  * Reading the ball (see `Match.setReads`), as a share of the reaction:
  *   dropAtBack   a chiquita, for whoever waits at the back: that much later
@@ -402,7 +404,7 @@ export class Match {
         this.controllers[i]!.update(this, player, intent);
         if (intent.home) player.homeMode = intent.home;
         if (intent.claim) this.claim(player);
-        this.showCue(player, intent.cue);
+        this.showCue(player, intent.cue, intent.meetAt);
         if (this.recorder && player.isHuman) this.recorder.capture(this.tick, i, intent);
       }
     }
@@ -763,8 +765,12 @@ export class Match {
   /**
    * A player that has decided its shot takes the racket back for it before it
    * swings. Nothing else changes: this is only what the opponent gets to see.
+   * It is the contact it will really make: later than planned, and further
+   * along the ball, when its swing is going to come late (`meetAt`); later,
+   * and where it expected the ball, when its body is not going to get there
+   * at all (`ShotIntent.late`).
    */
-  private showCue(player: Player, cue: ShotIntent | null): void {
+  private showCue(player: Player, cue: ShotIntent | null, meetAt: number): void {
     if (cue !== player.cue) {
       if (cue && !player.cue) player.cueAt = this.time;
       player.cue = cue;
@@ -784,11 +790,44 @@ export class Match {
     // It has not swung yet, but it knows which ball it is waiting for.
     const plan = player.plan;
     if (plan) {
-      anim.contactAt = plan.t;
-      anim.reachX = plan.x - player.x;
-      anim.reachY = plan.y - player.y;
-      anim.reachZ = plan.z;
+      anim.contactAt = Math.max(plan.t, meetAt);
+      this.reachFor(player, plan, cue, anim.contactAt);
     }
+  }
+
+  /**
+   * Where the racket goes for the contact of `plan`, met at `at`: where the
+   * ball is by then, or where it was expected for a body that is not going to
+   * get there (`ShotIntent.late`), which swings there after it has gone.
+   */
+  private reachFor(player: Player, plan: InterceptPlan, intent: ShotIntent, at: number): void {
+    const anim = player.anim;
+    const trajectory = this.trajectory;
+    const later = at > plan.t && !intent.late && trajectory && trajectory.id === plan.trajId ? pointAt(trajectory, at) : null;
+    anim.reachX = (later ? later.x : plan.x) - player.x;
+    anim.reachY = (later ? later.y : plan.y) - player.y;
+    anim.reachZ = later ? later.z : plan.z;
+  }
+
+  /**
+   * How hard the ball `player` means to meet at `plan` will be (0..1), with
+   * the player at the stance it is running to, going away from the net as
+   * fast as that run takes it: what the other side did to it. For the
+   * computer players, to know how demanding the ball is before it arrives.
+   */
+  plannedPressure(player: Player, plan: InterceptPlan): number {
+    const point = this.trajectory && plan.trajId === this.trajectory.id ? pointAt(this.trajectory, plan.t) : null;
+    if (!point) return 0;
+    const ask = this.ask;
+    ask.ballX = plan.x;
+    ask.ballY = plan.y;
+    ask.ballZ = plan.z;
+    ask.speed = Math.hypot(point.vx, point.vy, point.vz);
+    ask.gap = Math.hypot(plan.x - plan.stanceX, plan.y - plan.stanceY);
+    ask.reach = playerReach(player, this.config, plan.z) + lungeReach(this.config);
+    ask.retreat = Math.max(0, Math.abs(plan.stanceY) - Math.abs(player.y)) / Math.max(PLANNED_RUN, plan.t - this.time);
+    ask.risk = this.lastRisk;
+    return ballPressure(ask, this.config);
   }
 
   /**
@@ -868,11 +907,14 @@ export class Match {
       anim.contactAt = contactAt;
       anim.shot = this.predictKind(player, swing.intent);
       anim.side = plan.x >= player.x ? 1 : -1;
-      anim.reachX = plan.x - player.x;
-      anim.reachY = plan.y - player.y;
-      anim.reachZ = plan.z;
+      this.reachFor(player, plan, swing.intent, contactAt);
       if (this.time + 1e-9 < plan.t) continue;
 
+      // A body that got there after the ball was gone (see `ShotIntent.late`): the racket goes through, and misses.
+      if (swing.intent.late) {
+        this.missed(player);
+        continue;
+      }
       if (this.tryHit(player, swing.intent, swing.at - plan.t)) continue;
       // A player that moves by itself gives up when it did not get there: the
       // stroke goes on, at the air. A player moved by hand stays armed: the
@@ -1349,7 +1391,7 @@ export class Match {
     if (!mine || !mine.reachable || mine.slack < COVER_SLACK) return false;
     const run = owner.manual ? planIntercept(trajectory, owner, this.time, config) : owner.plan;
     const reach = playerReach(owner, config, mine.z) + (config.player.realReach ? lungeReach(config) : 0);
-    if (!shouldCover(watcher, owner, mine, run, near, this.time, playerSpeed(owner, config), reach)) return false;
+    if (!shouldCover(watcher, owner, mine, run, near, this.time, playerSpeed(owner, config), reach, this.time - trajectory.t0)) return false;
     this.take(team, owner, watcher, trajectory, pair);
     return true;
   }

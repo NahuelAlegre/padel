@@ -1,3 +1,4 @@
+import { SIM_DT } from '../src/config';
 import type { Match, SimEvent } from '../src/sim/match';
 import { lowestContact, playerReach, type Player } from '../src/sim/player';
 import type { Trajectory } from '../src/sim/trajectory';
@@ -26,17 +27,18 @@ const HIGHEST = 2.2;
 const CLOSER = 0.5;
 /** A ball counts as within reach only with this much to spare. */
 const MARGIN = 0.1;
+/** A windup still aiming at a contact this long (seconds) after it passed is a stale one. */
+const STALE = 0.05;
 
 /** Why a point ended in a mistake of whoever hit last, from what that swing was like. */
-export type ErrorCause = 'reflex' | 'gamble' | 'hurried' | 'pressure' | 'long' | 'plain';
+export type ErrorCause = 'forced' | 'gamble' | 'reflex' | 'long' | 'plain';
 
 export const ERROR_NAME: Record<ErrorCause, string> = {
+  forced: 'forzado (pelota exigida)',
+  gamble: 'fue por todo con una exigida',
   reflex: 'bloqueo al cuerpo',
-  gamble: 'fue por todo con una difícil',
-  hurried: 'llegó apurado',
-  pressure: 'pelota difícil',
   long: 'punto largo',
-  plain: 'sin motivo',
+  plain: 'no forzado',
 };
 
 /** Ways a point ends that the last hitter won: the other side did not get there. */
@@ -103,9 +105,17 @@ export interface ProbeTotals {
   lateMisses: [number, number];
   /** What happened with the balls nobody tried, for a look at why: owner and reason. */
   untouchedWhy: Record<string, number>;
+  /**
+   * Windups that went on aiming at a contact that had already passed without
+   * a swing (`anim.contactAt` behind the clock by more than `STALE`): how many
+   * times, and for how long in all, for each side. The body gets ready for one
+   * ball and plays another.
+   */
+  stale: [number, number];
+  staleSeconds: [number, number];
 }
 
-const emptyErrors = (): Record<ErrorCause, number> => ({ reflex: 0, gamble: 0, hurried: 0, pressure: 0, long: 0, plain: 0 });
+const emptyErrors = (): Record<ErrorCause, number> => ({ forced: 0, gamble: 0, reflex: 0, long: 0, plain: 0 });
 
 export function emptyTotals(): ProbeTotals {
   return {
@@ -122,6 +132,8 @@ export function emptyTotals(): ProbeTotals {
     steals: [{}, {}],
     errors: [emptyErrors(), emptyErrors()],
     lateMisses: [0, 0],
+    stale: [0, 0],
+    staleSeconds: [0, 0],
     untouchedWhy: {},
   };
 }
@@ -133,6 +145,7 @@ export class PairProbe {
   /** The steal of the point that has to wait for the next ball to know how it came out. */
   private pendingSteal: { player: Player; touches: number } | null = null;
   private touches: [number, number] = [0, 0];
+  private readonly staleNow = new Set<number>();
 
   constructor(
     private readonly match: Match,
@@ -142,6 +155,7 @@ export class PairProbe {
   step(): void {
     const match = this.match;
     for (const event of match.events) this.onEvent(event);
+    this.watchWindups();
     const ball = this.ball;
     if (!ball || match.trajectory !== ball.traj || !match.rally.live) return;
     const config = match.config;
@@ -167,6 +181,23 @@ export class PairProbe {
       const mate = mates.find((other) => other !== player);
       const other = mate ? Math.hypot(b.x - mate.x, b.y - mate.y) : Infinity;
       if (gap <= playerReach(player, config, b.z) - MARGIN && other > gap + CLOSER) watched.by = true;
+    }
+  }
+
+  /** Windups of the computer players that went on past their contact (see `ProbeTotals.stale`). */
+  private watchWindups(): void {
+    const match = this.match;
+    for (const player of match.players) {
+      if (player.isHuman) continue;
+      const anim = player.anim;
+      const waiting = match.phase === 'rally' && anim.kind === 'swing' && anim.t0 === Infinity && match.time > anim.contactAt + STALE;
+      if (waiting) {
+        if (!this.staleNow.has(player.id)) this.totals.stale[player.team]++;
+        this.staleNow.add(player.id);
+        this.totals.staleSeconds[player.team] += SIM_DT;
+      } else {
+        this.staleNow.delete(player.id);
+      }
     }
   }
 
@@ -255,8 +286,7 @@ export class PairProbe {
   private causeOf(hit: Extract<SimEvent, { type: 'hit' }>): ErrorCause {
     if (hit.why === 'reflex') return 'reflex';
     if (hit.why === 'gamble') return 'gamble';
-    if (hit.why === 'hurried' || hit.quality === 'late') return 'hurried';
-    if (hit.pressure >= HARD) return 'pressure';
+    if (hit.why === 'forced' || hit.pressure >= HARD) return 'forced';
     if (this.hits >= LONG) return 'long';
     return 'plain';
   }
@@ -324,6 +354,8 @@ export function addTotals(into: ProbeTotals, from: ProbeTotals): void {
     }
     for (const key of Object.keys(from.errors[side]) as ErrorCause[]) into.errors[side][key] += from.errors[side][key];
     into.lateMisses[side] += from.lateMisses[side];
+    into.stale[side] += from.stale[side];
+    into.staleSeconds[side] += from.staleSeconds[side];
   }
   for (const [key, n] of Object.entries(from.untouchedWhy)) into.untouchedWhy[key] = (into.untouchedWhy[key] ?? 0) + n;
 }

@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { CAST } from '../src/characters/cast';
 import { toAILevel, withAttitude } from '../src/characters/style';
 import { createConfig, type RivalId } from '../src/config';
-import { AIController, hurryOf } from '../src/control/ai';
+import { AIController, demandOf } from '../src/control/ai';
 import { Rng } from '../src/core/rng';
-import type { InterceptPlan } from '../src/sim/intercept';
+import { planIntercept, type InterceptPlan } from '../src/sim/intercept';
+import { createBall } from '../src/sim/ball';
+import { createRally, registerHit } from '../src/sim/rules';
+import { solveShot } from '../src/sim/shots';
+import { pointAt, predictTrajectory } from '../src/sim/trajectory';
 import { Match, type Controller, type PlayerEntry } from '../src/sim/match';
 import { ATTITUDE, ATTITUDES, attitudeFrom, cameToIt, createPairState, followPerson, shouldCover, type Attitude } from '../src/sim/pair';
 import { createPlayer, type Player } from '../src/sim/player';
@@ -102,7 +106,8 @@ describe('el compañero no se queda mirando', () => {
       ],
     });
     const probe = playWatched(four);
-    expect(probe.totals.byRivals).toBeGreaterThan(30);
+    // Enough of the far pair's balls went by them for the rule to be tested (points are shorter than they were).
+    expect(probe.totals.byRivals).toBeGreaterThan(20);
     expect(probe.totals.untouchedRivals).toBe(0);
   });
 });
@@ -227,10 +232,15 @@ describe('aciertos y errores con motivo', () => {
   function rival(level = LEVELS.medium) {
     const controller = new AIController(level, new Rng(5));
     const choose = (controller as unknown as { chooseShot: (m: Match, p: Player, plan: InterceptPlan) => ShotIntent }).chooseShot.bind(controller);
-    const swingTime = (controller as unknown as { swingTime: (m: Match, plan: InterceptPlan) => number }).swingTime.bind(controller);
+    const swingTime = (controller as unknown as { swingTime: (plan: InterceptPlan, demand: number) => number }).swingTime.bind(controller);
+    const lastSwing = (controller as unknown as { lastSwing: (m: Match, plan: InterceptPlan) => number }).lastSwing.bind(controller);
+    /** As if the ball of `plan` were this demanding: what it decided for it. */
+    const demanding = (p: InterceptPlan, demand: number): void => {
+      Object.assign(controller as unknown as { lastPlan: InterceptPlan; demand: number }, { lastPlan: p, demand });
+    };
     const config = createConfig();
     const match = new Match({ config, seed: 3, teams: [{ name: 'A', players: [person()] }, { name: 'B', players: [{ ...pairEntry(config, 'medium', 4), controller }] }] });
-    return { choose, swingTime, match, me: match.players[1]! };
+    return { choose, swingTime, lastSwing, demanding, match, me: match.players[1]! };
   }
   const plan = (slack: number, more: Partial<InterceptPlan> = {}): InterceptPlan => ({
     trajId: 0,
@@ -246,27 +256,70 @@ describe('aciertos y errores con motivo', () => {
     ...more,
   });
 
-  it('llegando apurado le pega tarde: la pelota sale floja, o no le llega', () => {
-    const { swingTime, match } = rival();
-    const late = (slack: number): number => {
+  it('una pelota cómoda casi nunca se falla; una que le exigiste, mucho más seguido', () => {
+    const { swingTime, choose, demanding, match, me } = rival();
+    const late = (demand: number): number => {
       let n = 0;
-      for (let i = 0; i < 400; i++) if (swingTime(match, plan(slack)) - 10 > match.config.timing.good) n++;
-      return n / 400;
+      for (let i = 0; i < 600; i++) if (swingTime(plan(0.4), demand) - 10 > match.config.timing.good) n++;
+      return n / 600;
     };
-    const comfortable = late(0.6);
-    const rushed = late(-0.1);
-    expect(rushed).toBeGreaterThan(comfortable * 2);
-    expect(comfortable).toBeLessThan(0.15);
-    expect(hurryOf(plan(0.6))).toBe(0);
-    expect(hurryOf(plan(-0.1))).toBe(1);
+    const comfortable = late(0);
+    const demanded = late(1);
+    expect(comfortable).toBeLessThan(0.02);
+    expect(demanded).toBeGreaterThan(comfortable * 5);
+    expect(demanded).toBeGreaterThan(0.15);
+    // And the ball leaves the racket cleaner than usual, or wilder.
+    const easy = plan(0.4);
+    demanding(easy, 0);
+    const calm = choose(match, me, easy);
+    const hard = plan(0.4);
+    demanding(hard, 1);
+    const wild = choose(match, me, hard);
+    expect(calm.scatter ?? 1).toBeLessThan(1);
+    expect(wild.scatter ?? 1).toBeGreaterThan(1.5);
+    expect(calm.why).toBeUndefined();
+    expect(['forced', 'gamble']).toContain(wild.why);
   });
 
-  it('nunca se queda mirando: si iba a pegarle después de que la pelota muera, le pega antes, tarde', () => {
-    const { swingTime, match } = rival();
+  it('lo que la hace exigente es lo que hizo el otro: colocación, profundidad, ritmo, sorpresa', () => {
+    const { match, me } = rival();
+    const config = match.config;
+    // A comfortable ball: to where it was waiting, off the back glass with time to spare, at the pace of its last one.
+    const launch = solveShot(0.6, -4, 1, 0.6, 7, { clearance: 0.9, apex: 0, speed: 11 }, config.physics, config.court);
+    const ball = { ...createBall(), x: 0.6, y: -4, z: 1, vx: launch.vx, vy: launch.vy, vz: launch.vz };
+    const rally = createRally();
+    registerHit(rally, 0, false, 1);
+    match.trajectory = predictTrajectory(ball, rally, match.time, config);
+    me.x = 0;
+    me.y = 7.4;
+    const comfortable = planIntercept(match.trajectory, me, match.time, config)!;
+    const at = pointAt(match.trajectory, comfortable.t)!;
+    const pace = Math.hypot(at.vx, at.vy, at.vz);
+    const easy = demandOf(match, me, comfortable, me.x, me.y, pace);
+    // Where it waited makes no difference while there is time to get there; from the net in the
+    // other corner there is none: pulled out of its place.
+    expect(demandOf(match, me, comfortable, me.x + 3.5, me.y, pace)).toBeCloseTo(easy);
+    const pulled = demandOf(match, me, comfortable, me.x - 4, me.y - 4, pace);
+    // A change of pace, and a surprise.
+    const changed = demandOf(match, me, comfortable, me.x, me.y, pace + 8);
+    me.read = me.reaction * 1.6;
+    const surprised = demandOf(match, me, comfortable, me.x, me.y, pace);
+    expect(easy).toBeLessThan(0.1);
+    expect(pulled).toBeGreaterThan(easy + 0.4);
+    expect(changed).toBeGreaterThan(easy + 0.2);
+    expect(surprised).toBeGreaterThan(easy + 0.2);
+  });
+
+  it('nunca se queda mirando: si su cuerpo iba a llegar después de que la pelota muera, le pega antes, tarde, y no le llega', () => {
+    const { lastSwing, match } = rival();
     // A ball that dies a moment after the contact it planned.
     const trajectory = { id: 9, t0: 9, points: [], bounces: [], end: { t: 10.05, result: { kind: 'point' as const, winner: 0 as const, reason: 'doubleBounce' as const } } };
     match.trajectory = trajectory;
-    for (let i = 0; i < 300; i++) expect(swingTime(match, plan(-0.1, { trajId: 9 }))).toBeLessThan(10.05);
+    expect(lastSwing(match, plan(-0.1, { trajId: 9 }))).toBeLessThan(10.05);
+    expect(lastSwing(match, plan(-0.1, { trajId: 9 }))).toBeGreaterThanOrEqual(10);
+    // And it never waits past the moment it would give up on this contact.
+    match.trajectory = { ...trajectory, end: null };
+    expect(lastSwing(match, plan(0.2, { trajId: 9 }))).toBeLessThanOrEqual(10 + match.config.timing.lateMax);
   });
 
   it('un bloqueo al cuerpo no se apunta: sale al medio, más suave y menos preciso', () => {
@@ -281,12 +334,14 @@ describe('aciertos y errores con motivo', () => {
     }
   });
 
-  it('con una pelota difícil va por todo solo quien pega fuerte y no lee el juego, y esa es la que se va', () => {
-    const gambles = (level: typeof LEVELS.medium): number => {
-      const { choose, match, me } = rival(level);
+  it('con una pelota que le exigiste va por todo solo quien pega fuerte y no lee el juego, y esa es la que se va; con una cómoda, nunca', () => {
+    const gambles = (level: typeof LEVELS.medium, demand = 0.8): number => {
+      const { choose, demanding, match, me } = rival(level);
       let n = 0;
       for (let i = 0; i < 400; i++) {
-        const shot = choose(match, me, plan(0.05, { z: 0.3 }));
+        const tough = plan(0.05, { z: 0.3 });
+        demanding(tough, demand);
+        const shot = choose(match, me, tough);
         if (shot.why === 'gamble') {
           n++;
           expect(shot.scatter ?? 1).toBeGreaterThan(1.5);
@@ -301,6 +356,8 @@ describe('aciertos y errores con motivo', () => {
     expect(romina).toBeGreaterThan(0.1);
     // Chela always lobs when pressed (her trait), and reads the game anyway.
     expect(chela).toBe(0);
+    // A comfortable ball is never the one Romina throws away.
+    expect(gambles({ ...LEVELS.medium, ...config.rivals.romina }, 0)).toBe(0);
   });
 
   it('lee antes la pelota de quien está en apuros, y la chiquita lo agarra a contrapié si está atrás', () => {

@@ -173,7 +173,7 @@ Con entereza 0,2 (Beto, Romina) una pareja se desordena unas 45 veces cada 100 g
 
 **Lo que no se resolvió.**
 
-- **Planes de último momento.** A veces la IA mantiene un contacto vencido hasta 0,15 s y después pega otra pelota, a más de un metro (por ejemplo, prepara una volea y pega la salida del vidrio). Ningún cuerpo puede prepararse para eso: ahí todavía hay un deslizamiento o un cambio brusco. La animación ya no muestra el golpe en el aire: la pala espera en el contacto. Es de la IA (`src/control/ai.ts`, `src/sim/match.ts`), no de la animación.
+- ~~**Planes de último momento.**~~ A veces la IA mantenía un contacto vencido hasta 0,15 s y después pegaba otra pelota, a más de un metro (por ejemplo, preparaba una volea y pegaba la salida del vidrio). **Resuelto en la IA** (`docs/ia.md`, sección 3): el armado muestra desde el principio el golpe que de verdad va a dar, y nunca queda un plan vencido. Pegando parado, el deslizamiento p90 bajó de 16–21 cm a 0–5 cm.
 - **A la carrera**, el cuerpo se inclina pero no cambia la última zancada de la carrera por una estocada. Con el alcance real queda un deslizamiento de 0 / 32 cm (mediana / p90).
 - **La flexión desde atrás** puede leerse como una sentadilla y no como una estocada: la base del clip es diagonal y la cámara la ve de espaldas.
 - **Pegarle a una pelota que viene muy al cuerpo** se resuelve con la cadera y el brazo, no con un paso atrás.

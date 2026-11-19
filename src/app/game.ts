@@ -647,6 +647,7 @@ export class Game {
         wallBias: level.wallBias,
         holdNet: level.holdNet,
         composure: level.composure,
+        reading: level.smart,
         attitude,
         controller,
       };
@@ -768,6 +769,7 @@ export class Game {
         player.wallBias = level.wallBias;
         player.holdNet = level.holdNet;
         player.composure = level.composure;
+        player.reading = level.smart;
       }
     }
     if (match) for (const controller of this.ais) controller.level = level;

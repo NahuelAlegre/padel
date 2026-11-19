@@ -181,7 +181,7 @@ describe('gesto delator: la IA decide antes y lo muestra', () => {
   });
 
   it('no miente: lo que mostró es lo que juega', () => {
-    const { seen } = watch({ ...LEVELS.hard, lobChance: 1, dropChance: 0.3, tellLead: 0.45 }, 160);
+    const { seen } = watch({ ...LEVELS.hard, lobChance: 1, dropChance: 0.3, tellLead: 0.45 }, 320);
     const lobs = seen.filter((entry) => entry.cue.lob);
     expect(lobs.length).toBeGreaterThan(3);
     // The situation can still name it differently when the ball got past (contrapared).

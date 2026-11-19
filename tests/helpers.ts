@@ -82,6 +82,7 @@ function levelEntry(level: AILevel, seed: number, name: string): PlayerEntry {
     wallBias: level.wallBias,
     holdNet: level.holdNet,
     composure: level.composure,
+    reading: level.smart,
     controller: new AIController(level, new Rng(seed)),
   };
 }

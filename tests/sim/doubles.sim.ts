@@ -366,8 +366,9 @@ function indicators(stats: Stats): Record<string, number> {
 function humanIndicators(stats: Stats): Record<string, number> {
   const human = stats.human;
   const matches = stats.matches || 1;
-  const steals = Object.values(human.steals).reduce((n, outcome) => n + outcome.good + outcome.error + outcome.missed, 0);
-  const good = Object.values(human.steals).reduce((n, outcome) => n + outcome.good, 0);
+  // The steals of the near pair: the person's partner.
+  const steals = Object.values(human.steals[0]).reduce((n, outcome) => n + outcome.good + outcome.error + outcome.missed, 0);
+  const good = Object.values(human.steals[0]).reduce((n, outcome) => n + outcome.good, 0);
   const out: Record<string, number> = {
     untouchedPartner: human.untouchedPartner,
     untouchedPartnerShare: ratio(human.untouchedPartner, human.byPartner),
@@ -438,12 +439,14 @@ function describeHuman(stats: Stats): string[] {
   ];
   const why = Object.entries(human.untouchedWhy).sort((a, b) => b[1] - a[1]).slice(0, 3);
   if (why.length) lines.push(`                de quién era la que nadie intentó: ${why.map(([key, n]) => `${n}× ${key}`).join(' · ')}`);
-  const steals = Object.entries(human.steals) as Array<[Attitude, { good: number; error: number; missed: number }]>;
-  for (const [attitude, outcome] of steals) {
-    const n = outcome.good + outcome.error + outcome.missed;
-    lines.push(
-      `«¡mía!» (${ATTITUDE_NAME[attitude]})   ${(n / matches).toFixed(1)} por partido, salen bien ${pct(outcome.good, n)} (al error ${pct(outcome.error, n)}, no llega ${pct(outcome.missed, n)})`,
-    );
+  for (const side of [0, 1] as const) {
+    const steals = Object.entries(human.steals[side]) as Array<[Attitude, { good: number; error: number; missed: number }]>;
+    for (const [attitude, outcome] of steals) {
+      const n = outcome.good + outcome.error + outcome.missed;
+      lines.push(
+        `«¡mía!» ${side ? 'B' : 'A'} (${ATTITUDE_NAME[attitude]})   ${(n / matches).toFixed(1)} por partido, salen bien ${pct(outcome.good, n)} (al error ${pct(outcome.error, n)}, no llega ${pct(outcome.missed, n)})`,
+      );
+    }
   }
   const errors = (side: 0 | 1): string => {
     const counts = human.errors[side];

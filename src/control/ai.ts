@@ -4,7 +4,7 @@ import type { Rng } from '../core/rng';
 import { planIntercept, type InterceptPlan } from '../sim/intercept';
 import type { Controller, Match } from '../sim/match';
 import { BACK_LINE, NET_LINE } from '../sim/pair';
-import { lowestContact, lungeReach, playerReach, type Player } from '../sim/player';
+import type { Player } from '../sim/player';
 import { pointAt } from '../sim/trajectory';
 import { otherTeam, type PlayerIntent, type ShotIntent, type SwingWhy } from '../sim/types';
 import { autoMove } from './autopilot';
@@ -48,17 +48,24 @@ const BUILD_DROP = 1.5;
  * and its ball wilder (`HURRY_SCATTER`): the body gets there late.
  */
 const HURRY_SLACK = 0.25;
-const HURRY_SIGMA = 1;
-const HURRY_LATE = 1.2;
-const HURRY_SCATTER = 0.8;
+const HURRY_SIGMA = 0.6;
+const HURRY_LATE = 0.9;
+const HURRY_SCATTER = 0.6;
 /** From this much hurry on, the swing counts as hurried (for whoever shows or measures it). */
 const HURRIED = 0.5;
+/** It has its swing on its way this long (seconds) before the contact, however late its body is. */
+const ARMED_BY = 2 * SIM_DT;
 /** A fast ball is harder to time: from `PACE_FROM` m/s, up to `PACE_SIGMA` more spread at `PACE_FROM + PACE_SPAN`. */
 const PACE_FROM = 12;
 const PACE_SPAN = 12;
 const PACE_SIGMA = 0.6;
-/** A block of a ball at the body: there is no aiming it, and it comes off the racket wilder and softer. */
-const REFLEX_SCATTER = 1.5;
+/**
+ * A block of a ball at the body: the racket is put in front of it, so its
+ * timing is only a little wider than usual (`REFLEX_SIGMA`) and never rushed;
+ * there is no aiming it, and it comes off the racket wilder and softer.
+ */
+const REFLEX_SIGMA = 1.25;
+const REFLEX_SCATTER = 1.3;
 const REFLEX_POWER = 0.85;
 /**
  * A difficult ball, and it goes for the winner anyway: how often, for the
@@ -88,9 +95,9 @@ const STEAL_ROOM = 0.35;
 /** A partner who gets there with less than this to spare gets there rushed. */
 const RUSHED = 0.12;
 
-/** 0..1, how rushed a player is getting to this contact: 1 for a block, or a ball it is only chasing. */
+/** 0..1, how rushed a player is getting to this contact: 1 for a ball it is only chasing. A block is not run to: 0. */
 export function hurryOf(plan: InterceptPlan): number {
-  if (plan.reflex) return 1;
+  if (plan.reflex) return 0;
   return clamp((HURRY_SLACK - plan.slack) / HURRY_SLACK, 0, 1);
 }
 
@@ -188,7 +195,7 @@ export class AIController implements Controller {
     // Doubles: a ball of the partner's it would rather play. It says so («¡mía!») the moment it decides.
     const trajectory = match.trajectory;
     if (this.pair && this.level.steal > 0 && trajectory && rally.live && rally.hitter !== me.team && trajectory.id !== this.looked) {
-      if (match.assigned[me.team] !== me.id && match.pairs[me.team].trajId === trajectory.id && match.time >= trajectory.t0 + me.reaction) {
+      if (match.assigned[me.team] !== me.id && match.pairs[me.team].trajId === trajectory.id && match.time >= trajectory.t0 + me.read) {
         this.looked = trajectory.id;
         if (this.wantsIt(match, me)) intent.claim = true;
       }
@@ -205,7 +212,7 @@ export class AIController implements Controller {
       // A new contact: decide now how well this swing will be timed. Whatever
       // had been decided was for another ball.
       this.lastPlan = plan;
-      this.swingAt = this.swingTime(match, me, plan);
+      this.swingAt = this.swingTime(match, plan);
       this.cue = null;
     }
     if (this.swingAt < 0) return;
@@ -225,53 +232,31 @@ export class AIController implements Controller {
     intent.cue = this.cue;
     if (swingNow && this.cue) {
       this.swingAt = -1;
-      intent.swing = this.lateBy > 0 ? { ...this.cue, lateBy: this.lateBy, why: this.cue.why ?? 'hurried' } : this.cue;
+      intent.swing = this.lateBy > 0 ? { ...this.cue, lateBy: this.lateBy } : this.cue;
     }
   }
 
   /**
    * When it swings at this contact. A ball it gets to with time is timed as
    * well as its hands allow; one it gets to rushed, or a fast one, is timed
-   * worse, and the rushed one late: the body gets there late. Whatever
-   * happens it swings while the ball can still be played, so being late is a
-   * late, weak ball (or a poke, very late) and never a player watching the
-   * ball go by: what it was late by goes with the swing (`lateBy`).
+   * worse, and the rushed one late: the body gets there late.
+   *
+   * Whatever happens the racket is there when the ball is: it swings in time
+   * for the contact it planned, and what its body was late by goes with the
+   * swing (`lateBy`), so being late is a late, weak ball (or a poke, very
+   * late) and never a player watching the ball go by.
    */
-  private swingTime(match: Match, me: Player, plan: InterceptPlan): number {
+  private swingTime(match: Match, plan: InterceptPlan): number {
     const spread = this.level.timingSigma;
     const hurry = hurryOf(plan);
     const point = match.trajectory ? pointAt(match.trajectory, plan.t) : null;
     const pace = point ? Math.hypot(point.vx, point.vy, point.vz) : 0;
     const fast = clamp((pace - PACE_FROM) / PACE_SPAN, 0, 1);
-    const sigma = spread * (1 + HURRY_SIGMA * hurry + PACE_SIGMA * fast);
+    const sigma = spread * (1 + HURRY_SIGMA * hurry + PACE_SIGMA * fast) * (plan.reflex ? REFLEX_SIGMA : 1);
     const at = plan.t + spread * HURRY_LATE * hurry + this.rng.gauss() * sigma;
-    const last = this.lastChance(match, me, plan);
-    this.lateBy = Math.max(0, at - last);
-    return Math.min(at, last);
-  }
-
-  /**
-   * The last moment the ball of this contact can still be met from where the
-   * player will be standing: it is still on this side, not too low or too
-   * high, and within a lunge of the stance. A step before it, to be safe.
-   */
-  private lastChance(match: Match, me: Player, plan: InterceptPlan): number {
-    const trajectory = match.trajectory;
-    const config = match.config;
-    const pc = config.player;
-    if (!trajectory || trajectory.id !== plan.trajId) return plan.t + config.timing.lateMax;
-    const points = trajectory.points;
-    let last = plan.t;
-    for (let i = Math.max(0, Math.round((plan.t - trajectory.t0) / SIM_DT)); i < points.length; i++) {
-      const point = points[i]!;
-      if (point.t > plan.t + config.timing.lateMax) break;
-      if (point.hittable !== me.team || point.z > pc.maxContactZ) break;
-      const standing = playerReach(me, config, point.z);
-      const gap = Math.hypot(point.x - plan.stanceX, point.y - plan.stanceY);
-      if (gap > standing + lungeReach(config) || point.z < lowestContact(config, gap > standing)) break;
-      last = point.t;
-    }
-    return Math.max(plan.t, last - SIM_DT);
+    const armed = plan.t - ARMED_BY;
+    this.lateBy = Math.max(0, at - armed);
+    return Math.min(at, armed);
   }
 
   /**

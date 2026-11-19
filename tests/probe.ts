@@ -96,8 +96,8 @@ export interface ProbeTotals {
   /** Blocks of a ball at the body (reflex). */
   reflexPartner: number;
   reflexRivals: number;
-  /** Balls taken from the partner, by the attitude of whoever took them, and how they came out. */
-  steals: Partial<Record<Attitude, StealOutcome>>;
+  /** Balls taken from the partner («¡mía!»), by side and by the attitude of whoever took them, and how they came out. */
+  steals: [Partial<Record<Attitude, StealOutcome>>, Partial<Record<Attitude, StealOutcome>>];
   /** Points that ended in a mistake, by why, for each side of the net. */
   errors: [Record<ErrorCause, number>, Record<ErrorCause, number>];
   /** What happened with the balls nobody tried, for a look at why: owner and reason. */
@@ -118,7 +118,7 @@ export function emptyTotals(): ProbeTotals {
     reactionRivals: [],
     reflexPartner: 0,
     reflexRivals: 0,
-    steals: {},
+    steals: [{}, {}],
     errors: [emptyErrors(), emptyErrors()],
     untouchedWhy: {},
   };
@@ -243,7 +243,7 @@ export class PairProbe {
   }
 
   private steal(player: Player): StealOutcome {
-    const steals = this.totals.steals;
+    const steals = this.totals.steals[player.team];
     return (steals[player.attitude] ??= { good: 0, error: 0, missed: 0 });
   }
 
@@ -312,13 +312,13 @@ export function addTotals(into: ProbeTotals, from: ProbeTotals): void {
   into.reactionRivals.push(...from.reactionRivals);
   into.reflexPartner += from.reflexPartner;
   into.reflexRivals += from.reflexRivals;
-  for (const [attitude, outcome] of Object.entries(from.steals) as Array<[Attitude, StealOutcome]>) {
-    const entry = (into.steals[attitude] ??= { good: 0, error: 0, missed: 0 });
-    entry.good += outcome.good;
-    entry.error += outcome.error;
-    entry.missed += outcome.missed;
-  }
   for (const side of [0, 1] as const) {
+    for (const [attitude, outcome] of Object.entries(from.steals[side]) as Array<[Attitude, StealOutcome]>) {
+      const entry = (into.steals[side][attitude] ??= { good: 0, error: 0, missed: 0 });
+      entry.good += outcome.good;
+      entry.error += outcome.error;
+      entry.missed += outcome.missed;
+    }
     for (const key of Object.keys(from.errors[side]) as ErrorCause[]) into.errors[side][key] += from.errors[side][key];
   }
   for (const [key, n] of Object.entries(from.untouchedWhy)) into.untouchedWhy[key] = (into.untouchedWhy[key] ?? 0) + n;

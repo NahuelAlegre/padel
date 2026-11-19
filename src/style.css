@@ -568,6 +568,25 @@ body {
   content: '✓';
 }
 
+/* Options drawn as a little court over their word (the partner's attitude). */
+.seg.icons button {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 4px;
+  min-height: 72px;
+  padding: 8px 2px 6px;
+  font-size: 14px;
+}
+
+.seg.icons button[aria-pressed='true']::before {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  content: '✓';
+}
+
 .btn:focus-visible,
 .seg button:focus-visible,
 #pause:focus-visible {

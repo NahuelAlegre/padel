@@ -1,6 +1,7 @@
 import { CAST } from '../characters/cast';
 import type { FormatName } from '../config';
-import { RIVALS, SPEEDS, VOLUMES, type LineFrequency, type Settings } from './settings';
+import { ATTITUDES, type Attitude } from '../sim/pair';
+import { partnerAttitude, RIVALS, SPEEDS, VOLUMES, type LineFrequency, type SideName, type Settings } from './settings';
 import { LESSONS } from '../app/drill';
 import { TEXT } from './text';
 
@@ -63,6 +64,36 @@ function button(label: string, className: string, onClick: () => void, note = ''
   if (note) element.append(el('small', '', note));
   element.addEventListener('click', onClick);
   return element;
+}
+
+/**
+ * Where the partner stands with each attitude, on a court seen from behind
+ * your own end, as the game is: you (the ring) on your side, the partner (the
+ * dot) up at the net, level with you or back by the glass. A padel player
+ * reads it without the word under it.
+ */
+const ATTITUDE_SPOTS: Record<Attitude, { you: number; mate: number }> = {
+  aggressive: { you: 32, mate: 24 },
+  balanced: { you: 31, mate: 31 },
+  passive: { you: 29, mate: 35 },
+};
+
+function attitudeIcon(attitude: Attitude, side: SideName): HTMLElement {
+  const spots = ATTITUDE_SPOTS[attitude];
+  // Revés is the left of the pair, seen from behind it.
+  const youX = side === 'reves' ? 9 : 19;
+  const mateX = side === 'reves' ? 19 : 9;
+  // Inline SVG through the HTML parser: static markup, nothing of the person's in it.
+  const icon = el('span', 'icon');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML =
+    '<svg viewBox="0 0 28 40" width="24" height="34" focusable="false">' +
+    '<rect x="3" y="2" width="22" height="36" rx="3" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.55"/>' +
+    '<line x1="3" y1="20" x2="25" y2="20" stroke="currentColor" stroke-width="1.6"/>' +
+    `<circle cx="${youX}" cy="${spots.you}" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/>` +
+    `<circle cx="${mateX}" cy="${spots.mate}" r="3.1" fill="currentColor"/>` +
+    '</svg>';
+  return icon;
 }
 
 /**
@@ -310,6 +341,7 @@ export class Screens {
           'partner',
           RIVALS.map((id) => [id, CAST[id].name] as const),
         ),
+        this.attitudeChoice(),
       );
     }
     panel.append(
@@ -334,6 +366,41 @@ export class Screens {
       el('div', 'sticky', button(TEXT.back, 'btn primary', () => this.show(this.cameFrom))),
     );
     return panel;
+  }
+
+  /**
+   * Doubles: how the partner plays with you. Three small courts show where
+   * it stands with each attitude; the one pressed is the one it will play
+   * with. Each partner remembers what it was asked for, and one that was
+   * asked for nothing plays its own (asking for its own is asking for nothing).
+   */
+  private attitudeChoice(): HTMLElement {
+    const s = TEXT.settings;
+    const partner = this.settings.partner;
+    const own = CAST[partner].attitude;
+    const current = partnerAttitude(this.settings, partner);
+    const group = el('div', 'seg icons');
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', s.attitude);
+    for (const attitude of ATTITUDES) {
+      const option = el('button', '', attitudeIcon(attitude, this.settings.side), el('span', '', s.attitudes[attitude]));
+      option.type = 'button';
+      option.setAttribute('aria-pressed', String(attitude === current));
+      option.addEventListener('click', () => {
+        const attitudes = { ...this.settings.attitudes };
+        if (attitude === own) delete attitudes[partner];
+        else attitudes[partner] = attitude;
+        this.settings.attitudes = attitudes;
+        this.handlers.onSettings(this.settings);
+        if (this.current) this.show(this.current);
+        this.root.querySelector<HTMLElement>('[data-key="attitude"] [aria-pressed="true"]')?.focus({ preventScroll: true });
+      });
+      group.append(option);
+    }
+    const field = el('div', 'field', el('span', 'label', s.attitude), group, el('p', 'note', s.attitudeHint[current]));
+    if (current === own) field.append(el('p', 'note', s.attitudeOwn(CAST[partner].name)));
+    field.dataset.key = 'attitude';
+    return field;
   }
 
   /** A labelled group of buttons that sets one setting to one of a few values. */

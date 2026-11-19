@@ -155,11 +155,14 @@ export const FOLLOW = {
   rescueSpeed: 6,
   /** Seconds it waits before closing in; it opens up at once. */
   closeDelay: 0.35,
+  /** The ball is kept in view where it is and where it will be this many seconds later. */
+  ballAhead: 0.12,
 };
 
 /** How far along the court a point of the camera's turn is taken to be, in metres. */
 const TURN_REACH = 28;
 const HALF_LENGTH = 10;
+const COURT_HALF_WIDTH = 5;
 
 /** The camera of the game for a pan (metres) and a zoom. With no pan and zoom 1 it is the reference camera. */
 export function followCamera(pan: number, zoom: number): StageCamera {
@@ -185,7 +188,8 @@ export interface FollowContext {
   player: Framed;
   mates: readonly Framed[];
   rivals: readonly Framed[];
-  ball: { x: number; y: number; z: number; vy: number; visible: boolean; held: boolean };
+  /** `vx` left out is a ball with no speed across the court. */
+  ball: { x: number; y: number; z: number; vx?: number; vy: number; visible: boolean; held: boolean };
   /** Where the ball is going to bounce on the person's side, when it is known. */
   mark: { x: number; y: number } | null;
   lay: Layout;
@@ -363,7 +367,13 @@ export class Follow {
     this.measure(player.x, player.y, 0.9 * player.k, FOLLOW.margin.player);
     for (const mate of ctx.mates) this.measure(mate.x, mate.y, 0.9 * mate.k, FOLLOW.margin.player);
     for (const rival of ctx.rivals) this.measure(rival.x, rival.y, 0.9 * rival.k, FOLLOW.margin.rival);
-    if (live) this.measure(ball.x, ball.y, ball.z, FOLLOW.margin.ball);
+    if (live) {
+      this.measure(ball.x, ball.y, ball.z, FOLLOW.margin.ball);
+      // And where it will be a moment from now, inside the court: a fast ball does not outrun the camera.
+      const aheadX = clamp(ball.x + (ball.vx ?? 0) * FOLLOW.ballAhead, -COURT_HALF_WIDTH, COURT_HALF_WIDTH);
+      const aheadY = clamp(ball.y + ball.vy * FOLLOW.ballAhead, -HALF_LENGTH, HALF_LENGTH);
+      this.measure(aheadX, aheadY, ball.z, FOLLOW.margin.ball);
+    }
     if (mark) this.measure(mark.x, mark.y, 0, FOLLOW.margin.mark);
     this.sideTo = this.used;
     return { want, cap, preferred: 0.62 * player.x };

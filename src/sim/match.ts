@@ -212,7 +212,19 @@ const REFLEX_AHEAD = 0.1;
 /** A computer player hands a ball it cannot get to over to the person only if the person gets there with this much to spare. */
 const HANDOFF_SLACK = 0.3;
 /** How much wilder a ball is when the body was later than any swing can be (`ShotIntent.lateBy`): a poke. */
-const LATE_POKE = 2.5;
+const LATE_POKE = 2;
+/**
+ * Reading the ball (see `Match.setReads`), as a share of the reaction:
+ *   dropAtBack   a chiquita, for whoever waits at the back: that much later
+ *   clean        a perfectly timed shot: that much later
+ *   pressed      a shot struck under at least this much pressure is a
+ *                defensive ball, and whoever reads the game reads it
+ *                `pressedEarly` sooner (times its `reading`)
+ *   tellSeen     a windup shown at least this long before the shot gave it
+ *                away: `tellEarly` sooner (times its `reading`)
+ *   least, most  never quicker or slower than this
+ */
+const READ = { dropAtBack: 0.6, clean: 0.25, pressed: 0.45, pressedEarly: 0.35, tellSeen: 0.25, tellEarly: 0.25, least: 0.6, most: 1.8 };
 
 /**
  * The whole simulation of a match: players, ball, rules and score.
@@ -1023,7 +1035,7 @@ export class Match {
       pressure,
       why: intent.why,
     });
-    this.onBallStruck(player.team, -1);
+    this.onBallStruck(player.team, -1, player, shot.kind, quality, pressure);
   }
 
   /**
@@ -1048,8 +1060,12 @@ export class Match {
     return speed;
   }
 
-  /** Recomputes the future of the ball and decides who goes for it. */
-  private onBallStruck(hitter: TeamId, receiverId: number): void {
+  /**
+   * Recomputes the future of the ball and decides who goes for it. `by`,
+   * `kind`, `quality` and `pressure` describe the shot, when it was one of a
+   * rally: how readable it was (see `setReads`).
+   */
+  private onBallStruck(hitter: TeamId, receiverId: number, by?: Player, kind?: ShotKind, quality?: Quality, pressure = 0): void {
     const trajectory = predictTrajectory(this.ball, this.rally, this.time, this.config);
     this.trajectory = trajectory;
     for (const player of this.players) {
@@ -1058,6 +1074,7 @@ export class Match {
     }
 
     const receiving = otherTeam(hitter);
+    this.setReads(receiving, by, kind, quality, pressure);
     this.assigned[hitter] = -1;
     const pair = this.pairs[receiving];
     pair.trajId = trajectory.id;
@@ -1105,6 +1122,29 @@ export class Match {
   }
 
   /**
+   * How long each computer player of `team` takes to read the ball that has
+   * just been struck: its reaction, shorter for a ball it saw coming and
+   * longer for one that took it by surprise. Whoever reads the game
+   * (`reading`) sees the answer of somebody in trouble coming, a defensive
+   * ball, and a shot its windup gave away. Anybody is wrong-footed by a
+   * chiquita while at the back, and a clean strike hides where it is going.
+   * A person reads with its own eyes. None of this draws a random number.
+   */
+  private setReads(team: TeamId, by: Player | undefined, kind: ShotKind | undefined, quality: Quality | undefined, pressure: number): void {
+    for (const player of this.teams[team]) {
+      player.read = player.reaction;
+      if (player.isHuman || !by) continue;
+      let surprise = 0;
+      if (kind === 'drop' && Math.abs(player.y) > BACK_LINE) surprise += READ.dropAtBack;
+      if (quality === 'perfect') surprise += READ.clean;
+      const pressed = pressure >= READ.pressed ? READ.pressedEarly : 0;
+      const told = !by.isHuman && by.cue !== null && this.time - by.cueAt >= READ.tellSeen ? READ.tellEarly : 0;
+      const seen = player.reading * Math.max(pressed, told);
+      player.read = player.reaction * clamp(1 + surprise - seen, READ.least, READ.most);
+    }
+  }
+
+  /**
    * Two computer players may doubt over a ball: both look at the other and
    * the one whose ball it is goes late. Through the middle that happens to
    * those without much composure. Into the hole of a pair that is out of
@@ -1129,7 +1169,7 @@ export class Match {
       // Into the hole, now and then nobody goes at all: the ball goes between them.
       const neither = hole && this.rng.chance(disorderChance(DISORDER.neither, composure, strain));
       const doubt = hole ? DISORDER.holeTime : DISORDER.doubtTime;
-      for (const player of members) player.doubtUntil = neither ? Infinity : this.time + player.reaction + doubt;
+      for (const player of members) player.doubtUntil = neither ? Infinity : this.time + player.read + doubt;
       pair.doubted = trajectory.id;
       // Neither of them takes a second look at it either.
       if (neither) pair.switchChecked = true;
@@ -1137,7 +1177,7 @@ export class Match {
     }
     if (owner.astray && (owner === a ? passA : passB) < DISORDER.holeGap) {
       // Out of place, and the ball comes at it: caught flat-footed.
-      owner.doubtUntil = this.time + owner.reaction + DISORDER.caught;
+      owner.doubtUntil = this.time + owner.read + DISORDER.caught;
     }
   }
 
@@ -1215,7 +1255,7 @@ export class Match {
       const partner = members[0] === owner ? members[1]! : members[0]!;
 
       // A second look, once both have read the ball: the partner crosses for a lob over the head of a person at the net.
-      const readBy = trajectory.t0 + Math.max(partner.reaction, owner.manual ? 0 : owner.reaction);
+      const readBy = trajectory.t0 + Math.max(partner.read, owner.manual ? 0 : owner.read);
       if (!partner.manual && !pair.switchChecked && this.time >= readBy) {
         const plans = this.pairPlans;
         plans[0] = planIntercept(trajectory, members[0]!, this.time, this.config);
@@ -1235,11 +1275,11 @@ export class Match {
       const ambiguous = Math.abs(pair.offMiddle) <= CALL_BAND;
       if (pair.doubted === trajectory.id) {
         // They doubt: each one points at the other.
-        for (const player of members) if (this.time >= trajectory.t0 + player.reaction) this.say(player, 'yours', trajectory.id);
+        for (const player of members) if (this.time >= trajectory.t0 + player.read) this.say(player, 'yours', trajectory.id);
         continue;
       }
       const plan = owner.plan;
-      if (!owner.isHuman && partner.manual && plan && !plan.reachable && owner.callTraj !== trajectory.id && this.time >= trajectory.t0 + owner.reaction) {
+      if (!owner.isHuman && partner.manual && plan && !plan.reachable && owner.callTraj !== trajectory.id && this.time >= trajectory.t0 + owner.read) {
         // Honest about what it does not get to: if the person can, it is the person's, and it says so at once.
         // Only what it cannot get a racket to, though: a ball that still passes within a stretch of it, it goes for.
         const stretch = contactNear(trajectory, owner, this.time, this.config, undefined, 0, undefined, false);
@@ -1252,7 +1292,7 @@ export class Match {
           continue;
         }
       }
-      if (!owner.isHuman && plan && this.time >= trajectory.t0 + owner.reaction) {
+      if (!owner.isHuman && plan && this.time >= trajectory.t0 + owner.read) {
         // A lob over the two of them that it lets bounce, with the person still at the net: back, together.
         const overBoth = plan.kind !== 'volley' && Math.abs(plan.y) > BACK_LOB && partner.manual && Math.abs(partner.y) < NET_LINE;
         if (pair.why === 'switch') this.say(owner, 'switch', trajectory.id);
@@ -1260,7 +1300,7 @@ export class Match {
         else if (pair.why === 'cover' || ambiguous) this.say(owner, 'mine', trajectory.id);
       }
       // The other one, if it is a computer player: "¡tuya!" for a ball that could have been its own.
-      if (!partner.isHuman && this.time >= trajectory.t0 + partner.reaction) {
+      if (!partner.isHuman && this.time >= trajectory.t0 + partner.read) {
         const leftToPerson = owner.manual && (ambiguous || pair.why === 'cover');
         if (leftToPerson || (!owner.manual && ambiguous && pair.why !== 'cover' && pair.why !== 'switch')) {
           this.say(partner, 'yours', trajectory.id);
@@ -1290,7 +1330,7 @@ export class Match {
    */
   private watch(team: TeamId, owner: Player, watcher: Player, trajectory: Trajectory, pair: PairState): boolean {
     if (watcher.isHuman || this.tick % LOOK_EVERY !== 0 || pair.doubted === trajectory.id) return false;
-    if (this.time < trajectory.t0 + watcher.reaction || (!owner.manual && this.time < trajectory.t0 + owner.reaction)) return false;
+    if (this.time < trajectory.t0 + watcher.read || (!owner.manual && this.time < trajectory.t0 + owner.read)) return false;
     if (this.shouldLeave(team)) return false;
     const config = this.config;
     const near = owner.manual ? owner.plan : null;
@@ -1413,7 +1453,7 @@ export class Match {
       }
       if (this.time < player.doubtUntil) continue;
       // The player needs a moment to read a new ball. One fired at it gets the racket anyway: a block, from where it stands.
-      const readAt = trajectory.t0 + player.reaction;
+      const readAt = trajectory.t0 + player.read;
       if (this.time < readAt) {
         const reflex = trajectory.t0 + clamp(player.reaction * REFLEX_SHARE, REFLEX_MIN, REFLEX_MAX);
         if (!player.plan && this.time >= reflex && !this.shouldLeave(player.team)) {

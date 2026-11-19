@@ -309,7 +309,7 @@ export function chooseOwner(
  */
 function timeToSpare(plan: InterceptPlan | null, player: Player): number {
   if (!plan || !plan.reachable) return -1;
-  return plan.slack - (player.manual ? PERSON_REACTION : player.reaction);
+  return plan.slack - (player.manual ? PERSON_REACTION : player.read);
 }
 
 /** A ball that goes over the head of `player` at the net and is to be played after it bounces behind it. */

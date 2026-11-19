@@ -82,8 +82,13 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
   - **Publicado el 2026-11-19** (merges `5694d86` y `4b7bd3a`):
     - **IA**: el compañero juega sus pelotas, los errores tienen motivo y hay tres actitudes (agresiva, equilibrada, pasiva) en Opciones → Dobles. Detalle en `docs/ia.md`.
     - **Fase 2 de animación**: zancada con el pie plantado y flexión profunda; el cuerpo ya no se desliza pegando parado. Detalle en `docs/dobles.md`, sección 4.
-  - **En curso**: segunda vuelta de `ia-humana`. Con los errores nuevos la táctica rinde menos: en 1 contra 1, contra Romina +10 → +4 pp y contra Chela +19 → +8; en dobles posicional, +17/+12/+8 → +12/+10/+3. Se pidió que el error lo provoque la presión del jugador, que se suelten los planes vencidos de la IA y que se arregle un flake del smoke («vos pegás y tu compañero también»).
-  - **Siguiente para `animacion-zancada`**: los gestos que pidió la IA (golpe apurado, bloqueo al cuerpo, «no llegué», arranque tarde si lo sorprenden, postura bajo presión, festejo o disculpa del robo) y la estocada al final de una carrera (queda un deslizamiento de 32 cm en el p90).
+  - **Segundas vueltas, publicadas el 2026-11-19** (merges `2dbd31e` y `5be1d46`):
+    - **IA**: el error lo provoca la presión del jugador, y la táctica vuelve a rendir: en 1 contra 1, +11/+16/+20 pp contra Beto, Romina y Chela; en dobles posicional, +16/+19/+13. La IA ya no arma un golpe y pega otro.
+    - **Animación**: seis gestos de la IA (apurado, bloqueo, «no llegué», sorprendido, tensión, festejo o «perdón» del robo) y la estocada a la carrera.
+  - **Decisiones del usuario, después de probarlo en el celular**:
+    - Chela quedó más fácil: hoy cuesta lo mismo que Romina. Se la puede endurecer, pero sus puntos pasan a 17,6 s.
+    - Golpes al aire: cada rival falla unas 2 veces por partido pelotas a las que llegó. Si parecen regalados, que conecten flojo (hay que recalibrar a Beto).
+  - **Pendiente de animación** (revisión de la orquestadora): el festejo del robo casi no se distingue, el bloqueo de revés se confunde con una volea, los pies todavía patinan al pegar a la carrera (p90 de unos 11 cm por cuadro), y el apurado y el robo no tienen versión 2D.
 - **Decisiones del usuario, después de probarlo**: partida rápida en dobles, alcance real para todos, el 1 contra 1 como «Cruzado» (media cancha en diagonal), revés y Beto por defecto, cuánto se desordena la pareja rival.
 - **Pendiente** (revisión de la orquestadora):
   - ~~Fase 2, animación~~: publicada el 2026-11-19 (ver arriba).

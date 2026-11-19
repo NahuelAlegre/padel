@@ -113,6 +113,8 @@ const BODY = {
   /** The longest step toward the ball beyond the clip's own, for a stroke and for one at full stretch. */
   step: 0.45,
   stepStretch: 0.5,
+  /** Running: how much further toward the ball the last stride can come down. */
+  runLunge: 0.5,
   /** The feet are never closer than this. */
   apart: 0.3,
   /** A ball lower than the clip expects by this much the arm takes; for more, the hips sink. */
@@ -131,6 +133,30 @@ const CALL_CLEAR = 0.3;
 /** Seconds a gesture of a character takes to show, and to go away. */
 const GESTURE_IN = 0.14;
 const GESTURE_OUT = 0.12;
+/** Seconds the «perdón» of a stolen ball that went wrong lasts. */
+const SORRY = 0.9;
+/** How fast a short piece of a clip in the middle of play comes in and goes, in seconds. */
+const FLASH_IN = 0.08;
+const FLASH_OUT = 0.12;
+/**
+ * The computer swung and did not get there: a moment after the swing, the
+ * trunk and the head of the lament (head down, «no» with the head), over
+ * whatever the legs are doing. Seconds after the contact, and the piece of
+ * the clip.
+ */
+const MISS_AFTER = 0.12;
+const MISS_FROM = 0.12;
+const MISS_TO = 0.6;
+/** And on the way, the arm goes after the ball only this much of what is left. */
+const MISS_ARM = 0.75;
+/** A hurried stroke: no windup until this long before the contact, in seconds, and the legs still running. */
+const HURRY_LEAD = 0.2;
+const HURRY_LEGS = 0.35;
+/**
+ * A long point gets to the body: lower and wider, the trunk forward, as much
+ * as this at the most (metres, metres and radians). Only while it waits.
+ */
+const TENSE = { crouch: 0.07, stance: 0.045, lean: 0.12 };
 /**
  * A tell is a windup: it is held until this long before the contact, in
  * seconds, and then it lets go, so that the swing itself is the stroke's.
@@ -175,12 +201,21 @@ const STROKE_SETTLED = 0.15;
  * they stay where they are only below the first speed, in metres per second,
  * and not at all from the second.
  */
-const FOOT_DRIFT = 0.08;
-const FOOT_DRIFT_SET = 0.16;
+const FOOT_DRIFT = 0.07;
+const FOOT_DRIFT_SET = 0.12;
+/**
+ * A foot wanted this much further than that, in metres on the court, steps
+ * even while the other one is in the air in the pose: the leg would not reach.
+ */
+const FOOT_FAR = 0.26;
 const PLANTED_UNTIL = 0.8;
 const PLANTED_FROM = 1.3;
+/** Past this much of a step, where it comes down is settled. */
+const STEP_SETTLES = 0.6;
 /** How close to the floor the joint of a knee gets, in metres at life size: with the kneecap, a knee nearly on it. */
 const KNEE_FLOOR = 0.08;
+/** A jump made smaller still lifts the feet this much of what the clip lifts them. */
+const JUMP_KEEPS = 0.4;
 
 /** Bones that belong to the legs: they follow the ground when the player moves. */
 const LEG_BONES = ['thigh.L', 'shin.L', 'foot.L', 'toe.L', 'thigh.R', 'shin.R', 'foot.R', 'toe.R'];
@@ -286,6 +321,13 @@ export function steppingFoot(clip: Clip): number {
   return (sideOf(clip) === 'reves') !== stretch ? 1 : 0;
 }
 
+/** The clip of a block: the volley on the side of the ball, or the stroke of a drive in an older file. */
+function blockClip(player: ScenePlayer, has: (name: string) => boolean): string {
+  const forehand = player.animSide === player.restSide;
+  const volley = forehand ? 'volea' : 'volea_reves';
+  return has(volley) ? volley : forehand ? 'derecha' : 'reves';
+}
+
 /**
  * Which moment of a stroke clip to show `eta` seconds before the contact
  * (negative after it), given the moment that was shown `dt` seconds ago.
@@ -324,10 +366,52 @@ interface Gesture {
   tip: number;
   /** A step toward the net, in metres. */
   step: number;
+  /** The trunk leans forward (backward, if less than 0), in radians. */
+  lean: number;
+  /** The hips sit back over the heels, in metres. */
+  back: number;
 }
 
 function noGesture(): Gesture {
-  return { free: null, racket: null, crouch: 0, stance: 0, tip: 0, step: 0 };
+  return { free: null, racket: null, crouch: 0, stance: 0, tip: 0, step: 0, lean: 0, back: 0 };
+}
+
+/**
+ * The computer read the ball later than it usually does (a drop shot with it
+ * at the back, a perfect shot hiding where it goes): for a moment it is
+ * caught on its heels, the racket coming up late, before it gets going.
+ */
+function surpriseGesture(out: Gesture): void {
+  out.free = [0.44, -0.12, 1.18];
+  out.racket = [-0.18, -0.34, 1.34];
+  out.lean = -0.16;
+  out.back = 0.07;
+}
+
+/**
+ * A ball fired at its body before it read it: the racket blocks on its own
+ * (see the stroke), and the rest of the body flinches. The head tips away
+ * from the ball, and on the forehand the free hand comes up beside the face,
+ * where it can be seen from behind too; on the backhand it goes with the
+ * racket, as the volley has it. The hips stay where they are: a block is all
+ * arm, and ducking would take the racket off the ball.
+ */
+function flinchGesture(forehand: boolean, out: Gesture): void {
+  out.free = forehand ? [0.4, -0.18, 1.5] : null;
+  // Away from the ball: to its left when the ball comes on the side of the racket.
+  out.tip = forehand ? 0.22 : -0.22;
+}
+
+/**
+ * «Perdón»: a ball it stole from its partner and lost. The free hand goes up,
+ * open, toward the partner, and the head tips that way. `toward` is where
+ * the partner is, in metres to the character's left.
+ */
+function sorryGesture(t: number, toward: number, out: Gesture): void {
+  const side = clamp(toward / 2.4, -1, 1);
+  out.free = [0.2 + side * 0.24, -0.3, 1.62 + Math.sin(t * 9) * 0.02];
+  out.tip = side * 0.22;
+  out.lean = 0.06;
 }
 
 /** The windup that gives a shot away. `across` is where the ball will go, in metres to the character's left. */
@@ -483,8 +567,9 @@ export class FigureAnimator implements AnimatedFigure {
     /** Where each foot is down, on the court, and whether it is. */
     at: new Float64Array(4),
     down: [false, false],
-    /** A step: where it left from, on the court; how far into it; how long it takes and how high it goes. */
+    /** A step: where it left from and where it is going, on the court; how far into it; how long it takes and how high it goes. */
     from: new Float64Array(4),
+    to: new Float64Array(4),
     t: new Float32Array([1, 1]),
     dur: new Float32Array([0.2, 0.2]),
     high: new Float32Array(2),
@@ -492,6 +577,21 @@ export class FigureAnimator implements AnimatedFigure {
     want: new Float32Array(4),
     /** Where each foot ended up from where the pose has it, in the character's metres: the step really taken. */
     off: new Float32Array(4),
+    /**
+     * Running: how far each foot comes down from where the run has it, in the
+     * character's metres. It only changes while the foot is in the air, so a
+     * foot on the floor goes back with the run as the run has it: it does not slide.
+     */
+    run: new Float32Array(4),
+    /**
+     * Running: how far a foot on the floor is held from where the run has it,
+     * in the character's metres, so that it stays put on the court while the
+     * whole figure slides toward a ball or back. In the air it lets go.
+     */
+    hold: new Float32Array(4),
+    /** How far the figure is drawn from where the simulation has the player, on the court, and how much that changed in this frame. */
+    drawn: new Float64Array(2),
+    moved: new Float64Array(2),
   };
   /**
    * What the body does for the ball in this frame, in the character's own
@@ -514,6 +614,11 @@ export class FigureAnimator implements AnimatedFigure {
     z: 0,
     /** Of how far the hips go down, how much is a jump made smaller: the feet in the air come down with it. */
     jump: 0,
+    /** A swing at the air: what the body does not reach, it does not reach. Nothing slides after the ball. */
+    short: false,
+    /** Running: how far the foot of the last stride comes down toward the ball, in the character's metres. */
+    runX: 0,
+    runY: 0,
     slideX: 0,
     slideY: 0,
   };
@@ -549,6 +654,9 @@ export class FigureAnimator implements AnimatedFigure {
   private speedX = 0;
   private speedY = 0;
   private readonly q = new Float32Array(4);
+  private readonly turn = new Float32Array(4);
+  /** The bone the trunk leans from. */
+  private readonly spineBone: number;
 
   private readonly racket: number;
   private readonly at: [number, number, number] = [0, 0, 0];
@@ -574,6 +682,18 @@ export class FigureAnimator implements AnimatedFigure {
   private reacting = false;
   private reactionTime = 0;
   private reactionWeight = 0;
+  /**
+   * A short piece of a clip over the trunk and the arms in the middle of play,
+   * while the legs go on with what they are doing: the little celebration of
+   * a ball it stole, the «no llegué» of a ball it did not get to. From `from`
+   * to `to` seconds of the clip, at `weight`; `t` seconds into it.
+   */
+  private flash: { clip: Clip; from: number; to: number; weight: number; t: number } | null = null;
+  /** The «no llegué» was already shown for this miss. */
+  private missShown = false;
+  /** «Perdón»: seconds left of it, and where the partner is, in metres across the court. */
+  private sorryLeft = 0;
+  private sorryToward = 0;
   private seenX = 0;
   private seenY = 0;
   /** Where the ball is in the free hand, in the axes of that hand: worked out once from the serve. */
@@ -612,6 +732,7 @@ export class FigureAnimator implements AnimatedFigure {
     this.world = new Float32Array(character.bones * 4);
     this.inHand = this.measureHand();
     this.toes = ['toe.L', 'toe.R'].map((name) => character.bone(name));
+    this.spineBone = character.bone('spine');
     this.hasLegs = this.bothLegs.every((leg) => leg.upper >= 0 && leg.lower >= 0 && leg.end >= 0);
     this.toeFloor = this.measureFloor();
     this.probe = new Float32Array(size);
@@ -625,6 +746,33 @@ export class FigureAnimator implements AnimatedFigure {
     this.reacting = false;
     this.reactionWeight = 0;
     this.hopAt = -1;
+    this.flash = null;
+    this.sorryLeft = 0;
+  }
+
+  /**
+   * Doubles: a ball it stole from its partner («¡mía!») went in. A quick
+   * «¡vamos!» with the racket, in the middle of play, that never stops it:
+   * the jump of the celebration without the jump.
+   */
+  stoleWell(): void {
+    this.play('festejo', 0.08, 0.46, 0.6);
+  }
+
+  /**
+   * Doubles: a ball it stole from its partner went wrong. «Perdón», with the
+   * free hand up toward the partner. `towardX` is where the partner is, in
+   * metres across the court from this player.
+   */
+  stoleBadly(towardX: number): void {
+    this.sorryLeft = SORRY;
+    this.sorryToward = towardX;
+  }
+
+  private play(name: string, from: number, to: number, weight: number): void {
+    const clip = this.character.clips[name];
+    if (!clip) return;
+    this.flash = { clip, from, to: Math.min(to, clip.dur), weight, t: 0 };
   }
 
   /**
@@ -796,8 +944,13 @@ export class FigureAnimator implements AnimatedFigure {
     if (style) widen(character, this.ground, style.amplitude);
 
     // ------------------------------------------------------------ the stroke
-    if (busy) {
-      let next = clips[strokeClipName(player, k, (name) => name in clips)] ?? null;
+    // What the computer goes through shows in the stroke (docs/ia.md). Hurried, it has no time for a
+    // windup: the arms keep running until the last moment. A ball fired at its body is blocked: the
+    // racket goes up in front at once, with no windup and no swing.
+    const hurried = player.why === 'hurried' && player.anim !== 'serve';
+    const block = player.why === 'block' && player.anim === 'swing';
+    if (busy && !(hurried && eta > HURRY_LEAD && !this.strokeClip)) {
+      let next = clips[block ? blockClip(player, (name) => name in clips) : strokeClipName(player, k, (name) => name in clips)] ?? null;
       // A stroke that is past its contact cannot be before it again: that is another stroke.
       const another = this.strokePhase !== 'before' && eta > 0.02;
       // Near its contact, at it and after it, a stroke is not changed for another one on the same side
@@ -824,7 +977,8 @@ export class FigureAnimator implements AnimatedFigure {
         this.strokePhase = 'before';
       }
       if (this.strokeClip) {
-        this.strokeAt = strokeTime(this.strokeClip, eta, this.strokeAt, dt);
+        // A block waits with the racket where it meets the ball, and only punches through after it.
+        this.strokeAt = block ? Math.min(contactOf(this.strokeClip) - Math.min(eta, 0), this.strokeClip.dur) : strokeTime(this.strokeClip, eta, this.strokeAt, dt);
         this.strokePhase = eta <= 0 ? 'after' : 'before';
       }
     } else if (this.strokeClip) {
@@ -864,9 +1018,29 @@ export class FigureAnimator implements AnimatedFigure {
         blendPose(character.bones, this.strokeFrom, this.stroke, smoothstep(0, 1, this.strokeMix), this.stroke);
       }
       upper = smoothstep(0, 1, this.strokeWeight);
-      // Standing, the whole body plays the stroke. Moving, the legs stay with the ground.
-      lower = upper * (1 - smoothstep(0.5, 1.8, speed));
+      // Standing, the whole body plays the stroke. Moving, the legs stay with the ground. Hurried, the legs
+      // are still on their way there.
+      lower = upper * (1 - smoothstep(0.5, 1.8, speed)) * (hurried ? 1 - (1 - HURRY_LEGS) * smoothstep(0.2, 1, speed) : 1);
       this.layer(pose, this.stroke, upper, lower);
+    }
+    // The computer swung and did not get there: a moment later, «no llegué», with the trunk and the head.
+    if (player.anim !== 'whiff' || !swing) this.missShown = false;
+    else if (!this.missShown && eta < -MISS_AFTER) {
+      this.missShown = true;
+      this.play('lamento', MISS_FROM, MISS_TO, 0.65);
+    }
+    // A short piece of a clip over the trunk and the arms, whatever the legs are doing.
+    const flash = this.flash;
+    if (flash) {
+      flash.t += dt * tempo;
+      const at = flash.from + flash.t;
+      if (snap || at >= flash.to) {
+        this.flash = null;
+      } else {
+        samplePose(character, flash.clip, at, this.extra);
+        const w = flash.weight * smoothstep(0, FLASH_IN, at - flash.from) * (1 - smoothstep(flash.to - FLASH_OUT, flash.to, at));
+        this.layer(pose, this.extra, w, 0);
+      }
     }
     // How it stands, and the turn of the pelvis for the legs that follow the ground.
     if (style) stand(pose, style);
@@ -874,6 +1048,7 @@ export class FigureAnimator implements AnimatedFigure {
     solveSkeleton(character, pose, this.skeleton, style);
 
     // What the character adds: its tell while the racket is back, a tic while it rests.
+    if (this.sorryLeft > 0) this.sorryLeft = snap ? 0 : Math.max(0, this.sorryLeft - dt);
     const made = this.readGesture(player, s, mania !== undefined);
     const windup = player.tell !== null;
     const showing = made && !(windup && player.contactIn < TELL_BODY_UNTIL);
@@ -896,7 +1071,26 @@ export class FigureAnimator implements AnimatedFigure {
     this.lungeY += (s * this.fit.slideY * k - this.lungeY) * ease;
     this.x = player.x + this.lungeX;
     this.y = player.y + this.lungeY + facing * this.gesture.step * gesture;
-    this.placeBody(lower, clearance, speed, s, k, dt, snap, Math.abs(eta) < 0.25, this.gesture.stance * gesture, this.gesture.crouch * gesture);
+    const feet = this.feet;
+    feet.moved[0] = snap ? 0 : this.x - player.x - feet.drawn[0]!;
+    feet.moved[1] = snap ? 0 : this.y - player.y - feet.drawn[1]!;
+    feet.drawn[0] = this.x - player.x;
+    feet.drawn[1] = this.y - player.y;
+    // A long point gets to the body: while it waits, lower and wider, the trunk forward.
+    const tense = player.tension * (1 - upper) * (1 - smoothstep(0.6, 1.6, speed));
+    this.placeBody(
+      lower,
+      clearance,
+      speed,
+      s,
+      k,
+      dt,
+      snap,
+      Math.abs(eta) < 0.25,
+      this.gesture.stance * gesture + TENSE.stance * tense,
+      this.gesture.crouch * gesture + TENSE.crouch * tense,
+      this.gesture.back * gesture,
+    );
 
     // ------------------------------------------------------------ life
     // The arm takes the racket the rest of the way. The ball of a serve is the one the server dropped: only the arm.
@@ -904,6 +1098,8 @@ export class FigureAnimator implements AnimatedFigure {
     const arm = serving ? lungeWeight(eta) * upper : this.fit.arm;
     if (swing && arm > 0.001) this.reachArm(player, serving ? this.hitOf(swing) : this.contact, s, k, arm);
     if (gesture > 0.001) this.gesticulate(gesture, Math.min(gesture, smoothstep(0, 1, this.gestureRacket)));
+    const lean = this.gesture.lean * gesture + TENSE.lean * tense;
+    if (Math.abs(lean) > 1e-3) this.leanTrunk(lean);
     this.look(pose, s, k, ball, dt, this.strokeWeight > 0.5 ? 0.4 : 0.8, snap);
     solveSkeleton(character, pose, this.skeleton, style);
     skinMatrices(character, this.skeleton, this.bones, style);
@@ -1036,6 +1232,9 @@ export class FigureAnimator implements AnimatedFigure {
     fit.y = 0;
     fit.z = 0;
     fit.jump = 0;
+    fit.short = false;
+    fit.runX = 0;
+    fit.runY = 0;
     fit.slideX = 0;
     fit.slideY = 0;
     this.feet.want.fill(0);
@@ -1050,9 +1249,14 @@ export class FigureAnimator implements AnimatedFigure {
   private planFit(player: ScenePlayer, clip: Clip, s: number, k: number, upper: number, lower: number, eta: number): void {
     this.restFit();
     const fit = this.fit;
-    if (!Number.isFinite(eta) || player.anim === 'whiff' || player.anim === 'serve' || this.strokePhase === 'off' || upper <= 0) return;
-    fit.body = bodyWeight(eta) * upper;
-    fit.arm = lungeWeight(eta) * upper;
+    if (!Number.isFinite(eta) || player.anim === 'serve' || this.strokePhase === 'off' || upper <= 0) return;
+    // A block is played from where it stands: the arm, nothing else. A swing at the air goes after the
+    // ball as far as the body goes, and falls short: the arm does not take it all the way.
+    const block = player.why === 'block';
+    const miss = player.anim === 'whiff';
+    fit.body = block ? 0 : bodyWeight(eta) * upper;
+    fit.arm = (block ? blockWeight(eta) : lungeWeight(eta)) * upper * (miss ? MISS_ARM : 1);
+    fit.short = miss;
     if (fit.body <= 0 && fit.arm <= 0) return;
     const hit = this.contactWith(clip, upper > 0 ? lower / upper : 1);
     if (!hit) {
@@ -1072,6 +1276,13 @@ export class FigureAnimator implements AnimatedFigure {
     // contact, and back after it. Running, the feet are the run's.
     const foot = lower > 0.5 && this.hasLegs ? steppingFoot(clip) : -1;
     fit.foot = foot;
+    // Running, the last stride before the contact becomes the lunge: whichever foot is in the air then
+    // comes down further toward the ball.
+    if (lower <= 0.5 && this.hasLegs && fit.need > BODY.shiftRun && eta <= STEP_BEFORE && eta > -STEP_BACK) {
+      const length = Math.min(BODY.runLunge, (fit.need - BODY.shiftRun) / BODY.follow);
+      fit.runX = fit.ux * length;
+      fit.runY = fit.uy * length;
+    }
     if (foot < 0 || fit.need <= BODY.shift || eta > STEP_BEFORE || eta < -STEP_BACK) return;
     const stretch = clip.estirada === true || clip.name.startsWith('estirada');
     const length = Math.min(stretch ? BODY.stepStretch : BODY.step, (fit.need - BODY.shift) / BODY.follow);
@@ -1105,14 +1316,19 @@ export class FigureAnimator implements AnimatedFigure {
     if (fit.body <= 0 && fit.arm <= 0) return;
     const off = this.feet.off;
     // Across the floor: as far as the hips go with the feet where they are, and then after the step.
-    const taken = fit.foot >= 0 ? Math.max(0, off[fit.foot * 2]! * fit.ux + off[fit.foot * 2 + 1]! * fit.uy) * lower : 0;
+    const stepped = fit.foot >= 0 ? Math.max(0, off[fit.foot * 2]! * fit.ux + off[fit.foot * 2 + 1]! * fit.uy) * lower : 0;
+    // Running, the stride that came down toward the ball is the lunge.
+    const run = this.feet.run;
+    const lunged = Math.max(0, run[0]! * fit.ux + run[1]! * fit.uy, run[2]! * fit.ux + run[3]! * fit.uy) * (1 - lower);
+    const taken = stepped + lunged;
     const free = BODY.shift + (BODY.shiftRun - BODY.shift) * (1 - lower);
     const shift = Math.min(fit.need, free + BODY.follow * taken) * fit.body;
     // A lower ball: first a jump that is not so high, then the knees, down to a knee near the floor
-    // (less of that running). A higher one: the knees straighten.
+    // (less of that running, unless the run ended in a lunge). A higher one: the knees straighten.
     const low = Math.max(0, -fit.dz - BODY.lowFree);
     const air = Math.min(clearance, low);
-    const sink = Math.min(low - air, Math.max(0, hips - BODY.lowest) * (0.4 + 0.6 * lower));
+    const kneel = Math.max(lower, Math.min(1, lunged / (BODY.runLunge * 0.6)));
+    const sink = Math.min(low - air, Math.max(0, hips - BODY.lowest) * (0.4 + 0.6 * kneel));
     const rise = clearance > 0.01 ? 0 : clamp(fit.dz - BODY.riseFree, 0, Math.min(BODY.rise, Math.max(0, 0.93 - hips)));
     fit.x = fit.ux * shift;
     fit.y = fit.uy * shift;
@@ -1122,7 +1338,7 @@ export class FigureAnimator implements AnimatedFigure {
     const rx = fit.dx - fit.x;
     const ry = fit.dy - fit.y;
     const rest = Math.hypot(rx, ry);
-    const over = Math.max(0, rest - BODY.armAcross) * fit.arm;
+    const over = fit.short ? 0 : Math.max(0, rest - BODY.armAcross) * fit.arm;
     fit.slideX = rest > 1e-6 ? (rx / rest) * over : 0;
     fit.slideY = rest > 1e-6 ? (ry / rest) * over : 0;
   }
@@ -1150,6 +1366,7 @@ export class FigureAnimator implements AnimatedFigure {
     settled: boolean,
     stance: number,
     crouch: number,
+    back: number,
   ): void {
     if (!this.hasLegs) return;
     const fit = this.fit;
@@ -1175,10 +1392,29 @@ export class FigureAnimator implements AnimatedFigure {
     // left foot further left for a wider stance. In the air a foot goes across with the body.
     const wanted = this.wanted;
     const court = this.court;
+    const run = feet.run;
+    const hold = feet.hold;
     for (let i = 0; i < 2; i++) {
       const air = this.air[i]!;
-      const wx = this.balls[i * 3]! + feet.want[i * 2]! * lower + (i === 0 ? stance : -stance) + fit.x * air;
-      const wy = this.balls[i * 3 + 1]! + feet.want[i * 2 + 1]! * lower + fit.y * air;
+      // The last stride of a run toward the ball: a foot in the air goes there; on the floor it stays as it came down.
+      if (snap) {
+        run.fill(0, i * 2, i * 2 + 2);
+        hold.fill(0, i * 2, i * 2 + 2);
+      } else if (air > 0.5) {
+        const follow = Math.min(1, dt * 14);
+        run[i * 2] = run[i * 2]! + (fit.runX - run[i * 2]!) * follow;
+        run[i * 2 + 1] = run[i * 2 + 1]! + (fit.runY - run[i * 2 + 1]!) * follow;
+        hold[i * 2] = hold[i * 2]! * (1 - follow);
+        hold[i * 2 + 1] = hold[i * 2 + 1]! * (1 - follow);
+      } else {
+        // On the floor, running, it stays put on the court when the figure slides. Standing it is held by
+        // where it came down anyway, and the figure that slides is followed with steps.
+        const loose = 1 - planted;
+        hold[i * 2] = hold[i * 2]! - ((s * feet.moved[0]!) / k) * loose;
+        hold[i * 2 + 1] = hold[i * 2 + 1]! - ((s * feet.moved[1]!) / k) * loose;
+      }
+      const wx = this.balls[i * 3]! + feet.want[i * 2]! * lower + run[i * 2]! + hold[i * 2]! + (i === 0 ? stance : -stance) + fit.x * air;
+      const wy = this.balls[i * 3 + 1]! + feet.want[i * 2 + 1]! * lower + run[i * 2 + 1]! + hold[i * 2 + 1]! + fit.y * air;
       wanted[i * 2] = wx;
       wanted[i * 2 + 1] = wy;
       court[i * 2] = this.x + s * wx * k;
@@ -1202,8 +1438,8 @@ export class FigureAnimator implements AnimatedFigure {
     for (let i = 0; i < 2; i++) {
       if (this.loose[i] || feet.t[i]! < 1) continue;
       const other = 1 - i;
-      if (this.loose[other] || feet.t[other]! < 1) continue;
       const away = Math.hypot(court[i * 2]! - feet.at[i * 2]!, court[i * 2 + 1]! - feet.at[i * 2 + 1]!);
+      if (feet.t[other]! < 1 || (this.loose[other] && away <= FOOT_FAR * k)) continue;
       if (away > furthest) {
         furthest = away;
         first = i;
@@ -1213,6 +1449,8 @@ export class FigureAnimator implements AnimatedFigure {
       const length = furthest / k;
       feet.from[first * 2] = feet.at[first * 2]!;
       feet.from[first * 2 + 1] = feet.at[first * 2 + 1]!;
+      feet.to[first * 2] = court[first * 2]!;
+      feet.to[first * 2 + 1] = court[first * 2 + 1]!;
       feet.dur[first] = clamp(0.1 + 0.22 * length, 0.12, 0.24);
       feet.high[first] = Math.min(0.12, 0.03 + 0.15 * length);
       feet.t[first] = 0;
@@ -1229,22 +1467,28 @@ export class FigureAnimator implements AnimatedFigure {
       let y = wy;
       // Down with the body only if the whole body is coming down from a jump: when the hips sink, the
       // knees bend and a foot in the air stays off the floor.
-      let z = Math.max(this.balls[o + 2]! + fit.jump * air, Math.min(this.balls[o + 2]!, this.toeFloor));
+      const lift = this.balls[o + 2]! - this.toeFloor;
+      let z = Math.max(this.balls[o + 2]! + fit.jump * air, this.toeFloor + Math.min(lift, lift * JUMP_KEEPS));
       if (!this.loose[i]) {
         let ax = feet.at[q]!;
         let ay = feet.at[q + 1]!;
         if (feet.t[i]! < 1) {
-          // Up, across and down, to wherever the pose wants it now.
+          // Up, across and down, to wherever the pose wants it now; on the way down it no longer changes
+          // its mind, so it does not come down sliding.
           const t = Math.min(1, feet.t[i]! + dt / feet.dur[i]!);
           feet.t[i] = t;
+          if (t < STEP_SETTLES) {
+            feet.to[q] = cx;
+            feet.to[q + 1] = cy;
+          }
           const u = smoothstep(0, 1, t);
-          ax = feet.from[q]! + (cx - feet.from[q]!) * u;
-          ay = feet.from[q + 1]! + (cy - feet.from[q + 1]!) * u;
+          ax = feet.from[q]! + (feet.to[q]! - feet.from[q]!) * u;
+          ay = feet.from[q + 1]! + (feet.to[q + 1]! - feet.from[q + 1]!) * u;
           z += feet.high[i]! * Math.sin(Math.PI * t) * planted;
           if (t >= 1) {
             feet.down[i] = true;
-            feet.at[q] = cx;
-            feet.at[q + 1] = cy;
+            feet.at[q] = feet.to[q]!;
+            feet.at[q + 1] = feet.to[q + 1]!;
           }
         }
         // Back to the character's own metres; walking, a little of the pose.
@@ -1260,20 +1504,24 @@ export class FigureAnimator implements AnimatedFigure {
     }
     // Nothing to do when the hips stay and the feet are where the pose has them: most of the time.
     const drop = fit.z - crouch;
-    let away = Math.abs(fit.x) + Math.abs(fit.y) + Math.abs(drop);
+    // The character looks along its own -y: sitting back is +y.
+    const along = fit.y + back;
+    let away = Math.abs(fit.x) + Math.abs(along) + Math.abs(drop);
     for (let c = 0; c < 6; c++) away += Math.abs(this.targets[c]! - this.ankles[c]!);
     if (away < 2e-3) return;
     const root = character.bones * 4;
     pose[root] = pose[root]! + fit.x;
-    pose[root + 1] = pose[root + 1]! + fit.y;
+    pose[root + 1] = pose[root + 1]! + along;
     pose[root + 2] = pose[root + 2]! + drop;
     solveSkeleton(character, pose, skeleton, this.style);
     worldRotations(character, pose, this.world);
     this.bendLegs();
-    // A knee never goes through the floor: if one would, the hips come up for it.
-    const knee = Math.min(pos[this.bothLegs[0]!.lower * 3 + 2]!, pos[this.bothLegs[1]!.lower * 3 + 2]!);
-    if (knee < KNEE_FLOOR) {
-      const up = KNEE_FLOOR - knee;
+    // A knee never goes through the floor: if one would, the hips come up for it. Up comes the knee by
+    // less than the hips do, so it may take a second look.
+    for (let pass = 0; pass < 3; pass++) {
+      const knee = Math.min(pos[this.bothLegs[0]!.lower * 3 + 2]!, pos[this.bothLegs[1]!.lower * 3 + 2]!);
+      if (knee >= KNEE_FLOOR - 0.002) break;
+      const up = (KNEE_FLOOR - knee) * 1.5;
       pose[root + 2] = pose[root + 2]! + up;
       fit.z += up;
       solveSkeleton(character, pose, skeleton, this.style);
@@ -1333,6 +1581,24 @@ export class FigureAnimator implements AnimatedFigure {
       tellGesture(tell.pose, tell.kind, s * tell.aimX, this.gesture);
       return true;
     }
+    // «Perdón», to the partner, for a ball it stole and lost.
+    if (this.sorryLeft > 0) {
+      this.gesture = noGesture();
+      sorryGesture(SORRY - this.sorryLeft, s * this.sorryToward, this.gesture);
+      return true;
+    }
+    // A ball fired at its body: around the block, it flinches.
+    if (player.why === 'block' && player.anim === 'swing' && Math.abs(player.contactIn) < 0.35) {
+      this.gesture = noGesture();
+      flinchGesture(player.animSide === player.restSide, this.gesture);
+      return true;
+    }
+    // A ball read late: caught on its heels.
+    if (player.surprise > 0.25) {
+      this.gesture = noGesture();
+      surpriseGesture(this.gesture);
+      return true;
+    }
     const call = player.call;
     // What it tells its partner, as long as its own stroke is not about to need the arm.
     if (call && !(player.contactIn < CALL_CLEAR && player.contactIn > -0.2)) {
@@ -1348,6 +1614,36 @@ export class FigureAnimator implements AnimatedFigure {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Leans the trunk forward by `angle` radians (back, if less than 0) from the
+   * hips, round the character's own left-to-right axis. The skeleton has to
+   * be the one of the pose; it is solved again.
+   */
+  private leanTrunk(angle: number): void {
+    const spine = this.spineBone;
+    const hips = this.character.meta.bones.parents[spine] ?? -1;
+    if (spine < 0 || hips < 0) return;
+    worldRotations(this.character, this.pose, this.world);
+    // The turn is in the character's axes; the spine's own rotation is relative to the hips:
+    // new = hips⁻¹ · turn · hips · old.
+    const half = angle / 2;
+    const q = this.q;
+    q[0] = Math.sin(half);
+    q[1] = 0;
+    q[2] = 0;
+    q[3] = Math.cos(half);
+    const h = hips * 4;
+    const inverse = this.turn;
+    inverse[0] = -this.world[h]!;
+    inverse[1] = -this.world[h + 1]!;
+    inverse[2] = -this.world[h + 2]!;
+    inverse[3] = this.world[h + 3]!;
+    multiplyQuaternions(inverse, 0, q, 0, inverse, 0);
+    multiplyQuaternions(inverse, 0, this.world, h, inverse, 0);
+    multiplyQuaternions(inverse, 0, this.pose, spine * 4, this.pose, spine * 4);
+    solveSkeleton(this.character, this.pose, this.skeleton, this.style);
   }
 
   /**
@@ -1494,6 +1790,14 @@ export class FigureAnimator implements AnimatedFigure {
 function lungeWeight(eta: number): number {
   if (eta >= 0) return 1 - smoothstep(0.04, 0.3, eta);
   return 1 - smoothstep(0.05, 0.32, -eta);
+}
+
+/**
+ * A block: the racket is where the ball is going to be well before it gets
+ * there, and waits for it; after the contact it lets go as a stroke does.
+ */
+function blockWeight(eta: number): number {
+  return eta >= 0 ? 1 - smoothstep(0.15, 0.32, eta) : lungeWeight(eta);
 }
 
 /**

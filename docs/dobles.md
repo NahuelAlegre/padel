@@ -179,7 +179,66 @@ Con entereza 0,2 (Beto, Romina) una pareja se desordena unas 45 veces cada 100 g
 - **Pegarle a una pelota que viene muy al cuerpo** se resuelve con la cadera y el brazo, no con un paso atrás.
 - **El Artifact «Dobles posicional»** no se volvió a publicar: su fuente, `docs/dobles.html`, ya dice que la fase 2 está hecha.
 
-**Para revisar cuadro por cuadro:** `npm run frames` (o `node scripts/frames.mjs --url http://localhost:5183/` con el servidor de desarrollo) juega la demo con una semilla fija y guarda los momentos en que el cuerpo más trabaja: la pelota más baja, la más lejana, un revés bajo, una por arriba de la cabeza y una derecha común, de cada lado de la red. Saca 7 cuadros alrededor del contacto, recortados a la densidad del celular, en `.frames/`. Con `--label` se distinguen dos versiones y con `--2d` se mira el respaldo.
+**Para revisar cuadro por cuadro:** `npm run frames` (o `node scripts/frames.mjs --url http://localhost:5183/` con el servidor de desarrollo) juega la demo con una semilla fija y guarda los momentos en que el cuerpo más trabaja: la pelota más baja, la más lejana, un revés bajo, una por arriba de la cabeza, una derecha común y una al final de una carrera, de cada lado de la red. También lo que le pasa a la IA: un golpe apurado, un bloqueo, un golpe al aire, un robo y uno que salió mal, una sorpresa y el momento de más tensión. Saca 7 cuadros alrededor de cada uno, recortados a la densidad del celular, en `.frames/`. Con `--label` se distinguen dos versiones, con `--2d` se mira el respaldo, con `--buscar` solo lista los momentos de una semilla y con `--forzar perdon` agrega un «perdón» forzado después de una derecha común. Con `--estudio carrera` no juega: arma cuadro a cuadro una carrera que termina en una pelota lejos y la dibuja sin la simulación, igual para cualquier versión de la animación (la IA frena para pegar y la demo nunca la muestra).
+
+### Segunda vuelta: lo que le pasa a la IA se ve, y la estocada a la carrera
+
+**Para qué.** La IA ya se equivoca por algo (`docs/ia.md`): llega apurada, bloquea una pelota al cuerpo, no llega, lee tarde, se carga en un punto largo, le roba la pelota al compañero. El cuerpo tiene que mostrar por qué, sin leer, en lo que dura, sin frenar nada y con lo que ya existe: los mismos 24 clips y la misma cinemática inversa, sin arte nuevo.
+
+**De dónde lo saca.** La simulación ya lo decía todo. `fillScene` (`src/app/scene.ts`) lo pasa a la escena en cuatro campos de `ScenePlayer`: `why` (golpe apurado o bloqueo, desde que la IA decide su golpe y empieza a armarlo hasta que termina), `surprise`, `tension` y `stealing`. La escena tiene sus propias palabras: si la IA renombra sus motivos (por ejemplo `'hurried'` a `'forced'`), solo cambia la traducción en `fillScene`. La animación sigue sin leer la simulación.
+
+| Qué le pasa (dato de la simulación) | Qué hace el cuerpo | Cuánto dura |
+| --- | --- | --- |
+| **Apurado** (`why: 'hurried'`) | No arma: los brazos siguen la carrera hasta 0,2 s antes del contacto y el golpe entra por la mitad del clip. Las piernas siguen corriendo. | lo que dura el golpe |
+| **Bloqueo** de una pelota al cuerpo (`why: 'reflex'`) | Sin armar y sin swing: la pala se pone donde va a estar la pelota 0,15 s antes y la espera; recién después empuja. Es todo brazo, el cuerpo no se acomoda. La cabeza se aparta de la pelota y, de derecha, la mano libre sube al costado de la cara, donde se ve también de espaldas. | ±0,35 s del contacto |
+| **No llegó** (golpe al aire) | El brazo va a buscarla pero no del todo, y el cuerpo no se desliza tras ella: no llega. Un instante después caen la cabeza y los brazos: un pedazo del lamento, solo en el torso, mientras las piernas siguen. | medio segundo |
+| **Sorprendido** (lee más tarde que de costumbre) | Cuando ya tendría que estar yendo: en los talones, el torso hacia atrás, la pala que sube tarde y la mano libre abierta. Después arranca. | lo que tarda de más (0,1 a 0,3 s) |
+| **Presión acumulada** (`strain`) | Mientras espera, más bajo (hasta 7 cm) y con la base más abierta (hasta 9 cm, cuando apoya los pies), el torso hacia adelante. Corriendo o pegando, nada. | mientras dure |
+| **Robo** («¡mía!» de la agresiva) | Si la pelota pasó: un «¡vamos!» corto con la pala, el festejo sin el salto. Si se fue, quedó en la red o no llegó: «perdón», la mano libre arriba hacia el compañero y la cabeza hacia ese lado, en vez del lamento del punto. | 0,4 s; 0,9 s |
+
+**La estocada a la carrera** (lo que la fase 2 dejó pendiente «a la carrera»). Si sigue corriendo cuando llega la pelota y esta queda más lejos de lo que toma la cadera, la última zancada se alarga hacia ella (hasta 50 cm): el pie que está en el aire baja más afuera, la cadera lo sigue y baja como en una estocada, y el pie apoyado no se mueve. Además, un pie apoyado de la carrera ya no se desliza cuando el cuerpo entero se corre hacia la pelota o vuelve: queda clavado hasta que se levanta. La IA y el movimiento asistido frenan para pegar (llegan a 0 m/s), así que esto se ve sobre todo en la persona que pega corriendo; a la IA que llega corriendo y frena la sigue cubriendo el paso de la fase 2.
+
+**En 2D** se ven el bloqueo (la pala adelante del pecho), la sorpresa (los brazos se abren), el «no» con la cabeza después de un golpe al aire y la tensión. El apurado y el robo quedan solo en 3D.
+
+**Cómo se mide.** El mismo informe `reach`, con una medida nueva: el pie apoyado alrededor de los golpes a la carrera (con un umbral de piso más estricto, porque el pie que despega sigue bajo un cuadro o dos). «Antes» es `main` medido con el mismo informe.
+
+| | 1 contra 1, real | Dobles, real | 1 contra 1, hoy | Dobles, hoy |
+| --- | --- | --- | --- | --- |
+| El cuerpo se desliza pegando a la carrera (p90) | 35 → **30** cm | 38 → **34** cm | 53 → **46** cm | 96 → **75** cm |
+| El cuerpo se desliza pegando parado (p90) | 20 → **18** cm | 16 → **12** cm | 17 → 18 cm | 21 → **20** cm |
+| La pala queda de la pelota (p90) | 26 → **24** cm | 17 → **16** cm | 35 → **32** cm | 26 → **24** cm |
+| Pie apoyado alrededor de un golpe parado (p99 / máximo) | 7,9 → **3,2** / 153 → **21** mm | 3,5 → **1,7** / 1022 → **71** mm | 12,1 → **4,1** / 214 → 214 mm | 3,7 → **1,6** / 436 → **55** mm |
+| Pie apoyado alrededor de un golpe a la carrera (mediana / p90) | 24 → **15** / 130 → **107** mm | 22 → **14** / 129 → **105** mm | 24 → **15** / 127 → **109** mm | 23 → **13** / 129 → **103** mm |
+
+**Qué quiere decir.**
+
+- La estocada achica el deslizamiento a la carrera: el p90 baja entre 4 y 21 cm.
+- El pie apoyado de un golpe parado mejoró de paso. Los gestos nuevos hacían patinar los pies y se arreglaron tres cosas: un paso que ya no cambia de destino mientras baja, un pie que no se estira de más esperando al otro y un remate más chico que no baja los pies al piso.
+- **A la carrera los pies todavía patinan**, alrededor del golpe: 13 a 15 mm por cuadro de mediana y unos 10 cm de p90. Mejoró un tercio, pero no se resolvió. Sale de la mezcla de las piernas del golpe con las de la carrera cuando el jugador frena para pegar o arranca después, entre 0,5 y 1,8 m/s. Es lo próximo para los pies.
+
+**Peso y rendimiento.**
+
+- Sin arte nuevo: el personaje pesa lo mismo. El festejo corto y el «no llegué» son pedazos de clips que ya estaban.
+- El código del juego, 2,0 KB más comprimido (gzip -9): de 86,1 a 88,1 KB.
+- Animar a los cuatro cuesta 30 a 34 µs por cuadro en la PC de prueba, antes 27 a 31: unos 3 µs más.
+- `npm run perf -- --dobles`: trabajo del juego por cuadro en dobles 3D, con la CPU 4× y 6× más lenta y en dos muestras. Antes, 1,51 y 2,21 ms, y después 1,29 y 1,80 ms. Ahora, 1,85 y 2,11 ms, y después 1,27 y 1,83 ms. La medición es ruidosa y ninguna diferencia se sostiene de una muestra a la otra.
+
+**Qué mirar en el celular** (`?dobles&alcance=real`):
+
+- Un bloqueo en la red: que se lea como un reflejo (la pala ya puesta, la cabeza que se aparta) y no como una volea más.
+- Un golpe al aire de la IA: que el «no llegué» llegue un instante después y no tape el juego.
+- La sorpresa: es corta. Que se note sin parecer un tic.
+- La tensión en un punto largo: más baja y más abierta. Que no parezca cansancio.
+- Un robo de Romina: el «¡vamos!» y, si sale mal, el «perdón».
+- Correr hacia una pelota abierta y pegarle sin frenar: la última zancada se alarga.
+
+**Lo que no se resolvió.**
+
+- Los pies a la carrera alrededor del golpe (arriba).
+- De espaldas, el bloqueo de revés se distingue poco de una volea: la diferencia está en los tiempos (la pala espera) más que en la forma. Y si la IA cambia el contacto en los últimos cuadros, la pala que esperaba salta al nuevo; la segunda vuelta de la IA (planes vencidos) lo resuelve.
+- La sorpresa de alguien lejos es chica en pantalla y dura 0,1 a 0,3 s.
+- El «perdón» casi no aparece en la demo: en 10 semillas de 100 s ningún robo salió mal, y hay uno o dos robos cada 1000 s de demo. Por eso se capturó forzado.
+- El apurado y el robo no tienen versión 2D.
 
 **¿Y el 1 contra 1?** Con el alcance real, cubrir 10 m de ancho solo es ser un velocista. Opciones:
 

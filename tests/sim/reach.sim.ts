@@ -23,7 +23,7 @@ import { aiEntry, humanEntry, partnerEntry, SKILLS, withTactics } from '../helpe
  *     to put the racket on the ball (the "magnet"), standing and running;
  *   - how far the racket of the drawn body still was from the ball;
  *   - how much a foot that is on the floor moves over it, around the hits of
- *     a player that stands (the feet must not skate);
+ *     a player that stands, and of one that runs (the feet must not skate);
  *   - how low the hips get for a low ball, and the knee;
  *   - which balls are played at full stretch.
  *
@@ -35,6 +35,7 @@ const MATCHES = Number(env?.SIM_MATCHES ?? 4);
 const STANDING = 0.45;
 /** A foot whose toe is this close to the floor, in metres at life size, is on it. */
 const DOWN = 0.045;
+const DOWN_RUNNING = 0.035;
 
 const file = readFileSync(new URL('../../public/art/character.bin', import.meta.url));
 const character = parseCharacter(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer);
@@ -50,8 +51,9 @@ interface Numbers {
   slideRunning: number[];
   racket: number[];
   racketStanding: number[];
-  /** Per frame, how far a foot on the floor moved over it, around the hits of a player standing still. */
+  /** Per frame, how far a foot on the floor moved over it, around the hits of a player standing still, and of one running. */
   skate: number[];
+  skateRunning: number[];
   /** For balls below 45 cm: how far the hips dropped from standing, and how high the lower knee was. In metres at life size. */
   drop: number[];
   knee: number[];
@@ -62,7 +64,7 @@ interface Numbers {
 }
 
 function measure(real: boolean, doubles: boolean): Numbers {
-  const numbers: Numbers = { gap: [], low: 0, slide: [], slideStanding: [], slideRunning: [], racket: [], racketStanding: [], skate: [], drop: [], knee: [], beyond: 0, stretched: 0, hits: 0 };
+  const numbers: Numbers = { gap: [], low: 0, slide: [], slideStanding: [], slideRunning: [], racket: [], racketStanding: [], skate: [], skateRunning: [], drop: [], knee: [], beyond: 0, stretched: 0, hits: 0 };
   for (let m = 0; m < MATCHES; m++) {
     const config = createConfig();
     config.player.realReach = real;
@@ -107,19 +109,22 @@ function measure(real: boolean, doubles: boolean): Numbers {
         const k = figureScale(who.y) * sizes[i]!;
         const facing = who.team === 0 ? 1 : -1;
         animator.update(who, k, facing, scene.ball, 1 / 60);
-        // The feet around a hit of somebody standing: the window of a stroke, from a third of a second before to after.
+        // The feet around a hit: the window of a stroke, from a third of a second before to after.
         const put = Math.hypot(who.x - seen[i]![0]!, who.y - seen[i]![1]!) > 0.5;
         seen[i]![0] = who.x;
         seen[i]![1] = who.y;
-        const around = !put && who.anim !== 'idle' && Math.abs(who.contactIn) < 0.4 && Math.hypot(who.vx, who.vy) < STANDING;
+        const around = !put && who.anim !== 'idle' && Math.abs(who.contactIn) < 0.4;
+        const running = Math.hypot(who.vx, who.vy) >= STANDING;
+        const skate = running ? numbers.skateRunning : numbers.skate;
         const pos = animator.skeleton.pos;
         const s = facing > 0 ? -1 : 1;
         for (let f = 0; f < 2; f++) {
           const toe = toes[f]! * 3;
-          const down = pos[toe + 2]! < DOWN;
+          // Running, a foot that is leaving the floor is still low for a frame or two and already moving: only the flat foot counts.
+          const down = pos[toe + 2]! < (running ? DOWN_RUNNING : DOWN);
           const at: [number, number] = [animator.x + s * pos[toe]! * k, animator.y + s * pos[toe + 1]! * k];
           const before = was[i]![f];
-          if (around && down && before) numbers.skate.push(Math.hypot(at[0] - before[0], at[1] - before[1]));
+          if (around && down && before) skate.push(Math.hypot(at[0] - before[0], at[1] - before[1]));
           was[i]![f] = down ? at : null;
         }
       });
@@ -174,7 +179,7 @@ describe('alcance', () => {
           `  ${doubles ? 'dobles' : '1 contra 1'}, alcance ${real ? 'real' : 'actual'}: ${n.hits} golpes, pelota a ${spread(n.gap)} del cuerpo, ${Math.round((n.low / n.hits) * 100)} % por debajo de 30 cm`,
           `    el cuerpo se desliza ${spread(n.slide)}; parado (${n.slideStanding.length}) ${spread(n.slideStanding)}; corriendo (${n.slideRunning.length}) ${spread(n.slideRunning)}`,
           `    la pala queda a ${cm(at(n.racket, 0.5))} / ${cm(at(n.racket, 0.9))} de la pelota; parado, ${cm(at(n.racketStanding, 0.5))} / ${cm(at(n.racketStanding, 0.9))}`,
-          `    un pie apoyado se mueve por cuadro ${mm(at(n.skate, 0.5))} / ${mm(at(n.skate, 0.99))} (p99) / ${mm(Math.max(0, ...n.skate))}, alrededor de los golpes parados`,
+          `    un pie apoyado se mueve por cuadro ${mm(at(n.skate, 0.5))} / ${mm(at(n.skate, 0.99))} (p99) / ${mm(Math.max(0, ...n.skate))} alrededor de los golpes parados; ${mm(at(n.skateRunning, 0.5))} / ${mm(at(n.skateRunning, 0.9))} (p90) / ${mm(at(n.skateRunning, 0.99))} (p99) de los golpes a la carrera`,
           `    pelotas por debajo de 45 cm (${n.drop.length}): la cadera baja ${cm(at(n.drop, 0.5))} / ${cm(at(n.drop, 0.9))} / ${cm(Math.max(0, ...n.drop))}, la rodilla más baja a ${cm(at(n.knee, 0.1))} (p10) / ${cm(Math.min(9, ...n.knee))} del piso`,
           `    más lejos que 1,15 m: ${n.beyond}, a fondo ${n.stretched}`,
         );

@@ -133,6 +133,15 @@ const TELL_RACKET: Record<'plantWide' | 'crouchOpenFace' | 'stepIn', Pose> = {
   crouchOpenFace: { hx: 0.5, hy: 0.62, rx: 0.98, ry: 0.5 },
   stepIn: { hx: 0.4, hy: 1.02, rx: 0.72, ry: 1.2 },
 };
+/** The racket of a block, up in front of the chest; and of somebody caught by surprise, coming up late. */
+const BLOCK_RACKET: Pose = { hx: 0.16, hy: 1.22, rx: 0.08, ry: 1.62 };
+const SURPRISE_RACKET: Pose = { hx: 0.3, hy: 1.18, rx: 0.5, ry: 1.5 };
+/** A swing at the air: «no» with the head this long after it, for this long, in seconds. */
+const MISS_AFTER = 0.12;
+const MISS_FOR = 0.45;
+/** A long point: how much lower and wider the figure waits, in metres, at the most. */
+const TENSE_DROP = 0.07;
+const TENSE_APART = 0.04;
 const ACT_RACKET: Record<'kissRacket' | 'shoeTap', Pose> = {
   kissRacket: { hx: 0.12, hy: 1.4, rx: 0.02, ry: 1.74 },
   shoeTap: { hx: 0.26, hy: 0.62, rx: 0.14, ry: 0.2 },
@@ -209,6 +218,20 @@ function setCall(kind: CallKind, t: number, towardX: number): void {
       freeHand(0.3, 1.78);
       break;
   }
+}
+
+/** A ball fired at its body (`eta` seconds before it gets there): the racket up in front of the chest, the free hand to the face. */
+function setBlock(eta: number): void {
+  overlay.weight = clamp((0.35 - Math.abs(eta)) / 0.12, 0, 1);
+  overlay.racket = BLOCK_RACKET;
+  freeHand(0.08, 1.52);
+}
+
+/** A ball it read late: for a moment it is caught, the arms open and the racket comes up late. */
+function setSurprise(amount: number): void {
+  overlay.weight = amount;
+  overlay.racket = SURPRISE_RACKET;
+  freeHand(0.58, 1.12);
 }
 
 function setAct(clip: MannerismClip, t: number, duration: number): void {
@@ -382,9 +405,19 @@ export function drawFigure(
   const act = player.act;
   const call = player.call;
   if (tell?.pose && player.anim === 'swing' && player.animPhase <= 0) setTell(tell.pose, tell.kind, tell.aimX, tell.t);
+  else if (player.why === 'block' && player.anim === 'swing' && Math.abs(player.contactIn) < 0.35) setBlock(player.contactIn);
+  else if (player.surprise > 0.05) setSurprise(player.surprise);
   else if (call && !(player.contactIn < 0.3 && player.contactIn > -0.2)) setCall(call.kind, call.t, call.towardX);
   else if (act && resting) setAct(act.clip, act.t, act.duration);
+  // A swing at the air: a moment later, «no» with the head.
+  if (player.anim === 'whiff' && player.contactIn < -MISS_AFTER && player.contactIn > -MISS_AFTER - MISS_FOR) {
+    const t = -player.contactIn - MISS_AFTER;
+    overlay.head = Math.sin(t * 22) * 0.07 * Math.sin((t / MISS_FOR) * Math.PI);
+    overlay.weight = Math.max(overlay.weight, 1);
+  }
   const w = overlay.weight;
+  // A long point gets to the body: while it waits, lower and wider.
+  const tense = player.tension * (resting ? 1 : 0) * (1 - run);
 
   // The body goes to the ball as the 3D one does: the hips sink for a low one, and for one far to the side
   // the foot on that side steps toward it and the hips go after the step. Never the whole figure sliding.
@@ -399,7 +432,7 @@ export function drawFigure(
   const shift = toward * Math.min(out, 0.1 + 0.6 * step) * set;
   lean += shift;
 
-  const drop = overlay.crouch * w + sink;
+  const drop = overlay.crouch * w + sink + TENSE_DROP * tense;
   const shoulderY = 1.42 - bob - drop;
   if (overlay.racket && w > 0) {
     pose.hx = lerp(pose.hx, overlay.racket.hx, w);
@@ -442,7 +475,7 @@ export function drawFigure(
 
   const hipY = 0.9 - bob - drop;
   const hipX = (lean - shift) * 0.3 + shift;
-  const apart = 0.115 + overlay.stance * w;
+  const apart = 0.115 + overlay.stance * w + TENSE_APART * tense;
   // The foot on the side of the ball steps out to it: on the way it is off the floor.
   const up = 4 * stepping * (1 - stepping) * Math.min(0.1, 0.03 + 0.2 * step);
   const leftX = -apart + spread - (toward < 0 ? step : 0);

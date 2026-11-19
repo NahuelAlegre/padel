@@ -74,7 +74,19 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
   - Eventos de salida por `postMessage`: partido terminado, resultado.
   - Que tolere que la app anfitriona lo pause y lo reanude.
 
-## Dobles posicional y alcance creíble (idea del usuario, 2026-11-18; en pausa)
+## Dobles posicional y alcance creíble (idea del usuario, 2026-11-18)
+
+**Prototipo publicado el 2026-11-18** (merge `0fb3c31`): propuesta en `docs/dobles.md` y en el [Artifact](https://claude.ai/artifact/9c464BuRNAzAys6RQnxpGX) (privado). Se prueba con `?dobles&alcance=real` o en Opciones → Experimental; la partida rápida no cambió. Esperando que el usuario lo pruebe en el celular.
+
+- **Decisiones del usuario, después de probarlo**: partida rápida en dobles, alcance real para todos, el 1 contra 1 como «Cruzado» (media cancha en diagonal), revés y Beto por defecto, cuánto se desordena la pareja rival.
+- **Pendiente** (revisión de la orquestadora):
+  - **Fase 2, animación**: el cuerpo se sigue deslizando unos 70 cm hacia la pelota. Hace falta zancada con el pie plantado, flexión profunda hasta unos 55 cm y alinear dónde toca la pelota la simulación con los clips. Sin esto el alcance real se juega bien pero se ve igual.
+  - Al drive, jugar posicional casi no rinde (−3 a +3 pp). La meta de +15 pp se cumple solo en algunas casillas, con un jugador simulado.
+  - Puntos contra Romina y Chela de 16 a 20 s (meta: 8 a 14).
+  - Personalidad propia de cada compañero (hoy los tres avisan igual), las lecciones D1 a D5 y la pista de tierra de nadie.
+  - Medir los cuadros por segundo con cuatro personajes en el celular (`?dobles&fps`).
+
+Lo que sigue es el planteo original, de antes del prototipo.
 
 El usuario notó que "el jugador puede golpear desde posiciones muy imposibles", tanto él como la IA. La causa es doble:
 - **Alcance**: la simulación deja pegar hasta 1,8 m del cuerpo a tiempo y 2,2 m tarde, y a la IA hasta 1,85 m. Una persona llega a 1,1–1,2 m parada y a unos 1,7 m con una zancada. Las pelotas se pueden pegar a 7,5 cm del piso.
@@ -104,7 +116,7 @@ Cuando se retome, va como un solo diseño:
     - Hoy el render asume que el equipo 0 está cerca de la cámara (`src/render/stage/director.ts`). Esa vista tiene que salir de "mi equipo".
     - Revisar las asimetrías que hoy dependen de "persona contra IA", como `HUMAN_REACH` y `latencyCompensation`, para que entre dos personas sean parejas.
   - Desconexiones: pausa, reconexión y que la IA tome el lugar si el otro se va.
-- Modo dobles jugable: ver "Dobles posicional" arriba. Torneos y opciones de partido.
+- Dobles: ver "Dobles posicional" arriba. Torneos y opciones de partido.
 - PWA, y después Capacitor para las tiendas.
 
 ## Referencia: señales del tablero (2026-11-18)

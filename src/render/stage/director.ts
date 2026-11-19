@@ -2,9 +2,9 @@ import { clamp, smoothstep } from '../../core/math';
 import type { Insets } from '../../core/layout';
 import type { SimEvent } from '../../sim/match';
 import type { ShotKind } from '../../sim/types';
-import type { Scene, ScenePlayer } from '../scene';
+import type { Scene, ScenePlayer, StudioView } from '../scene';
 import type { CameraName } from '../view';
-import { figureScale, Follow, makeCamera, REFERENCE, type FollowContext, type Framed } from './camera';
+import { figureScale, Follow, makeCamera, REFERENCE, type FollowContext, type Framed, type StageCamera } from './camera';
 import { EFFECT_SECONDS, type EffectFrame, type FigureFrame, type MarkFrame, type StageFrame } from './frame';
 import type { StageView } from './view';
 
@@ -17,6 +17,17 @@ import type { StageView } from './view';
  * depends on how things look is here; what exists at all is decided earlier,
  * when the scene is filled.
  */
+
+/**
+ * The cameras of the animation studio. Close: the camera of the game brought
+ * this many metres from the player, along the same line of sight, aimed at
+ * its hips. From the side: this many metres to its left, at shoulder height,
+ * looking across the court. The court is the baked pictures laid on their
+ * planes, so it still holds from there, a little stretched.
+ */
+const STUDIO_CAMERA = { closeDistance: 6.5, closeAim: 1.0, sideDistance: 7, sideHeight: 1.5, sidePitch: 6, sideZoom: 0.9, wall: -9.2 };
+/** How fast the studio's camera goes after its player, per second: it follows the run without shaking with every step. */
+const STUDIO_FOLLOW = 14;
 
 /** Shots that get their name on screen even with the minimal help: the ones worth learning. */
 const SPECIAL: ReadonlySet<ShotKind> = new Set<ShotKind>(['bandeja', 'vibora', 'wallExit', 'smash', 'backWall']);
@@ -65,6 +76,10 @@ export interface DirectorTexts {
 
 export class Director {
   cameraName: CameraName = 'follow';
+  /** The animation studio, while it is open: whose close-up, or side view, to show. */
+  studio: StudioView | null = null;
+  /** Where the studio's camera is looking, smoothed, and whether it has a place yet. */
+  private readonly shot = { x: 0, y: 0, placed: false };
   readonly follow = new Follow();
   readonly frame: StageFrame;
   /** The name on screen, if there is one. One at a time. */
@@ -100,6 +115,7 @@ export class Director {
     this.frame = {
       view,
       skyShift: 0,
+      nearWall: true,
       figures: this.figures,
       ball: { x: 0, y: 0, z: 0, visible: true, glow: 0, trail: new Float32Array(TRAIL_POINTS * 3), trailCount: 0 },
       bounce: null,
@@ -244,6 +260,7 @@ export class Director {
     context.mark = landing && landing.y < 0 ? landing : null;
     // A camera that does not follow does not move at all: not even on its way back to the middle.
     const following = canFollow && this.cameraName === 'follow' && !scene.reduceMotion;
+    const jumped = this.jump;
     if (this.jump || !following) {
       this.follow.jump(context, following);
       this.jump = false;
@@ -254,6 +271,17 @@ export class Director {
     const still = Math.abs(this.follow.pan) < 1e-4 && Math.abs(this.follow.zoom - 1) < 1e-4;
     view.cam = still ? this.reference : this.follow.camera();
     frame.skyShift = still ? 0 : this.follow.skyShift;
+    // The studio's close-up and side view, in 3D only: the plain look has the court as one flat picture.
+    const studio = this.studio;
+    const kind = studio && canFollow && studio.camera !== 'game' ? studio.camera : null;
+    const subject = kind && studio ? scene.players[studio.focus] : undefined;
+    frame.nearWall = !(kind && subject);
+    if (kind && subject) {
+      view.cam = this.studioCamera(kind, subject, dt, jumped);
+      frame.skyShift = 0;
+    } else {
+      this.shot.placed = false;
+    }
     for (const figure of figures) {
       view.cam.project(figure.x, figure.y, 1, this.seen);
       figure.depth = this.seen.d;
@@ -419,6 +447,31 @@ export class Director {
   }
 
   private readonly reference = makeCamera(REFERENCE);
+
+  /** The studio's camera on `subject`: close on it, or from its side. It goes after the player smoothly. */
+  private studioCamera(kind: 'close' | 'side', subject: ScenePlayer, dt: number, jump: boolean): StageCamera {
+    const shot = this.shot;
+    const follow = jump || !shot.placed ? 1 : 1 - Math.exp(-dt * STUDIO_FOLLOW);
+    shot.x += (subject.x - shot.x) * follow;
+    shot.y += (subject.y - shot.y) * follow;
+    shot.placed = true;
+    const c = STUDIO_CAMERA;
+    if (kind === 'close') {
+      const pitch = (REFERENCE.pitch * Math.PI) / 180;
+      return makeCamera({
+        pos: [shot.x, shot.y - c.closeDistance * Math.cos(pitch), c.closeAim + c.closeDistance * Math.sin(pitch)],
+        pitch: REFERENCE.pitch,
+        f: REFERENCE.f,
+      });
+    }
+    // From the left of the court as the game sees it, never through the wall of the club.
+    return makeCamera({
+      pos: [Math.max(c.wall, shot.x - c.sideDistance), shot.y, c.sideHeight],
+      pitch: c.sidePitch,
+      yaw: 90,
+      f: REFERENCE.f * c.sideZoom,
+    });
+  }
 }
 
 function mark(tone: MarkFrame['tone']): MarkFrame {

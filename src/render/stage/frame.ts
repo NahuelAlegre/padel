@@ -10,6 +10,12 @@ export interface StageFrame {
   view: StageView;
   /** How far the sky slides when the camera turns, in design pixels. */
   skyShift: number;
+  /**
+   * The near glass and what stands in front of it. The cameras of the
+   * animation studio are behind it, close on a player or to its side: there
+   * it would only get in the way.
+   */
+  nearWall: boolean;
   figures: FigureFrame[];
   ball: BallFrame;
   /** Where the ball is going to bounce, when that is shown. */

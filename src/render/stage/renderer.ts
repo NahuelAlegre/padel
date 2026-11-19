@@ -3,7 +3,7 @@ import { NO_INSETS, type Insets } from '../../core/layout';
 import type { Assets } from '../../platform/types';
 import type { SimEvent } from '../../sim/match';
 import { FlatPainter } from '../flat/painter';
-import type { Renderer, Scene, ScenePlayer } from '../scene';
+import type { Renderer, Scene, ScenePlayer, StudioView } from '../scene';
 import { smoothstep } from '../../core/math';
 import { FigureAnimator, type Moment } from '../toon/animator';
 import { parseCharacter, styleOf, type Character, type Style } from '../toon/character';
@@ -67,6 +67,8 @@ export class StageRenderer implements Renderer {
   private stolen = -1;
   /** Who is saying «perdón» for a stolen ball that went wrong, instead of sagging when the point ends. */
   private sorry = -1;
+  /** What the animation studio wants to see, while it is open. */
+  private studioView: StudioView | null = null;
   /** Who each of those animators was made for: somebody else in that place gets a new one. */
   private readonly animated: string[] = [];
   private readonly styles = new Map<string, Style>();
@@ -143,7 +145,7 @@ export class StageRenderer implements Renderer {
 
   /** Which look is on screen. */
   get look(): '3d' | '2d' {
-    return this.toon && !this.toon.lost ? '3d' : '2d';
+    return this.toon && !this.toon.lost && this.studioView?.look !== '2d' ? '3d' : '2d';
   }
 
   /** Goes up to the 3D look, if everything it needs is here. */
@@ -216,6 +218,15 @@ export class StageRenderer implements Renderer {
 
   setCamera(name: CameraName): void {
     this.director.cameraName = name;
+  }
+
+  studio(view: StudioView | null): void {
+    this.studioView = view;
+    this.director.studio = view;
+  }
+
+  stealReaction(player: number, well: boolean, scene: Scene): void {
+    this.stealWent(player, well, scene);
   }
 
   project(x: number, y: number, z: number, out: { x: number; y: number }): void {
@@ -295,8 +306,13 @@ export class StageRenderer implements Renderer {
   }
 
   render(scene: Scene, dt: number): void {
+    // The studio can show one of the cast as somebody else, and ask for the plain look.
+    const studio = this.studioView;
+    const shown = studio && studio.character !== undefined ? scene.players[studio.focus] : undefined;
+    if (shown && studio) shown.character = studio.character ?? null;
     // A context can be lost a moment before the event that says so arrives.
-    const toon = this.toon && !this.toon.lost ? this.toon : null;
+    const toon = this.toon && !this.toon.lost && studio?.look !== '2d' ? this.toon : null;
+    if (this.world.hidden !== (toon === null)) this.world.hidden = toon === null;
     const character = this.character;
     const frame = this.director.update(scene, dt, toon !== null, this.safe);
     const now = performance.now() - this.born;

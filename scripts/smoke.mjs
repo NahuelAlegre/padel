@@ -994,6 +994,7 @@ async function main() {
       'baja la cancha en AVIF y el personaje comprimido, una sola vez cada uno',
       assets.includes('art/court/piso.avif') && assets.includes('art/character.bin.gz') && !assets.some((file) => file.endsWith('.webp') || file.endsWith('.bin')),
     );
+    check('jugando no baja el estudio de animaciones: es otro archivo', !assets.some((file) => file.includes('studio-')));
 
     await phone.setScreen(WIDTH, HEIGHT, 3);
     const fileUrl = pathToFileURL(join(root, 'dist', 'index.html')).href;
@@ -1013,6 +1014,25 @@ async function main() {
       check('desde un archivo se ve en 2D, con la cancha de siempre', running.look === '2d' && running.court);
       await shot('12-desde-archivo');
     }
+
+    // ------------------------------------------------------------ studio
+    section('Estudio de animaciones (?estudio)');
+    await phone.goto(`${preview.url}?estudio=bloqueo`);
+    const studioState = () =>
+      phone.evaluate(`(() => { const s = window.padelStudio; return s ? { ready: s.ready, situation: s.situation, frames: s.frames, found: s.found } : null; })()`);
+    let studio = null;
+    for (let i = 0; i < 150; i++) {
+      studio = await studioState();
+      if (studio?.ready && studio.frames > 2) break;
+      await sleep(100);
+    }
+    const studioFile = phone.requests.some((url) => /assets\/studio-[^/]+\.js$/.test(url));
+    check('abre en la situación pedida, con su propio archivo', studio?.ready === true && studio.situation === 'bloqueo' && studioFile, studio ? `${studio.found} situaciones` : 'no abrió');
+    const shownBefore = studio?.frames ?? 0;
+    await sleep(800);
+    const shownAfter = (await studioState())?.frames ?? 0;
+    check('y la reproduce en loop', shownAfter > shownBefore + 5, `${shownAfter - shownBefore} cuadros en 0,8 s`);
+    await shot('13-estudio');
 
     check('la página no tiró errores', phone.errors.length === 0, phone.errors.slice(0, 3).join(' | '));
   } finally {

@@ -274,4 +274,22 @@ export interface Renderer {
   render(scene: Scene, dt: number): void;
   /** Drops every running effect (new match, restart). */
   reset(): void;
+  /** For the animation studio (`?estudio`) only: how to show the frames it plays. The game never calls it. */
+  studio?(view: StudioView | null): void;
+  /** For the animation studio only: player `player` reacts now as after a ball it stole from its partner. */
+  stealReaction?(player: number, well: boolean, scene: Scene): void;
+}
+
+/**
+ * What the animation studio wants to see of the frames it plays: one player,
+ * from where, as whom and in which look. Null gives the game its own way.
+ */
+export interface StudioView {
+  /** Position in `players` of the player the studio is about. */
+  focus: number;
+  /** The camera of the game, one close on that player, or one from its side. */
+  camera: 'game' | 'close' | 'side';
+  /** Who that player looks like: one of the cast, or the person's own player (null). Undefined leaves it be. */
+  character?: CharacterId | null;
+  look: '3d' | '2d';
 }

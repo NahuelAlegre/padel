@@ -19,6 +19,8 @@ export interface ScreenHandlers {
   onLesson(index: number): void;
   /** A setting changed: apply it and save it. */
   onSettings(settings: Settings): void;
+  /** Open the animation studio: every situation of the game, to look at without playing. */
+  onStudio(): void;
 }
 
 /** What the screens show that is not a setting. Asked for every time a screen is built. */
@@ -359,6 +361,7 @@ export class Screens {
         ],
         s.reachHint[this.settings.reach],
       ),
+      el('div', 'field', el('span', 'label', s.studio), button(s.studioOpen, 'btn quiet', this.handlers.onStudio), el('p', 'note', s.studioHint)),
     );
 
     const data = el('div', 'field');

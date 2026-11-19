@@ -146,4 +146,14 @@ export interface Launch {
   flag(name: string): boolean;
   /** The value given to a developer switch (`?alcance=real` gives "real"), or null when there is none. */
   value(name: string): string | null;
+  /**
+   * Opens the game again with these developer switches (`"estudio"`), or
+   * with none (`""`): the way into the animation studio and out of it.
+   */
+  reopen(switches: string): void;
+  /**
+   * Writes these switches where they are kept (the address, on the web)
+   * without opening anything again: what is on show, for opening it again.
+   */
+  note(switches: string): void;
 }

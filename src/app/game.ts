@@ -32,7 +32,7 @@ import { SoundDirector } from '../audio/director';
 import { isGoldenPoint, pointLabel } from '../sim/score';
 import { Hud } from '../ui/hud';
 import { Screens, type ScreenInfo } from '../ui/screens';
-import { partnerAttitude, QUALITY_SCALE, RIVALS, type ReachName, type Settings, type SideName } from '../ui/settings';
+import { defaultSettings, partnerAttitude, QUALITY_SCALE, RIVALS, type ReachName, type Settings, type SideName } from '../ui/settings';
 import { shotName, TEXT } from '../ui/text';
 import {
   newRivalRecord,
@@ -118,6 +118,14 @@ interface Trial {
   rivals?: Attitude;
 }
 
+/**
+ * The demo of a tool (see `Game.startFixedDemo`): doubles with the reach of
+ * a real person, and for everything else what somebody who never touched the
+ * options gets.
+ */
+const FIXED_TRIAL: Trial = { doubles: true, reach: 'real' };
+const FIXED_SETTINGS: Settings = defaultSettings(false);
+
 function readTrial(launch: Launch): Trial {
   const trial: Trial = {};
   if (launch.flag('dobles')) trial.doubles = launch.value('dobles') !== 'no';
@@ -157,8 +165,11 @@ export class Game {
   private saved: SavedMatch | null;
   private rival: RivalId;
   private readonly viewport: Viewport;
-  /** Whatever draws the game. Nothing here knows which renderer it is. */
-  private readonly renderer: Renderer;
+  /**
+   * Whatever draws the game. Nothing here knows which renderer it is. Tools
+   * that look at the game frame by frame (the animation studio) draw with it.
+   */
+  readonly renderer: Renderer;
   /** What the rival says and the tics it has. It listens to the match and never touches it. */
   private readonly personality: Personality;
   /** What should sound, from what happens in the match. Reads it, never changes it. */
@@ -173,7 +184,8 @@ export class Game {
   private readonly keyboard: KeyboardInput;
   private readonly hud: Hud;
   private readonly screens: Screens;
-  private readonly scene: Scene;
+  /** What the renderer is given each frame: tools read it, and can draw a copy of their own. */
+  readonly scene: Scene;
   private readonly autoQuality = new AutoQuality();
   private readonly options: SceneOptions = {
     aids: 'minimal',
@@ -213,6 +225,8 @@ export class Game {
   private warmup = 0;
   /** Seconds left of the freeze that follows a strong hit. */
   private hitStop = 0;
+  /** The seed of the demo a tool asked for (see `startFixedDemo`), while it is being set up. */
+  private fixedSeed: number | null = null;
 
   constructor(
     stage: HTMLElement,
@@ -263,6 +277,8 @@ export class Game {
         onMenu: () => this.toMenu(),
         onLesson: (index) => this.startLesson(index),
         onSettings: () => this.applySettings(),
+        // The studio is the same game opened again with `?estudio`.
+        onStudio: () => this.platform.launch.reopen('estudio'),
       },
       () => this.screenInfo(),
     );
@@ -298,11 +314,27 @@ export class Game {
     else this.start('quick');
   }
 
+  /**
+   * The demo of a tool (the animation studio): the computer against itself,
+   * always the same for the same seed whatever the settings say, in doubles
+   * with the reach of a real person. Nothing of it is saved or counted. The
+   * game loop starts as with any match: a tool that wants to move it on by
+   * hand stops it (`stopLoop`) and calls `advance`.
+   */
+  startFixedDemo(seed: number): void {
+    this.fixedSeed = seed >>> 0;
+    try {
+      this.start('demo', null, false);
+    } finally {
+      this.fixedSeed = null;
+    }
+  }
+
   start(mode: Exclude<PlayMode, 'tutorial'>, saved: SavedMatch | null = null, greet = true): void {
     this.mode = mode;
     this.drill = null;
     this.hud.lesson(null);
-    this.rival = saved?.rival ?? this.settings.rival;
+    this.rival = saved?.rival ?? (this.fixedSeed !== null ? FIXED_SETTINGS.rival : this.settings.rival);
     this.match = this.createMatch(mode, saved);
     this.quietStart();
     // A match that is picked up again was already opened: nobody says hello twice.
@@ -614,16 +646,20 @@ export class Game {
   private createMatch(mode: Exclude<PlayMode, 'tutorial'>, saved: SavedMatch | null): Match {
     const config = createConfig();
     config.rules.format = { ...FORMATS[mode === 'demo' ? 'quick' : mode] };
+    // A tool's demo is always the same, whatever this launch and the settings say.
+    const fixed = mode === 'demo' && this.fixedSeed !== null;
+    const trial = fixed ? FIXED_TRIAL : this.trial;
+    const settings = fixed ? FIXED_SETTINGS : this.settings;
     // Experimental: the reach of a real person, the same for everybody.
-    const real = (this.trial.reach ?? this.settings.reach) === 'real';
+    const real = (trial.reach ?? settings.reach) === 'real';
     config.player.realReach = real;
     this.config = config;
     this.ais = [];
     // A match picked up again is the one it was: one against one.
-    this.doubles = (this.trial.doubles ?? this.settings.doubles) && !saved;
+    this.doubles = (trial.doubles ?? settings.doubles) && !saved;
     this.lineup = [];
 
-    const seed = (Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0;
+    const seed = fixed && this.fixedSeed !== null ? this.fixedSeed : (Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0;
     const ai = (id: RivalId, offset: number, firstMatch = false, partner = false, attitude?: Attitude): PlayerEntry => {
       const who = CAST[id];
       let level = config.rivals[id];
@@ -653,7 +689,7 @@ export class Game {
       };
     };
 
-    if (this.doubles) return this.createDoubles(mode, config, seed, ai);
+    if (this.doubles) return this.createDoubles(mode, config, seed, ai, trial, settings);
 
     if (mode === 'demo') {
       const other = this.demoRival();
@@ -708,13 +744,15 @@ export class Game {
     config: GameConfig,
     seed: number,
     ai: (id: RivalId, offset: number, firstMatch?: boolean, partner?: boolean, attitude?: Attitude) => PlayerEntry,
+    trial: Trial,
+    settings: Settings,
   ): Match {
-    const partnerId = this.trial.partner ?? this.settings.partner;
+    const partnerId = trial.partner ?? settings.partner;
     const [rivalA, rivalB] = RIVALS.filter((id) => id !== partnerId) as [RivalId, RivalId];
     // Your partner plays with the attitude you asked it for; everybody else with its own.
-    const mate = ai(partnerId, 3, false, true, this.trial.attitude ?? partnerAttitude(this.settings, partnerId));
-    const rival = (id: RivalId, offset: number): PlayerEntry => ai(id, offset, false, false, this.trial.rivals ?? CAST[id].attitude);
-    const reves = (this.trial.side ?? this.settings.side) === 'reves';
+    const mate = ai(partnerId, 3, false, true, trial.attitude ?? partnerAttitude(settings, partnerId));
+    const rival = (id: RivalId, offset: number): PlayerEntry => ai(id, offset, false, false, trial.rivals ?? CAST[id].attitude);
+    const reves = (trial.side ?? settings.side) === 'reves';
     const demo = mode === 'demo';
     const me: PlayerEntry = demo ? { ...rival(this.rival, 4), name: TEXT.you } : this.humanEntry(config.player.realReach);
     const near = reves ? [mate, me] : [me, mate];
@@ -959,7 +997,8 @@ export class Game {
     this.raf = requestAnimationFrame(this.frame);
   }
 
-  private stopLoop(): void {
+  /** Stops the game loop. A tool that moves the game on by hand calls `advance` itself. */
+  stopLoop(): void {
     this.running = false;
     cancelAnimationFrame(this.raf);
   }

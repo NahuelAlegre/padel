@@ -682,6 +682,7 @@ export class ToonGL {
     for (const effect of effects) if (effect.y <= 0 && effect.kind === 'hit') this.drawEffect(effect, frame);
     this.drawGlow(frame.ball, frame);
 
+    if (!frame.nearWall) return;
     // The glass of the near wall is in front of the player. Its reflections
     // are kept off whoever stands behind it: there it is drawn much fainter.
     gl.enable(gl.STENCIL_TEST);

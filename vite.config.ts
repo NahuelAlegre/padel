@@ -1,3 +1,4 @@
+import { readdirSync } from 'node:fs';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 
@@ -27,11 +28,29 @@ function classicScript(): Plugin {
   };
 }
 
+/**
+ * The animation studio (`?estudio`) is a script of its own, built just before
+ * this one by `vite.studio.config.ts`: the game only needs its name, to ask
+ * for it when the studio is opened.
+ */
+function studioFile(): string {
+  try {
+    return readdirSync('dist/assets').find((name) => /^studio-.*\.js$/.test(name)) ?? 'studio.js';
+  } catch {
+    return 'studio.js';
+  }
+}
+
 export default defineConfig({
   base: './',
   plugins: [classicScript()],
+  define: {
+    __STUDIO_FILE__: JSON.stringify(studioFile()),
+  },
   build: {
     target: 'es2022',
+    // The studio was built into the same folder a moment ago (see `npm run build`).
+    emptyOutDir: false,
     // The whole game is a few dozen KB: one script and one stylesheet.
     cssCodeSplit: false,
     modulePreload: false,

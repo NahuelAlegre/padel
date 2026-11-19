@@ -203,10 +203,19 @@ function createWebLaunch(): Launch {
   } catch {
     params = new URLSearchParams();
   }
+  const address = (switches: string): string => (switches ? `?${switches}` : window.location.pathname);
   return {
     elapsed: () => performance.now(),
     flag: (name) => params.has(name),
     value: (name) => params.get(name),
+    reopen: (switches) => window.location.assign(address(switches)),
+    note: (switches) => {
+      try {
+        window.history.replaceState(null, '', address(switches));
+      } catch {
+        // Opened from a file, the address cannot always be changed: nothing is lost.
+      }
+    },
   };
 }
 

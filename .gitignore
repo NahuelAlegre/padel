@@ -4,6 +4,7 @@ dist/
 coverage/
 .smoke/
 .frames/
+.estudio/
 *.log
 .DS_Store
 Thumbs.db

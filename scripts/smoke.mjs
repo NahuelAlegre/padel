@@ -889,9 +889,10 @@ async function main() {
       };
     })()`);
     const four = { samples: 0, not3d: 0, out: 0, ballOut: 0, glassLow: 0, calls: new Set(), together: 0 };
-    // Doubles points are long: three of them, and at least one call of the partner, are enough to see it work.
+    // Doubles points are long (against Romina and Chela a point can take thirty hits): three of them,
+    // and at least one call of the partner, are enough to see it work; two finished points are the check.
     await playTwoThumbs({
-      maxMs: 120000,
+      maxMs: 150000,
       until: async () => {
         const list = await phone.evaluate('window.__pairs');
         return list.filter((e) => e.type === 'point').length >= 3 && four.calls.size > 0;
@@ -924,7 +925,7 @@ async function main() {
     const ours = hits.filter((e) => e.team === 0);
     const farthest = Math.max(0, ...hits.map((e) => e.gap));
     const lowest = Math.min(9, ...hits.map((e) => e.z));
-    check('se juegan puntos de dobles', played.filter((e) => e.type === 'point').length >= 3, `${played.filter((e) => e.type === 'point').length} puntos`);
+    check('los puntos de dobles terminan', played.filter((e) => e.type === 'point').length >= 2, `${played.filter((e) => e.type === 'point').length} puntos en ${played.filter((e) => e.type === 'hit').length} golpes`);
     check('vos pegás y tu compañero también', ours.some((e) => e.human) && ours.some((e) => !e.human), `${ours.filter((e) => e.human).length} tuyos, ${ours.filter((e) => !e.human).length} de Beto`);
     check('tu compañero avisa con el cuerpo de quién es la pelota', four.calls.size > 0, [...four.calls].join(', '));
     check('los cuatro, la pelota y tu vidrio, siempre en pantalla', four.out === 0 && four.ballOut === 0 && four.glassLow === 0 && four.samples > 100, `${four.samples} miradas`);

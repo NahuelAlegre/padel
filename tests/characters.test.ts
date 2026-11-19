@@ -284,12 +284,13 @@ describe('estilo y rasgos en la cancha', () => {
     expect(pace(smash, 1.14) / pace(smash, 1)).toBeCloseTo(1.05);
 
     // And in a rally: the same shots from the same places, only harder. The
-    // rally is kept from heating up, which would hide the difference.
+    // rally is kept from heating up, which would hide the difference, and
+    // only ordinary swings count: a block or a rushed one is soft for anybody.
     const mean = (level: AILevel): number => {
       // It puts every ball back the same way, so the only thing that changes is how hard.
       const volleys = hitsOf({ ...level, lobChance: 0, dropChance: 0, smart: 1, punish: 0, aggression: 1 }, 180, {}, (cfg) => {
         cfg.rules.heatMax = 0;
-      }).filter((entry) => entry.hit.kind === 'volley');
+      }).filter((entry) => entry.hit.kind === 'volley' && entry.hit.why === undefined);
       expect(volleys.length).toBeGreaterThan(10);
       return volleys.reduce((sum, entry) => sum + entry.hit.speed, 0) / volleys.length;
     };
@@ -332,10 +333,10 @@ describe('estilo y rasgos en la cancha', () => {
     // It aims at where the other player is; how far off the ball goes is its scatter.
     const miss = (impatience: number): { early: number; late: number } => {
       const level = { ...LEVELS.hard, lobChance: 0, dropChance: 0, smart: 1, feed: 1, impatientAfter: 4, impatience };
-      // A match long enough to see many rallies, and many long ones.
+      // A match long enough to see many rallies, and many long ones. Only ordinary swings: a rushed one is wild for anybody.
       const hits = hitsOf(level, 900, { errorScale: 1 }, (cfg) => {
         cfg.rules.format.gamesToWin = 60;
-      }).filter((entry) => entry.landedX !== null);
+      }).filter((entry) => entry.landedX !== null && entry.hit.why === undefined);
       const off = (from: number, to: number): number => {
         const some = hits.filter((entry) => entry.rally >= from && entry.rally < to);
         expect(some.length).toBeGreaterThan(12);

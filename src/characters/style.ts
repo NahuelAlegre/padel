@@ -1,5 +1,6 @@
 import type { AILevel } from '../config';
 import { clamp, lerp } from '../core/math';
+import type { Attitude } from '../sim/pair';
 import type { Character } from './types';
 
 /**
@@ -79,6 +80,7 @@ export function toAILevel(character: Character, firstMatch = false): AILevel {
     wallScatter: 1,
     lobUnderPressure: false,
     tellLead: character.tell.lead,
+    steal: 0,
   };
   for (const trait of character.traits) {
     switch (trait.kind) {
@@ -124,4 +126,55 @@ export function asPartner(level: AILevel): AILevel {
     errorScale: level.errorScale * PARTNER_STEADIER.errorScale,
     reaction: level.reaction * PARTNER_STEADIER.reaction,
   };
+}
+
+/** Aggressive: how much of the way to always it goes to the net and holds it, and to always finishing; its lobs; its taste for stealing. */
+const ATTITUDE_NET = 0.6;
+const ATTITUDE_PUNISH = 0.3;
+const AGGRESSIVE_LOB = 0.7;
+const ATTITUDE_STEAL = 0.6;
+/** Passive: what is left of its taste for the net and for finishing, and how much more it lobs. */
+const PASSIVE_NET = 0.35;
+const PASSIVE_PUNISH = 0.6;
+const PASSIVE_LOB = 0.12;
+
+/**
+ * What an attitude does to how a character plays, in doubles. The character
+ * keeps its hands, its legs, its shots and its habits: Beto is still slow and
+ * Romina still hits flat. The attitude is how it shares the court:
+ *
+ *   aggressive  goes to the net behind its shots and holds it, finishes more
+ *               of what it gets, lobs less, and has a taste for the partner's
+ *               balls it plays better (`AILevel.steal`).
+ *   balanced    as the character is.
+ *   passive     stays back, lobs more and puts back the ball it could
+ *               finish: it leaves that to you.
+ *
+ * Which balls it takes and when it goes up with a person are rules of the
+ * pair (see `ATTITUDE` in src/sim/pair.ts). One against one there is no
+ * attitude: this is never applied.
+ */
+export function withAttitude(level: AILevel, attitude: Attitude): AILevel {
+  switch (attitude) {
+    case 'aggressive':
+      return {
+        ...level,
+        netRush: lerp(level.netRush, 1, ATTITUDE_NET),
+        holdNet: lerp(level.holdNet, 1, ATTITUDE_NET),
+        punish: lerp(level.punish, 1, ATTITUDE_PUNISH),
+        lobChance: level.lobChance * AGGRESSIVE_LOB,
+        steal: ATTITUDE_STEAL,
+      };
+    case 'passive':
+      return {
+        ...level,
+        netRush: level.netRush * PASSIVE_NET,
+        holdNet: level.holdNet * PASSIVE_NET,
+        punish: level.punish * PASSIVE_PUNISH,
+        lobChance: Math.min(0.6, level.lobChance + PASSIVE_LOB),
+        steal: 0,
+      };
+    case 'balanced':
+      return { ...level, steal: 0 };
+  }
 }

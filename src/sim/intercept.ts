@@ -22,6 +22,11 @@ export interface InterceptPlan {
   reachable: boolean;
   /** Seconds to spare when the plan was made. */
   slack: number;
+  /**
+   * A block: the ball came at the player before it had read where to run,
+   * and the hands went to it from where it stands. Left out, it is not.
+   */
+  reflex?: boolean;
 }
 
 const stance = { x: 0, y: 0, gap: 0 };

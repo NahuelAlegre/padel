@@ -2,7 +2,7 @@ import type { GameConfig } from '../config';
 import { clamp } from '../core/math';
 import { teamDir } from './court';
 import type { InterceptPlan } from './intercept';
-import { startingLane, type Astray, type CallKind } from './pair';
+import { startingLane, type Astray, type Attitude, type CallKind } from './pair';
 import type { PlayerIntent, ShotIntent, ShotKind, TeamId } from './types';
 
 /**
@@ -66,12 +66,15 @@ export interface PlayerSetup {
   holdNet?: number;
   /** 0..1, how little a run of difficult balls gets to it. Left out, it is 0.5. */
   composure?: number;
+  /** Doubles: how it shares the court with its partner (see `Attitude`). Left out, balanced. */
+  attitude?: Attitude;
 }
 
 export interface Player extends PlayerSetup {
   wallBias: number;
   holdNet: number;
   composure: number;
+  attitude: Attitude;
   /**
    * What the rally has done to it so far: it grows with every difficult ball
    * it has to play and fades with the comfortable ones. Zero at every serve.
@@ -135,6 +138,7 @@ export function createPlayer(id: number, team: TeamId, index: number, setup: Pla
     wallBias: setup.wallBias ?? 0,
     holdNet: setup.holdNet ?? 0,
     composure: setup.composure ?? 0.5,
+    attitude: setup.attitude ?? 'balanced',
     strain: 0,
     pressure: 0,
     id,

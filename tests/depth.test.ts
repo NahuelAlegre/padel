@@ -457,8 +457,11 @@ describe('una red que se defiende', () => {
 
 describe('presión acumulada', () => {
   it('la tensión de cada uno sale de las pelotas difíciles que le tocan, y cada punto empieza de cero', () => {
+    // A match long enough for a few hundred balls.
+    const long = createConfig();
+    long.rules.format.gamesToWin = 6;
     const match = new Match({
-      config: createConfig(),
+      config: long,
       seed: 21,
       teams: [
         { name: 'A', players: [aiEntry(config, 'romina', 3)] },
@@ -470,7 +473,7 @@ describe('presión acumulada', () => {
     let hits = 0;
     let hard = 0;
     let top = 0;
-    for (let i = 0; i < 120 * 240 && match.phase !== 'matchOver'; i++) {
+    for (let i = 0; i < 120 * 480 && match.phase !== 'matchOver'; i++) {
       match.step();
       for (const event of match.events) {
         if (event.type === 'serveReady') {

@@ -21,7 +21,7 @@ export const SIM_DT = 1 / SIM_HZ;
  * (physics, rules, shot maths, AI). Recorded matches carry the version they
  * were played with, so an old recording is replayed right or cleanly refused.
  */
-export const PHYSICS_VERSION = 3;
+export const PHYSICS_VERSION = 4;
 
 export interface SideSegment {
   /** Distance from the back wall where this segment ends. */
@@ -437,6 +437,12 @@ export interface AILevel {
   lobUnderPressure: boolean;
   /** Seconds before contact at which it has decided its shot, and its windup shows it. */
   tellLead: number;
+  /**
+   * Doubles, 0..1: its taste for going after a ball of its partner's that it
+   * plays better, saying «¡mía!» first. Only the aggressive have it (see
+   * `withAttitude` in src/characters/style.ts).
+   */
+  steal: number;
 }
 
 /** The rivals are the characters of the cast. */

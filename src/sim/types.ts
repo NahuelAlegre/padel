@@ -40,7 +40,25 @@ export interface ShotIntent {
    * to it: somebody impatient, deep into a point. Left out, it is 0.
    */
   tension?: number;
+  /** What a computer player's swing was like, if anything made it harder than the ball itself (see `SwingWhy`). */
+  why?: SwingWhy;
+  /**
+   * Seconds the body is behind this swing. A player that gets there late
+   * still meets the ball, at the last moment it can, and the shot comes out
+   * as late as the body really was. Left out, it is 0.
+   */
+  lateBy?: number;
 }
+
+/**
+ * Why a computer player's swing was not an ordinary one. It is what makes a
+ * mistake readable: the body got there late, it only blocked a ball at its
+ * body, or it went for too much with a ball that did not allow it.
+ *   hurried  it got there with no time to set up, and swung late
+ *   reflex   the ball came at it before it had read it: a block
+ *   gamble   a difficult ball, and it went for the winner anyway
+ */
+export type SwingWhy = 'hurried' | 'reflex' | 'gamble';
 
 export function createShotIntent(aim = 0, depth = 0.6, lob = false, power = 1): ShotIntent {
   return { aim, depth, lob, power };
@@ -65,10 +83,15 @@ export interface PlayerIntent {
   cue: ShotIntent | null;
   /** Where to wait while the ball is on the other side. Null leaves it to the match. */
   home: 'back' | 'net' | null;
+  /**
+   * Doubles: «¡mía!». It goes for the ball that is coming although it is its
+   * partner's. The match takes it only while there is time to say so.
+   */
+  claim: boolean;
 }
 
 export function createIntent(): PlayerIntent {
-  return { hasTarget: false, targetX: 0, targetY: 0, moveX: 0, moveY: 0, swing: null, cue: null, home: null };
+  return { hasTarget: false, targetX: 0, targetY: 0, moveX: 0, moveY: 0, swing: null, cue: null, home: null, claim: false };
 }
 
 export function resetIntent(intent: PlayerIntent): void {
@@ -78,4 +101,5 @@ export function resetIntent(intent: PlayerIntent): void {
   intent.swing = null;
   intent.cue = null;
   intent.home = null;
+  intent.claim = false;
 }

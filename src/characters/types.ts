@@ -1,3 +1,5 @@
+import type { Attitude } from '../sim/pair';
+
 /**
  * The people of the club: rivals today, partners when doubles arrive.
  *
@@ -120,6 +122,11 @@ export interface Character {
   stars: 1 | 2 | 3 | 4 | 5;
   hand: 1 | -1;
   style: PlayStyle;
+  /**
+   * Doubles: how it shares the court when nobody asks it for anything else.
+   * The person can ask its partner for another one (see `withAttitude`).
+   */
+  attitude: Attitude;
   traits: Trait[];
   tell: Tell;
   mannerisms: Mannerism[];

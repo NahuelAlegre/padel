@@ -74,7 +74,10 @@ Lo que sí gustó: elegir a dónde golpear antes de que llegue la pelota y que e
 
 ## Restricciones técnicas
 
-- **Liviano pero lindo**: se acepta perder algo de liviandad para que se vea bien, pero no puede ser un juego pesado. Objetivo orientativo: 60 fps en un Android de gama media de hace unos 5 años y una descarga inicial chica.
+- **Liviano pero lindo**: se acepta perder algo de liviandad para que se vea bien, pero no puede ser un juego pesado. Objetivo orientativo: 60 fps en un Android de gama media de hace unos 5 años.
+- **Descarga hasta jugar: 1 MB como máximo, y lo más liviana posible** (decidido el 2026-11-19). La meta es que un jugador invite a otro con un link público y el otro esté jugando lo antes posible, aunque sea en el colectivo con mala señal.
+  - Hoy son unos 330 KB. En 4G flojo cada 100 KB suman medio segundo, y en 3G, un segundo.
+  - Lo que no hace falta para el primer partido (otros clubes, torneos) baja después, en segundo plano o cuando se elige.
 - TypeScript + Vite, sin motores de juego pesados. Render en WebGL2 escrito a mano (sin three.js ni PixiJS), con respaldo en Canvas 2D. Dependencias chicas solo si se justifican.
 - La física avanza con paso fijo y el render va desacoplado.
 - Lo estático se dibuja una vez y se cachea: la luz de la cancha va horneada. Los personajes son mallas 3D chicas con esqueleto, compartidas entre todo el elenco. Las variantes salen de colores y piezas, y las animaciones se comparten.

@@ -113,6 +113,17 @@ Cuando se retome, va como un solo diseño:
 ## Más adelante
 
 - **Desafío por link, sin servidor**: semilla y resultado en la URL.
+  - **Al abrir el link, un solo botón antes de jugar** (pedido del usuario, 2026-11-19): arrancar directo "es muy agresivo", porque no se espera estar jugando con solo abrir el link. Esa pantalla también tapa la descarga mientras la persona mira la invitación.
+  - Mientras baja, que no se vea una pantalla vacía: hoy, en 3G malo, la pantalla queda lisa unos 8 s.
+  - Vista previa del link en WhatsApp (imagen y título) y probar que ande dentro del navegador de WhatsApp e Instagram.
+  - **Tiempo hasta jugar, medido el 2026-11-19** sobre la versión publicada: primera visita, sin caché, con la CPU 4× más lenta, 327 KB.
+
+    | Conexión | En pantalla y jugable |
+    |---|---|
+    | 4G bueno (9 Mbps) | 0,9 s |
+    | 4G flojo (1,6 Mbps) | 2,4 s |
+    | 3G (0,75 Mbps) | 4,6 s |
+    | 3G malo (0,4 Mbps) | 8,1 s |
 - **Partido en vivo por link**: necesita un servidor chico y código de red con compensación de latencia.
   - Plan probable: conexión directa entre los dos jugadores (WebRTC) con un servidor mínimo que solo los presenta, y rollback, aprovechando que la simulación ya es determinista y registra entradas.
   - Para no cerrarse la puerta desde ya: que la simulación dé **exactamente el mismo resultado en cualquier navegador y procesador**. Evitar en `src/sim/` funciones como `Math.sin`, `Math.cos`, `Math.pow` y `Math.exp`, que pueden variar entre motores, o usar versiones propias. Agregar un test que compare un partido grabado contra un resultado de referencia.

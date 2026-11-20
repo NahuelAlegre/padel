@@ -509,6 +509,7 @@ export class Match {
       player.doubtUntil = 0;
       player.call = null;
       player.callTraj = -1;
+      player.callShown = false;
     }
     this.phase = 'serve';
     this.rally.live = false;
@@ -1220,6 +1221,7 @@ export class Match {
       this.assigned[receiving] = receiverId;
       pair.why = 'alone';
       pair.offMiddle = Infinity;
+      pair.unclear = false;
       pair.switchChecked = true;
       return;
     }
@@ -1341,7 +1343,8 @@ export class Match {
     if (roll < stay) {
       other.astray = 'stay';
       other.astrayHome = before;
-      this.say(leader, home === 'net' ? 'up' : 'back', this.trajectory?.id ?? -1);
+      // The one who went says so: it is the other side's cue that this pair came apart.
+      this.say(leader, home === 'net' ? 'up' : 'back', this.trajectory?.id ?? -1, true);
     } else if (roll < stay + halfway) {
       other.astray = 'halfway';
     }
@@ -1402,18 +1405,20 @@ export class Match {
         if (other) {
           this.assigned[team] = other.id;
           if (!owner.manual) owner.plan = null;
-          this.say(other, 'switch', trajectory.id);
+          this.say(other, 'switch', trajectory.id, true);
           continue;
         }
       }
       // And it keeps an eye on it: if the owner is not getting there and it can, it goes, saying so.
       if (this.watch(team, owner, partner, trajectory, pair)) continue;
 
-      // What the computer players say about this ball, once they have read it.
+      // What the computer players say about this ball, once they have read it. Whose a ball through the
+      // middle is, they say; the body shows it only when it does not show by itself (see
+      // `PairState.unclear`). A ball that changes hands on its way is always shown.
       const ambiguous = Math.abs(pair.offMiddle) <= CALL_BAND;
       if (pair.doubted === trajectory.id) {
-        // They doubt: each one points at the other.
-        for (const player of members) if (this.time >= trajectory.t0 + player.read) this.say(player, 'yours', trajectory.id);
+        // They doubt: each one points at the other, which is what the other side sees.
+        for (const player of members) if (this.time >= trajectory.t0 + player.read) this.say(player, 'yours', trajectory.id, true);
         continue;
       }
       const plan = owner.plan;
@@ -1426,22 +1431,22 @@ export class Match {
           this.assigned[team] = partner.id;
           owner.plan = null;
           pair.why = 'cover';
-          this.say(owner, 'yours', trajectory.id);
+          this.say(owner, 'yours', trajectory.id, true);
           continue;
         }
       }
       if (!owner.isHuman && plan && this.time >= trajectory.t0 + owner.read) {
         // A lob over the two of them that it lets bounce, with the person still at the net: back, together.
         const overBoth = plan.kind !== 'volley' && Math.abs(plan.y) > BACK_LOB && partner.manual && Math.abs(partner.y) < NET_LINE;
-        if (pair.why === 'switch') this.say(owner, 'switch', trajectory.id);
-        else if (overBoth) this.say(owner, 'back', trajectory.id);
-        else if (pair.why === 'cover' || ambiguous) this.say(owner, 'mine', trajectory.id);
+        if (pair.why === 'switch') this.say(owner, 'switch', trajectory.id, true);
+        else if (overBoth) this.say(owner, 'back', trajectory.id, true);
+        else if (pair.why === 'cover' || ambiguous) this.say(owner, 'mine', trajectory.id, pair.unclear);
       }
       // The other one, if it is a computer player: "¡tuya!" for a ball that could have been its own.
       if (!partner.isHuman && this.time >= trajectory.t0 + partner.read) {
         const leftToPerson = owner.manual && (ambiguous || pair.why === 'cover');
         if (leftToPerson || (!owner.manual && ambiguous && pair.why !== 'cover' && pair.why !== 'switch')) {
-          this.say(partner, 'yours', trajectory.id);
+          this.say(partner, 'yours', trajectory.id, pair.unclear);
         }
       }
     }
@@ -1454,7 +1459,7 @@ export class Match {
       const hitter = this.players[this.lastHitter[team]];
       const person = members.find((player) => player.manual);
       if (members.length === 2 && hitter && !hitter.isHuman && person && hitter.anim.shot === 'lob' && hitter.homeMode === 'net' && Math.abs(person.y) > BACK_LINE) {
-        this.say(hitter, 'up', trajectory.id);
+        this.say(hitter, 'up', trajectory.id, true);
       }
     }
   }
@@ -1496,7 +1501,7 @@ export class Match {
     this.assigned[team] = taker.id;
     if (!owner.manual) owner.plan = null;
     pair.why = 'cover';
-    this.say(taker, 'mine', trajectory.id);
+    this.say(taker, 'mine', trajectory.id, true);
   }
 
   /**
@@ -1513,18 +1518,21 @@ export class Match {
     if (!rally.live || rally.hitter !== team || this.lastHitter[team] !== mate.id || mate.homeMode !== 'net') return;
     if (pair.home === 'net' || Math.abs(person.y) < NET_LINE) return;
     pair.leader = mate.id;
-    this.say(mate, 'up', this.trajectory?.id ?? -1);
+    this.say(mate, 'up', this.trajectory?.id ?? -1, true);
   }
 
   /**
    * A player tells its partner something about a ball: once per ball, unless
-   * it changes its mind and goes for it after all («¡tuya!... ¡mía!»).
+   * it changes its mind and goes for it after all («¡tuya!... ¡mía!»). `shown`
+   * is whether the body shows it too: only what the partner could not tell by
+   * itself. Showing it or not changes nothing else.
    */
-  private say(player: Player, call: CallKind, trajId: number): void {
+  private say(player: Player, call: CallKind, trajId: number, shown: boolean): void {
     if (player.callTraj === trajId && (player.call === call || !GOES_FOR_IT.has(call) || GOES_FOR_IT.has(player.call!))) return;
     player.call = call;
     player.callAt = this.time;
     player.callTraj = trajId;
+    player.callShown = shown;
   }
 
   /**
@@ -1545,7 +1553,7 @@ export class Match {
     pair.why = 'steal';
     if (!owner.manual) owner.plan = null;
     for (const mate of this.teams[team]) mate.doubtUntil = 0;
-    this.say(player, 'mine', trajectory.id);
+    this.say(player, 'mine', trajectory.id, true);
   }
 
   /**

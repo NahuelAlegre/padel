@@ -277,9 +277,9 @@ export function fillScene(
     } else {
       out.tell = null;
     }
-    // Doubles: what it is telling its partner, for a moment.
+    // Doubles: what it is telling its partner, for a moment, when the partner could not tell by itself.
     const said = time - player.callAt;
-    const mate = player.call ? match.teams[player.team].find((other) => other !== player) : undefined;
+    const mate = player.call && player.callShown ? match.teams[player.team].find((other) => other !== player) : undefined;
     if (player.call && mate && said >= 0 && said < CALL_SHOWS) {
       const call = (calls[i] ??= { kind: 'mine', t: 0, towardX: 0 });
       call.kind = player.call;

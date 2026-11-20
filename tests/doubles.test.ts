@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { createScene, fillScene, type SceneOptions } from '../src/app/scene';
 import { asPartner } from '../src/characters/style';
 import { createConfig, type GameConfig } from '../src/config';
 import { createBall, type BallState } from '../src/sim/ball';
+import { InputState } from '../src/input/state';
 import { contactNear, planIntercept } from '../src/sim/intercept';
 import { Match, type Controller, type PlayerEntry } from '../src/sim/match';
 import { BACK_LINE, createPairState, followPerson, NET_LINE, pairSpot } from '../src/sim/pair';
@@ -526,5 +528,182 @@ describe('dobles: la pareja rival también se desordena, y se le puede castigar'
     const formed = notReturned(together, 0.2, hole);
     expect(shaky).toBeGreaterThan(formed + 0.1);
     expect(shaky).toBeGreaterThan(steady + 0.05);
+  });
+});
+
+describe('dobles: las señas, solo cuando de quién es la pelota no se ve sola', () => {
+  /** What player `id` shows with the body in the next `seconds`, and what it says. */
+  function watchCalls(match: Match, id: number, seconds: number): { shown: string[]; said: string[] } {
+    const player = match.players[id]!;
+    const shown: string[] = [];
+    const said: string[] = [];
+    for (let i = 0; i < seconds * 120; i++) {
+      match.step();
+      match.events.length = 0;
+      if (player.call && player.callAt === match.time) {
+        said.push(player.call);
+        if (player.callShown) shown.push(player.call);
+      }
+    }
+    return { shown, said };
+  }
+
+  /** A pair (the person and a partner, or two computer players) in the near half, where `spots` says; the far pair feeds. */
+  function court(near: [PlayerEntry, PlayerEntry], spots: Array<{ x: number; y: number }>): Match {
+    const config = createConfig();
+    const match = new Match({
+      config,
+      seed: 7,
+      practice: true,
+      teams: [
+        { name: 'A', players: near },
+        { name: 'B', players: [{ ...aiEntry(config, 'medium', 5), controller: idle }, { ...aiEntry(config, 'medium', 6), controller: idle }] },
+      ],
+    });
+    match.rest(places(spots), 2, true);
+    return match;
+  }
+
+  it('una pelota que va claramente a uno no lleva seña: ni «¡mía!» de quien va ni «¡tuya!» de quien la deja', () => {
+    // You on the drive side, your partner on the left. Wide on its side, at its body, wide on yours.
+    for (const [x, y] of [
+      [-3.4, -6.5],
+      [-2.3, -7],
+      [3.4, -6.5],
+    ] as const) {
+      const match = practice('drive');
+      match.rest(places(), 2, true);
+      feedTo(match, x, y);
+      expect(match.pairs[0].unclear, `pelota a (${x}, ${y})`).toBe(false);
+      expect(watchCalls(match, 1, 1.4).shown, `pelota a (${x}, ${y})`).toEqual([]);
+    }
+  });
+
+  it('una pelota entre los dos, que los dos llegan igual de cómodos, la avisan con el cuerpo: quien va, «¡mía!», y quien la deja, «¡tuya!»', () => {
+    // You on the revés side: the middle is yours, and your partner shows you so.
+    const reves = practice('reves');
+    reves.rest(places(), 2, true);
+    feedTo(reves, 0, -6.5);
+    expect(reves.players[reves.assigned[0]]!.isHuman).toBe(true);
+    expect(reves.pairs[0].unclear).toBe(true);
+    // (The person here stands still, so in the end the partner covers it: «¡tuya!... ¡mía!», shown as well.)
+    expect(watchCalls(reves, 0, 1.2).shown[0]).toBe('yours');
+
+    // You on the drive side: the middle is your partner's, and it shows it goes.
+    const drive = practice('drive');
+    drive.rest(places(), 2, true);
+    feedTo(drive, 0, -6.5);
+    expect(drive.assigned[0]).toBe(1);
+    expect(watchCalls(drive, 1, 1.2).shown).toEqual(['mine']);
+
+    // Between two computer players, both of them. (Steady ones: a pair without composure may doubt instead, and then
+    // each one points at the other.)
+    const config = createConfig();
+    const steady = (seed: number): PlayerEntry => ({ ...partnerEntry(config, 'medium', seed), composure: 1 });
+    const pair = court([steady(3), steady(4)], [{ x: 2.3, y: -BACK }, { x: -2.3, y: -BACK }]);
+    feedTo(pair, 0, -6.5);
+    const owner = pair.assigned[0];
+    expect(pair.pairs[0].unclear).toBe(true);
+    const shown: string[][] = [[], []];
+    for (let i = 0; i < 1.2 * 120; i++) {
+      pair.step();
+      pair.events.length = 0;
+      for (const id of [0, 1]) {
+        const player = pair.players[id]!;
+        if (player.call && player.callShown && player.callAt === pair.time) shown[id]!.push(player.call);
+      }
+    }
+    expect(shown[owner]).toEqual(['mine']);
+    expect(shown[1 - owner]).toEqual(['yours']);
+  });
+
+  it('a tu lado, entre los dos, tu compañero muestra lo que no dice la regla; lo que sí dice, no hace falta mostrarlo', () => {
+    // You on the drive side, a little in from your lane; the ball between the two of you, through the middle,
+    // which by the rule is your partner's (it has the forehand to it). With you slow to get there, your partner
+    // keeps it, as the rule says: nothing to show.
+    const config = createConfig();
+    const spots = [{ x: 2, y: -BACK }, { x: -2.3, y: -BACK }];
+    const slow = court([person({ speedFactor: 0.5 }), partnerEntry(config, 'medium', 3)], spots);
+    feedTo(slow, -0.15, -6.5);
+    expect(slow.assigned[0]).toBe(1);
+    expect(slow.pairs[0].unclear).toBe(false);
+    expect(watchCalls(slow, 1, 1.2).shown).toEqual([]);
+
+    // A partner slow to read the ball leaves it to you, against the rule, and shows it.
+    const late = court([person(), { ...partnerEntry(config, 'medium', 3), reaction: 0.8 }], spots);
+    feedTo(late, -0.15, -6.5);
+    expect(late.assigned[0]).toBe(0);
+    expect(late.pairs[0].unclear).toBe(true);
+    expect(watchCalls(late, 1, 1.6).shown[0]).toBe('yours');
+
+    // Two computer players in the same places understand each other: it is said, and nothing is shown.
+    const two = court([{ ...partnerEntry(config, 'medium', 2), composure: 1 }, { ...partnerEntry(config, 'medium', 3), reaction: 0.8, composure: 1 }], spots);
+    feedTo(two, -0.15, -6.5);
+    expect(two.assigned[0]).toBe(0);
+    expect(two.pairs[0].unclear).toBe(false);
+    expect(watchCalls(two, 1, 1.6)).toEqual({ shown: [], said: ['yours'] });
+  });
+
+  it('una pelota que cambia de manos sí se muestra: tu compañero la cubre con un «¡mía!» a la vista', () => {
+    const match = practice('drive', person({ speedFactor: 0.02 }));
+    match.rest(places([{ x: 3, y: -BACK }, { x: -2.3, y: -BACK }]), 2, true);
+    feedTo(match, 1.5, -6.2);
+    expect(match.pairs[0].why).toBe('cover');
+    expect(watchCalls(match, 1, 1.2).shown).toEqual(['mine']);
+  });
+
+  it('lo que se dice sin mostrarlo no llega a la pantalla', () => {
+    const match = practice('drive');
+    match.rest(places(), 2, true);
+    match.step();
+    const mate = match.players[1]!;
+    const scene = createScene();
+    const options: SceneOptions = { aids: 'minimal', aidStrength: 1, reduceMotion: false, debug: false, cueLead: 0, tutorial: null, cast: [], acts: [] };
+    mate.call = 'mine';
+    mate.callAt = match.time;
+    mate.callShown = false;
+    fillScene(scene, match, 1, new InputState(), options);
+    expect(scene.players[1]!.call).toBeNull();
+    mate.callShown = true;
+    fillScene(scene, match, 1, new InputState(), options);
+    expect(scene.players[1]!.call?.kind).toBe('mine');
+  });
+
+  it('en partidos enteros tu compañero hace seña en una minoría de las pelotas, y la pareja rival también', { timeout: 60_000 }, () => {
+    const balls = [0, 0];
+    const signed = [0, 0];
+    for (const seed of [21, 22]) {
+      const config = createConfig();
+      const match = new Match({
+        config,
+        seed,
+        teams: [
+          { name: 'A', players: [partnerEntry(config, 'beto', seed + 1), humanEntry(seed, withTactics(SKILLS.average, 1))] },
+          { name: 'B', players: [aiEntry(config, 'romina', seed + 2), aiEntry(config, 'chela', seed + 3)] },
+        ],
+      });
+      // The ball on its way to a pair, and whether that pair showed anything about it.
+      let receiving = -1;
+      let shown = false;
+      while (match.phase !== 'matchOver' && match.tick < 1800 * 120) {
+        match.step();
+        for (const event of match.events) {
+          if (event.type !== 'hit' && event.type !== 'point') continue;
+          if (receiving >= 0 && shown) signed[receiving]!++;
+          shown = false;
+          receiving = event.type === 'hit' && event.kind !== 'serve' ? 1 - event.team : -1;
+          if (receiving >= 0) balls[receiving]!++;
+        }
+        match.events.length = 0;
+        for (const player of match.players) {
+          if (player.team === receiving && player.call && player.callShown && player.callAt === match.time) shown = true;
+        }
+      }
+    }
+    expect(balls[0]).toBeGreaterThan(150);
+    // Before, about three balls in four had one, on each side of the net.
+    expect(signed[0]! / balls[0]!).toBeLessThan(0.35);
+    expect(signed[0]).toBeGreaterThan(0);
+    expect(signed[1]! / balls[1]!).toBeLessThan(0.45);
   });
 });

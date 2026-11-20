@@ -123,8 +123,17 @@ export interface ScriptedSkill {
    * stops wherever that leaves it.
    */
   settle?: number;
+  /**
+   * Doubles: what it takes in of what its partner tells it. 'words', left
+   * out: all of it, at once, as if it were said out loud. 'signs': only what
+   * the partner shows with the body (`Player.callShown`), and `SIGN_READ`
+   * seconds after it starts, as a person playing without sound does.
+   */
+  hears?: 'words' | 'signs';
 }
 
+/** Seconds it takes a person to read what its partner shows with the body (`ScriptedSkill.hears`). */
+const SIGN_READ = 0.25;
 /** A person who does not set up for the ball (`placement: 'reach'`) stops once it is this much of its reach from it. */
 const LAZY_REACH = 0.8;
 /** A person for whom getting to the ball is enough (`placement: 'anywhere'`) stands anywhere this close to it, in metres. */
@@ -187,6 +196,8 @@ export class ScriptedHuman implements Controller {
   private thinking = false;
   /** Doubles: whether the ball on its way is this player's, once it has read it. */
   private mine: boolean | null = null;
+  /** The time of the match, for what it is told. */
+  private now = 0;
 
   constructor(
     private readonly rng: Rng,
@@ -237,10 +248,15 @@ export class ScriptedHuman implements Controller {
     }
     const side = Math.sign(me.x - partner.x) || ownSide;
     // Tied to the partner: up when it is up, and back when it says so; up behind a shot of its own that takes it there.
-    const told = match.trajectory !== null && partner.callTraj === match.trajectory.id ? partner.call : null;
+    const told = match.trajectory !== null && partner.callTraj === match.trajectory.id && this.hearsIt(partner) ? partner.call : null;
     const up = told === 'back' ? false : told === 'up' || Math.abs(partner.y) < NET_ZONE || me.homeMode === 'net';
     out.x = side * (up ? LANE_NET : LANE) + clampTo(match.ball.x * SLIDE, SLIDE_MAX);
     out.y = -dir * (up ? 3.4 : 7.2);
+  }
+
+  /** Whether it takes in what its partner is telling it now (see `ScriptedSkill.hears`). */
+  private hearsIt(partner: Player): boolean {
+    return this.skill.hears !== 'signs' || (partner.callShown && this.now - partner.callAt >= SIGN_READ);
   }
 
   /** Is this decision a padel one? Draws nothing at the two ends, so 0 plays exactly as it always did. */
@@ -250,6 +266,7 @@ export class ScriptedHuman implements Controller {
   }
 
   update(match: Match, me: Player, intent: PlayerIntent): void {
+    this.now = match.time;
     const rng = this.rng;
     if (match.phase === 'serve' && match.serverId === me.id) {
       if (this.serveAt < 0) this.serveAt = match.time + 0.5;
@@ -335,7 +352,7 @@ export class ScriptedHuman implements Controller {
       this.mine = this.isMine(me, partner, me.guide ?? me.plan);
     }
     // What the partner says about the ball settles it, with tactics: "¡mía!", "¡voy!", "¡atrás!" or "¡tuya!".
-    if (partner && incoming && this.thinking && this.trajectory && partner.callTraj === this.trajectory.id && partner.call) {
+    if (partner && incoming && this.thinking && this.trajectory && partner.callTraj === this.trajectory.id && partner.call && this.hearsIt(partner)) {
       this.mine = partner.call === 'yours';
     }
     if (incoming && !this.released && (!partner || this.mine !== false)) {

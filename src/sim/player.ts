@@ -141,11 +141,22 @@ export interface Player extends PlayerSetup {
   astrayHome: 'back' | 'net';
   /** Doubles: until this time it hesitates over a ball through the middle, and so does its partner. */
   doubtUntil: number;
-  /** Doubles: what it last told its partner, and when. Only for show: it is always true. */
+  /**
+   * Doubles: what it last told its partner, and when. Always true, and said
+   * whether or not the body shows it. The simulation keeps to its word in one
+   * place: a computer player that has spoken up about a ball does not hand it
+   * over to the person afterwards (see `Match.updatePairs`).
+   */
   call: CallKind | null;
   callAt: number;
   /** The ball that call was about, so each ball gets one at most. */
   callTraj: number;
+  /**
+   * Whether that call is shown with the body: only when whose the ball is
+   * does not show by itself (see `PairState.unclear`), or when the ball
+   * changes hands on its way. Only for show.
+   */
+  callShown: boolean;
 }
 
 export function createPlayer(id: number, team: TeamId, index: number, setup: PlayerSetup): Player {
@@ -188,6 +199,7 @@ export function createPlayer(id: number, team: TeamId, index: number, setup: Pla
     call: null,
     callAt: 0,
     callTraj: -1,
+    callShown: false,
   };
 }
 

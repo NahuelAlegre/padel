@@ -72,6 +72,8 @@ export interface DirectorTexts {
   shotName(kind: ShotKind, forehand: boolean, volley: boolean): string;
   quality: Record<'perfect' | 'good' | 'early' | 'late', string>;
   tooFar: string;
+  /** With the hit zones on: the name of a ball the person could only block, at the body. Left out, it is not named. */
+  block?: string;
 }
 
 export class Director {
@@ -165,8 +167,10 @@ export class Director {
         if (!player?.isHuman || event.kind === 'serve' || scene.aids === 'none') break;
         // With all the help: how it was timed and what it was, always. Otherwise only the shots worth a name.
         const full = scene.aids === 'full';
-        if (!full && !SPECIAL.has(event.kind)) break;
-        let text = this.texts.shotName(event.kind, event.forehand, event.volley);
+        // With the hit zones on, a ball at the body is a block, and the name says why it went back soft (docs/zonas.md).
+        const blocked = scene.zones && event.zone === 'body' && this.texts.block !== undefined;
+        if (!full && !SPECIAL.has(event.kind) && !blocked) break;
+        let text = blocked ? this.texts.block! : this.texts.shotName(event.kind, event.forehand, event.volley);
         if (event.kind === 'smash' && !full) text = `¡${text}!`;
         if (scene.debug) {
           const ms = Math.round(event.error * 1000);

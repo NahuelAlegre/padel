@@ -1,12 +1,13 @@
-import { SIM_DT, type AILevel } from '../config';
+import { SIM_DT, type AILevel, type GameConfig } from '../config';
 import { clamp, lerp } from '../core/math';
 import type { Rng } from '../core/rng';
-import { planIntercept, type InterceptPlan } from '../sim/intercept';
+import { planIntercept, stanceAt, type InterceptPlan } from '../sim/intercept';
 import type { Controller, Match } from '../sim/match';
 import { BACK_LINE, NET_LINE } from '../sim/pair';
 import { playerSpeed, travelTime, type Player } from '../sim/player';
 import { pointAt } from '../sim/trajectory';
 import { otherTeam, type PlayerIntent, type ShotIntent, type SwingWhy } from '../sim/types';
+import { zoneFacing, type Facing } from '../sim/zones';
 import { autoMove } from './autopilot';
 
 /** How much wilder than usual a mishit ball leaves the racket. */
@@ -121,6 +122,19 @@ const STEAL_HIGH_ROOM = 0.15;
 const STEAL_ROOM = 0.35;
 /** A partner who gets there with less than this to spare gets there rushed. */
 const RUSHED = 0.12;
+/**
+ * With the hit zones on, the ball at the body of whoever is at the net
+ * (docs/zonas.md, `zones.bodyShot`): at most `BODY_NET` from it, and landing
+ * this far behind it, so that it goes through at chest height.
+ */
+const BODY_NET = 4.8;
+const BODY_BEHIND = 1.8;
+/** With the hit zones on, a ball the other side blocked or slapped late, to be attacked, is finished at least this often. */
+const GIFT_PUNISH = 0.7;
+
+/** Scratch: where the body sets up, and which way it faces. */
+const spot = { x: 0, y: 0 };
+const facing: Facing = { x: 0, y: 0 };
 
 /**
  * How demanding the ball of `plan` is for `me` (0 comfortable, about 1
@@ -141,6 +155,27 @@ export function demandOf(match: Match, me: Player, plan: InterceptPlan, waitX: n
   const change = lastPace >= 0 && pace > 0 ? clamp(Math.abs(pace - lastPace) / PACE_CHANGE, 0, 1) : 0;
   const surprise = me.reaction > 0 ? clamp(me.read / me.reaction - 1, 0, 1) : 0;
   return clamp(ball + DEMAND.tight * tight + DEMAND.change * change + DEMAND.surprise * surprise, 0, MOST);
+}
+
+/**
+ * With the hit zones on: the aim (-1..1) and depth (0..1) of an ordinary
+ * shot struck at (`fromX`, `fromY`) that goes through somebody standing at
+ * (`atX`, `atY`) on the other side, on its way down (docs/zonas.md). It
+ * lands `BODY_BEHIND` behind that player and, seen from above, flies in a
+ * straight line from where it is struck to where it lands, so it is aimed
+ * that much wider to cross where the body is. It reads only where everybody
+ * is standing, like anybody on a court.
+ */
+export function aimAtBody(fromX: number, fromY: number, atX: number, atY: number, config: GameConfig): [number, number] {
+  const spec = config.shots.specs.drive;
+  const dropAt = config.shots.dropAt;
+  const land = clamp(Math.abs(atY) + BODY_BEHIND, spec.depthNear, spec.depthFar);
+  const deep = (land - spec.depthNear) / (spec.depthFar - spec.depthNear);
+  // Just over what would be a chiquita: an ordinary shot, as short as it gets.
+  const depth = dropAt + 0.01 + deep * (1 - dropAt - 0.01);
+  const along = (Math.abs(fromY) + Math.abs(atY)) / (Math.abs(fromY) + land);
+  const x = fromX + (atX - fromX) / Math.max(0.3, along);
+  return [clamp(x / spec.aimRange, -1, 1), depth];
 }
 
 /**
@@ -194,6 +229,9 @@ export class AIController implements Controller {
   private demand = 0;
   private meetAt = -1;
   private tooLate = false;
+  /** With the hit zones on: how far from its spot for the ball in `lastPlan` its feet end up (see `placement`). */
+  private missX = 0;
+  private missY = 0;
 
   constructor(
     /** Can be swapped while a match is running (rival changed in the options). */
@@ -215,6 +253,8 @@ export class AIController implements Controller {
     this.demand = 0;
     this.meetAt = -1;
     this.tooLate = false;
+    this.missX = 0;
+    this.missY = 0;
   }
 
   update(match: Match, me: Player, intent: PlayerIntent): void {
@@ -240,6 +280,11 @@ export class AIController implements Controller {
     }
     intent.home = this.home;
     autoMove(match, me, intent);
+    // With the hit zones on, its feet end up near its spot, not on it (see `placement`).
+    if (me.plan && me.plan === this.lastPlan && intent.hasTarget) {
+      intent.targetX += this.missX;
+      intent.targetY += this.missY;
+    }
 
     if (match.phase === 'serve') {
       if (match.serverId !== me.id) return;
@@ -282,6 +327,7 @@ export class AIController implements Controller {
       this.swingAt = Math.min(at, last);
       this.meetAt = Math.max(plan.t, this.swingAt);
       this.cue = null;
+      this.placement(match, me, plan);
     }
     if (this.swingAt < 0) return;
     intent.meetAt = this.meetAt;
@@ -318,6 +364,47 @@ export class AIController implements Controller {
     if (plan.reflex) return plan.t + this.rng.gauss() * spread * REFLEX_SIGMA;
     const sigma = spread * (COMFORT + SPREAD * bite(demand));
     return plan.t + spread * LATE * bite(demand) + this.rng.gauss() * sigma;
+  }
+
+  /**
+   * With the hit zones on (docs/zonas.md): where its feet end up for the
+   * contact of `plan`, against the spot the plan runs to.
+   *
+   * It sets up for the ball it is really going to meet: when its swing is
+   * going to come late (`meetAt`), that ball is further on, and so is its
+   * body. Somebody late is late with all of it, not standing still with the
+   * arm behind: the lateness costs what the timing costs, and the ball is
+   * not met behind the feet.
+   *
+   * And it ends up across from that spot, give or take as much as its hands
+   * give: the spread of its timing for this ball (see `zones.place`). A
+   * comfortable ball is met well placed, and one the other side made
+   * demanding at the body or at full stretch, as a person meets it. A block
+   * is played from where it stands. Off, it gets exactly to its spot, and
+   * nothing is drawn.
+   */
+  private placement(match: Match, me: Player, plan: InterceptPlan): void {
+    this.missX = 0;
+    this.missY = 0;
+    const zones = match.config.zones;
+    if (!zones.on || plan.reflex) return;
+    const trajectory = match.trajectory;
+    const own = trajectory && trajectory.id === plan.trajId ? trajectory : null;
+    const late = own && this.meetAt > plan.t ? pointAt(own, this.meetAt) : null;
+    const point = late ?? (own ? pointAt(own, plan.t) : null);
+    if (!point) return;
+    if (late) stanceAt(late, me, match.config, spot);
+    else {
+      spot.x = plan.stanceX;
+      spot.y = plan.stanceY;
+    }
+    // Across the body that meets the ball: too close to it, or too far.
+    zoneFacing(me.team, point.vx, point.vy, match.config, facing);
+    const dir = me.team === 0 ? 1 : -1;
+    const spread = this.level.timingSigma * (COMFORT + SPREAD * bite(this.demand));
+    const miss = this.rng.gauss() * Math.min(zones.placeMost, spread * zones.place);
+    this.missX = spot.x + facing.y * dir * miss - plan.stanceX;
+    this.missY = spot.y - facing.x * dir * miss - plan.stanceY;
   }
 
   /**
@@ -455,6 +542,17 @@ export class AIController implements Controller {
     // A coach feeds: a comfortable ball to where the other player is standing.
     if (rng.chance(level.feed)) return shot(toward(), rng.range(0.5, 0.7), false);
 
+    // With the hit zones on, the ball at the body of whoever is at the net: there it can only be
+    // blocked (docs/zonas.md). The aggressive play it often, the quiet hardly ever. A ball it has to
+    // dig up is not one to hit through anybody.
+    if (config.zones.on && plan.z >= config.court.netCenter * 0.6) {
+      const target = this.atTheNet(opponents, plan.x);
+      if (target && rng.chance(config.zones.bodyShot * level.aggression)) {
+        const [aim, depth] = aimAtBody(plan.x, plan.y, target.x, target.y, config);
+        return shot(aim, depth, false);
+      }
+    }
+
     // A ball that is there to be attacked: close to the net, above the tape
     // and with time. Whoever knows how finishes it: away from the other one
     // (the situation makes it a smash when it is high enough) and, with
@@ -463,8 +561,11 @@ export class AIController implements Controller {
     // Whoever does not know just puts it back in play.
     const attackable =
       myNetDistance < ATTACK_ZONE && plan.z >= config.court.netCenter + ATTACK_ABOVE_TAPE && plan.slack >= ATTACK_SLACK;
+    // With the hit zones on, a ball the other side could only block, or slapped late, comes back floating
+    // (docs/zonas.md): it is there for all to see, and even those who never finish a ball go for that one.
+    const punish = config.zones.on && this.gift(match, me) ? Math.max(level.punish, GIFT_PUNISH) : level.punish;
     if (attackable) {
-      if (!rng.chance(level.punish)) return shot(middle(), rng.range(0.5, 0.8), false, level.power * SAFE_POWER);
+      if (!rng.chance(punish)) return shot(middle(), rng.range(0.5, 0.8), false, level.power * SAFE_POWER);
       if (rivalAtBack && plan.z < config.player.overheadZ && rng.chance(level.dropChance * 2.5)) return shot(away(), 0.1, false);
       return shot(away(), rivalAtNet ? rng.range(0.85, 1) : rng.range(FINISH_DEPTH[0], FINISH_DEPTH[1]), false);
     }
@@ -550,6 +651,27 @@ export class AIController implements Controller {
     }
     // Anything else: into the hole, deep.
     return shot(hole, rng.range(0.7, 0.95), false);
+  }
+
+  /**
+   * With the hit zones on: the ball on its way to `me` is one the other side
+   * could only block (at the body) or slapped late (past the body). Anybody
+   * on the court sees it: the body showed it, and the ball floats.
+   */
+  private gift(match: Match, me: Player): boolean {
+    const other = match.players[match.lastHitter[otherTeam(me.team)]];
+    const trajectory = match.trajectory;
+    return other !== undefined && trajectory !== null && other.zoneAt === trajectory.t0 && (other.zone === 'body' || other.zone === 'behind');
+  }
+
+  /** With the hit zones on: whoever of the other side is at the net, the one closest across the court to `x` if both are. */
+  private atTheNet(opponents: readonly Player[], x: number): Player | null {
+    let best: Player | null = null;
+    for (const opponent of opponents) {
+      if (Math.abs(opponent.y) >= BODY_NET) continue;
+      if (!best || Math.abs(opponent.x - x) < Math.abs(best.x - x)) best = opponent;
+    }
+    return best;
   }
 
   /** Lateral aim (-1..1) that lands the ball as far as possible from the opponents. */

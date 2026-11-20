@@ -4,6 +4,7 @@ import { teamDir } from './court';
 import type { InterceptPlan } from './intercept';
 import { startingLane, type Astray, type Attitude, type CallKind } from './pair';
 import type { PlayerIntent, ShotIntent, ShotKind, TeamId } from './types';
+import type { HitZone } from './zones';
 
 /**
  * A swing that was asked for and is armed: the racket is back and the ball is
@@ -94,6 +95,9 @@ export interface Player extends PlayerSetup {
   strain: number;
   /** 0..1, how hard the last ball it played was. For whoever wants to show it. */
   pressure: number;
+  /** Where the last ball it played was met around its body (see src/sim/zones.ts), and when. For whoever wants to show it. */
+  zone: HitZone;
+  zoneAt: number;
   id: number;
   team: TeamId;
   /** Position inside the team: 0 plays the right side, 1 the left. */
@@ -155,6 +159,8 @@ export function createPlayer(id: number, team: TeamId, index: number, setup: Pla
     read: setup.reaction,
     strain: 0,
     pressure: 0,
+    zone: 'ideal',
+    zoneAt: -Infinity,
     id,
     team,
     index,

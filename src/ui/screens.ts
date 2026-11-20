@@ -361,6 +361,7 @@ export class Screens {
         ],
         s.reachHint[this.settings.reach],
       ),
+      this.choice(s.zones, 'zones', onOff, s.zonesHint[this.settings.zones ? 'on' : 'off']),
       el('div', 'field', el('span', 'label', s.studio), button(s.studioOpen, 'btn quiet', this.handlers.onStudio), el('p', 'note', s.studioHint)),
     );
 

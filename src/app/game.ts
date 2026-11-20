@@ -107,11 +107,13 @@ function today(): string {
  *   ?companero=chela   in doubles, who plays with you (beto, romina or chela)
  *   ?actitud=agresiva  in doubles, how your partner plays with you (agresiva, equilibrada or pasiva)
  *   ?rivales=pasiva    in doubles, the same for both of the other pair (each one's own, otherwise)
+ *   ?zonas             hit zones: where the ball is met around the body counts (?zonas=no, it does not)
  * They win over the options while the page is open and are never saved.
  */
 interface Trial {
   doubles?: boolean;
   reach?: ReachName;
+  zones?: boolean;
   side?: SideName;
   partner?: RivalId;
   attitude?: Attitude;
@@ -132,6 +134,7 @@ function readTrial(launch: Launch): Trial {
   const reach = launch.value('alcance');
   if (reach === 'real') trial.reach = 'real';
   else if (reach === 'actual') trial.reach = 'generous';
+  if (launch.flag('zonas')) trial.zones = launch.value('zonas') !== 'no';
   const side = launch.value('lado');
   if (side === 'reves' || side === 'revés') trial.side = 'reves';
   else if (side === 'drive') trial.side = 'drive';
@@ -251,7 +254,7 @@ export class Game {
       canvas,
       this.config.court,
       platform.assets,
-      { shotName, quality: TEXT.quality, tooFar: TEXT.whiffFar },
+      { shotName, quality: TEXT.quality, tooFar: TEXT.whiffFar, block: TEXT.block },
       { allow3d: !platform.launch.flag('2d') },
     );
     // Behind a menu the game is a still picture: it is drawn again when the renderer has something new to show.
@@ -653,6 +656,8 @@ export class Game {
     // Experimental: the reach of a real person, the same for everybody.
     const real = (trial.reach ?? settings.reach) === 'real';
     config.player.realReach = real;
+    // Experimental: where the ball is met around the body counts, for everybody (docs/zonas.md).
+    config.zones.on = trial.zones ?? settings.zones;
     this.config = config;
     this.ais = [];
     // A match picked up again is the one it was: one against one.

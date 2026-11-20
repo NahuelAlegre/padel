@@ -50,6 +50,12 @@ export interface Settings {
   /** Experimental: today's generous reach, or a real person's for everybody (see `realReach` in src/config.ts). */
   reach: ReachName;
   /**
+   * Experimental, off by default: where the ball is met around the body
+   * decides how the shot comes out, for everybody (docs/zonas.md, `zones`
+   * in src/config.ts). It takes effect from the next match.
+   */
+  zones: boolean;
+  /**
    * Doubles: drive (right) or revés (left, the one with the forehand toward
    * the middle). Revés by default: the person takes the middle, as the
    * stronger of a pair does, and that is where playing positionally pays.
@@ -100,6 +106,7 @@ export function defaultSettings(reduceMotion: boolean): Settings {
     showFps: false,
     doubles: false,
     reach: 'generous',
+    zones: false,
     side: 'reves',
     partner: 'beto',
     attitudes: {},
@@ -135,6 +142,7 @@ export function readSettings(saved: unknown, reduceMotion: boolean): Settings {
     showFps: flag('showFps'),
     doubles: flag('doubles'),
     reach: pick(data.reach, ['generous', 'real'] as const, base.reach),
+    zones: flag('zones'),
     side: pick(data.side, ['drive', 'reves'] as const, base.side),
     partner: pick(data.partner, RIVALS, base.partner),
     attitudes: readAttitudes(data.attitudes),

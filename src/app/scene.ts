@@ -9,6 +9,7 @@ import { backpedalOf } from '../sim/pressure';
 import { resolveShot, serveTarget, type ShotContext } from '../sim/shots';
 import { pointAt } from '../sim/trajectory';
 import type { ShotIntent, SwingWhy } from '../sim/types';
+import type { HitZone } from '../sim/zones';
 import {
   createPointerFeedback,
   type AidLevel,
@@ -57,6 +58,7 @@ export function createScene(pointer: PointerFeedback = createPointerFeedback()):
     guide: null,
     tutorial: null,
     heat: 0,
+    zones: false,
     pointer,
     reduceMotion: false,
     debug: false,
@@ -91,6 +93,50 @@ function sceneWhy(why: SwingWhy | undefined): SceneWhy | null {
   if (why === 'forced') return 'hurried';
   if (why === 'reflex') return 'block';
   return null;
+}
+
+/**
+ * With the hit zones on (docs/zonas.md), where the ball is met around the
+ * body, in the words of the looks that exist today: at the body it can only
+ * be blocked, past the body it is a late, hurried slap. At the side, or at
+ * full stretch, the stroke is the ordinary one (the stretch already shows).
+ */
+function zoneLook(zone: HitZone | undefined): SceneWhy | null {
+  if (zone === 'body') return 'block';
+  if (zone === 'behind') return 'hurried';
+  return null;
+}
+
+/**
+ * With the hit zones on, the look of each player's stroke is decided once,
+ * when its contact is this close (seconds), from where the player is and
+ * where the ball will be, and kept to the end of the stroke: the body does
+ * not change its mind half way. A stroke that only starts at its contact
+ * takes the zone the contact really had.
+ */
+const ZONE_LOOK_LEAD = 0.2;
+/** One per player: the look decided for the stroke it is in, and whether one was decided. */
+const zoneLooks: Array<SceneWhy | null> = [];
+const zoneDecided: boolean[] = [];
+
+/**
+ * With the hit zones on: the look of the zone the stroke of `player` (the
+ * `i`-th, drawn as `out`) is played in, if it has one.
+ */
+function strokeZoneLook(match: Match, player: Player, out: ScenePlayer, i: number): SceneWhy | null {
+  if (out.anim !== 'swing' || out.animPhase >= 1) {
+    zoneDecided[i] = false;
+    zoneLooks[i] = null;
+    return null;
+  }
+  if (zoneDecided[i]) return zoneLooks[i] ?? null;
+  if (!(out.contactIn <= ZONE_LOOK_LEAD)) return null;
+  // Already at the contact: what it was. Before it: what it is going to be, as things stand.
+  const struck = out.contactIn <= 0 && player.zoneAt === player.anim.contactAt;
+  const zone = struck ? player.zone : match.expectedZone(player)?.zone;
+  zoneLooks[i] = zoneLook(zone);
+  zoneDecided[i] = true;
+  return zoneLooks[i];
 }
 
 const intent: ShotIntent = { aim: 0, depth: 0.6, lob: false, power: 1 };
@@ -139,6 +185,8 @@ export function fillScene(
   scene.aids = level;
   scene.aidStrength = level === 'minimal' ? options.aidStrength : 1;
   scene.heat = match.config.rules.heatMax > 0 ? match.heat / match.config.rules.heatMax : 0;
+  const zones = match.config.zones.on;
+  scene.zones = zones;
 
   const held = match.phase === 'serve' || match.ballHeld;
   scene.ball.x = lerp(match.ballPrev.x, match.ball.x, alpha);
@@ -291,8 +339,26 @@ export function fillScene(
     }
   }
 
-  if (!human || !humanOut) return;
+  if (human && humanOut) fillPerson(scene, match, time, input, options, human, humanOut);
 
+  // With the hit zones on, where the ball is met around the body shows in the body, for everybody
+  // (the person's windup while the thumb is down included): a block wins over a hurry.
+  if (zones) {
+    for (let i = 0; i < match.players.length; i++) {
+      const out = scene.players[i]!;
+      const look = strokeZoneLook(match, match.players[i]!, out, i);
+      if (look === 'block' || (look && !out.why)) out.why = look;
+    }
+  }
+}
+
+/**
+ * The person's part of the scene: where and when it meets the ball, where
+ * to stand, where it is aiming, and the windup while the thumb is down.
+ */
+function fillPerson(scene: Scene, match: Match, time: number, input: InputState, options: SceneOptions, human: Player, humanOut: ScenePlayer): void {
+  const level = options.aids;
+  const trajectory = match.trajectory;
   // Where and when the person meets the ball. How it is shown is up to the
   // level: a glow on the ball in the last instant, or the ring with its windows.
   const plan = human.plan;

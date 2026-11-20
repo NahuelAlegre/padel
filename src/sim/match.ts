@@ -48,6 +48,7 @@ import {
 } from './rules';
 import { awardPoint, cloneScore, createScore, serveSide, type MatchFormat, type ScoreState } from './score';
 import {
+  isPastPlayer,
   qualityFromError,
   resolveShot,
   serveTarget,
@@ -59,6 +60,7 @@ import {
   type ShotParams,
 } from './shots';
 import { pointAt, predictTrajectory, type Trajectory } from './trajectory';
+import { createZoneReading, outOfZone, readZone, type HitZone, type ZoneReading } from './zones';
 import {
   createIntent,
   otherTeam,
@@ -109,6 +111,15 @@ export type SimEvent =
       pressure: number;
       /** A computer player's swing that was not an ordinary one, and why (see `SwingWhy`). */
       why?: SwingWhy;
+      /**
+       * Where the ball was met around the body (see src/sim/zones.ts), and
+       * how far from it across the body's forward line and along it
+       * (positive in front), in metres. It is always measured; it only
+       * changes the shot with the hit zones on (`config.zones.on`).
+       */
+      zone?: HitZone;
+      side?: number;
+      ahead?: number;
     }
   | { type: 'whiff'; player: number; reason: 'far' | 'nothing' }
   | { type: 'bounce'; x: number; y: number; speed: number }
@@ -213,6 +224,8 @@ const REFLEX_AHEAD = 0.1;
 const HANDOFF_SLACK = 0.3;
 /** Seconds a run to a contact is taken to last at least, to tell how fast it goes away from the net. */
 const PLANNED_RUN = 0.2;
+/** A player moved by hand is taken to drift on this long (seconds), for where it will meet the ball (see `expectedZone`). */
+const ZONE_DRIFT = 0.1;
 /**
  * Reading the ball (see `Match.setReads`), as a share of the reaction:
  *   dropAtBack   a chiquita, for whoever waits at the back: that much later
@@ -298,11 +311,15 @@ export class Match {
     pressure: 0,
     backpedal: 0,
   };
-  private readonly ask: BallAsk = { ballX: 0, ballY: 0, ballZ: 0, speed: 0, gap: 0, reach: 1, retreat: 0, risk: 0 };
+  private readonly ask: BallAsk = { ballX: 0, ballY: 0, ballZ: 0, speed: 0, gap: 0, reach: 1, retreat: 0, risk: 0, body: 0, behind: 0 };
   /** The risk the last shot took by aiming near the walls, if it came off. It makes the ball harder for whoever gets it. */
   private lastRisk = 0;
   /** Why the last ball that was hit was hard: what each thing added to its pressure. */
-  readonly pressureParts: PressureParts = { below: 0, stretch: 0, pace: 0, cramped: 0, backpedal: 0, risk: 0 };
+  readonly pressureParts: PressureParts = { below: 0, stretch: 0, pace: 0, cramped: 0, backpedal: 0, risk: 0, body: 0, behind: 0 };
+  /** Where the last ball that was hit was met around the body (see src/sim/zones.ts). */
+  readonly zone = createZoneReading();
+  /** Scratch for the zone of a contact that has not happened yet. */
+  private readonly zoneAhead = createZoneReading();
   private rallyStartedAt = 0;
 
   constructor(options: MatchOptions) {
@@ -827,7 +844,57 @@ export class Match {
     ask.reach = playerReach(player, this.config, plan.z) + lungeReach(this.config);
     ask.retreat = Math.max(0, Math.abs(plan.stanceY) - Math.abs(player.y)) / Math.max(PLANNED_RUN, plan.t - this.time);
     ask.risk = this.lastRisk;
+    this.zoneOfPlan(player, plan, point, plan.stanceX, plan.stanceY, ask.reach);
     return ballPressure(ask, this.config);
+  }
+
+  /**
+   * With the hit zones on: where the ball of `plan` will be around the body
+   * of `player` standing at (`x`, `y`), into `zoneAhead` and the pressure
+   * scratch. Off, nothing.
+   */
+  private zoneOfPlan(player: Player, plan: InterceptPlan, point: { vx: number; vy: number; bounces: number }, x: number, y: number, reach: number): void {
+    const ask = this.ask;
+    ask.body = 0;
+    ask.behind = 0;
+    if (!this.config.zones.on) return;
+    const past = isPastPlayer(player.team, y, plan.y, point.bounces, this.config);
+    const zone = readZone(player.team, x, y, plan.x, plan.y, plan.z, point.vx, point.vy, reach, this.config, this.zoneAhead, past);
+    ask.body = zone.body;
+    ask.behind = zone.behind;
+  }
+
+  /**
+   * Where the ball this player is waiting for will be around its body, as
+   * things stand (see src/sim/zones.ts): from where its legs will have taken
+   * it by then. One that runs to a spot gets there if its legs get it there,
+   * and otherwise as far as they do; one moved by hand drifts on for a
+   * moment. For the looks: the body shows a block or a late slap before the
+   * contact. Null when it is not waiting for a ball. The reading is reused.
+   */
+  expectedZone(player: Player): ZoneReading | null {
+    const plan = player.plan;
+    const point = plan && this.trajectory && plan.trajId === this.trajectory.id ? pointAt(this.trajectory, plan.t) : null;
+    if (!plan || !point) return null;
+    const eta = Math.max(0, plan.t - this.time);
+    const intent = this.intents[player.id];
+    let x = player.x;
+    let y = player.y;
+    if (intent?.hasTarget) {
+      const dx = intent.targetX - x;
+      const dy = intent.targetY - y;
+      const distance = Math.hypot(dx, dy);
+      const share = distance > 1e-6 ? Math.min(1, (playerSpeed(player, this.config) * eta) / distance) : 0;
+      x += dx * share;
+      y += dy * share;
+    } else {
+      const drift = Math.min(eta, ZONE_DRIFT);
+      x += player.vx * drift;
+      y += player.vy * drift;
+    }
+    const reach = playerReach(player, this.config, plan.z) + lungeReach(this.config);
+    const past = isPastPlayer(player.team, y, plan.y, point.bounces, this.config);
+    return readZone(player.team, x, y, plan.x, plan.y, plan.z, point.vx, point.vy, reach, this.config, this.zoneAhead, past);
   }
 
   /**
@@ -871,6 +938,7 @@ export class Match {
     ask.reach = playerReach(player, this.config, plan.z) + lungeReach(this.config);
     ask.retreat = -player.vy * teamDir(player.team);
     ask.risk = this.lastRisk;
+    this.zoneOfPlan(player, plan, point, player.x, player.y, ask.reach);
     return ballPressure(ask, this.config);
   }
 
@@ -948,8 +1016,20 @@ export class Match {
       const most = error > 0 ? reach + pc.lungeExtra : player.manual ? reach * 1.1 : reach + pc.stretchExtra;
       if (gap > most) return false;
     }
+    // With the hit zones on, a ball that has gone too far past the line of the body is not reached: the body does not get there.
+    if (this.config.zones.on && this.gonePast(player)) return false;
     this.executeHit(player, intent, error, gap);
     return true;
+  }
+
+  /** With the hit zones on: the ball has gone so far past the line of the body that no stroke gets to it. */
+  private gonePast(player: Player): boolean {
+    const config = this.config;
+    const ball = this.ball;
+    const past = isPastPlayer(player.team, player.y, ball.y, this.rally.bounces, config);
+    const reach = playerReach(player, config, ball.z) + lungeReach(config);
+    const zone = readZone(player.team, player.x, player.y, ball.x, ball.y, ball.z, ball.vx, ball.vy, reach, config, this.zoneAhead, past);
+    return outOfZone(zone, config);
   }
 
   private executeHit(player: Player, intent: ShotIntent, error: number, gap: number): void {
@@ -964,6 +1044,9 @@ export class Match {
     const incoming = Math.hypot(ball.vx, ball.vy, ball.vz);
     const reach = playerReach(player, config, ball.z);
     const retreat = -player.vy * dir;
+    // Where the ball is around the body (src/sim/zones.ts): always measured, and only with the zones on does it change the shot.
+    const past = isPastPlayer(player.team, player.y, ball.y, this.rally.bounces, config);
+    const zone = readZone(player.team, player.x, player.y, ball.x, ball.y, ball.z, ball.vx, ball.vy, reach + lungeReach(config), config, this.zone, past);
 
     // What the ball asks of the player: that is the work of the shot before this one.
     const ask = this.ask;
@@ -975,6 +1058,8 @@ export class Match {
     ask.reach = reach + lungeReach(config);
     ask.retreat = retreat;
     ask.risk = this.lastRisk;
+    ask.body = zone.body;
+    ask.behind = zone.behind;
     let pressure = ballPressure(ask, config, this.pressureParts);
     // Doubles: two of a pair on top of the same ball get in each other's way.
     const crowd = this.crowding(player);
@@ -982,6 +1067,9 @@ export class Match {
       pressure = Math.min(1, pressure + crowd * CROWD_PRESSURE);
       this.pressureParts.cramped += crowd * CROWD_PRESSURE;
     }
+    // With the hit zones on, a ball at the body can only be blocked: it goes back toward the middle, whatever was asked.
+    const zones = config.zones;
+    const asked = zones.on && zone.body > 0 ? { ...intent, aim: intent.aim * (1 - zones.blockAim * zone.body) } : intent;
 
     const context: ShotContext = {
       team: player.team,
@@ -997,7 +1085,7 @@ export class Match {
       backpedal: backpedalOf(retreat, ball.z, config),
     };
     // The shot that comes out: the timing and the pressure are already in it.
-    const shot = resolveShot(context, intent, config, quality);
+    const shot = resolveShot(context, asked, config, quality);
 
     // How wild it is. The ball itself (reached at full stretch, coming fast,
     // dug out from the floor), the risk the player chose by aiming close to
@@ -1016,9 +1104,13 @@ export class Match {
       pressure * shots.pressure.scatterAdd +
       Math.max(0, strain - rules.strain.from) * rules.strain.error * (1 - player.composure) +
       this.heat * rules.heatError;
+    // A block is hard to direct, and a late slap is wild.
+    if (zones.on) scale += zone.body * zones.blockScatter + zone.behind * zones.behindScatter;
     scale *= player.errorScale * (intent.scatter ?? 1);
     player.strain = player.strain * rules.strain.carry + pressure;
     player.pressure = pressure;
+    player.zone = zone.zone;
+    player.zoneAt = this.time;
     this.lastRisk = quality === 'late' ? 0 : shot.risk;
 
     const params = {
@@ -1077,6 +1169,9 @@ export class Match {
       speed,
       pressure,
       why: intent.why,
+      zone: zone.zone,
+      side: zone.side,
+      ahead: zone.ahead,
     });
     this.onBallStruck(player.team, -1, player, shot.kind, quality, pressure);
   }

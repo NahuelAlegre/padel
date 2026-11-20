@@ -269,14 +269,14 @@ function setCall(kind: CallKind, t: number, towardX: number, side: number): void
       break;
     case 'up':
       // The forearm curls up from low in front to the chest, twice.
-      freeHand(0.36, 0.92 + 0.34 * m.beat);
+      freeHand(0.36, 0.86 + 0.28 * m.beat);
       overlay.elbowX = -side;
       overlay.elbowY = -1;
       overlay.head = toward * 0.05;
       break;
     case 'back':
       // Down past its side, twice, from the height of the shoulder.
-      freeHand(0.4 - 0.06 * m.beat, 1.3 - 0.46 * m.beat);
+      freeHand(0.4 - 0.06 * m.beat, 1.18 - 0.36 * m.beat);
       overlay.elbowX = -side;
       overlay.elbowY = -1;
       overlay.head = toward * 0.05;

@@ -546,13 +546,13 @@ function callGesture(kind: CallKind, t: number, toward: number, behind: number, 
     }
     case 'up':
       // The hand low and out in front, the forearm curling up to the chest and down again.
-      out.free = [0.28 - 0.04 * m.beat, -0.26, -0.26 + 0.26 * m.beat];
+      out.free = [0.28 - 0.04 * m.beat, -0.3, -0.32 + 0.2 * m.beat];
       out.elbow = [0.6, 0, -1];
       out.turn = side * 0.25 * m.look;
       break;
     case 'back':
       // From in front at the height of the shoulder to down behind it.
-      out.free = [0.22 - 0.04 * m.beat, -0.3 + 0.5 * m.beat, -0.02 - 0.38 * m.beat];
+      out.free = [0.22 - 0.04 * m.beat, -0.3 + 0.5 * m.beat, -0.14 - 0.26 * m.beat];
       out.elbow = [0.5, 0.3, -1];
       out.turn = side * 0.25 * m.look;
       break;

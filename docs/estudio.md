@@ -17,8 +17,9 @@
 | IA | Bloqueo, Apurado, No llegó, Sorprendido, Tensión, Robo, Perdón |
 | Cuerpo | Split step, Festejo (y lamento), Manías |
 | Correr | Adelante, Atrás, Lateral |
+| Señas | ¡Mía!, ¡Tuya!, ¡Voy!, ¡Arriba!, ¡Atrás! (`?estudio=atras-juntos`) |
 
-Cada una se muestra de cada lado de la red (cerca y lejos), si la demo la tiene de los dos lados.
+Cada una se muestra de cada lado de la red (cerca y lejos), si la demo la tiene de los dos lados. Una seña se muestra desde un poco antes de que empiece hasta que termina, y su instante clave es 0,3 s después de empezar, cuando está entera.
 
 ## Los controles
 
@@ -37,7 +38,8 @@ Cada una se muestra de cada lado de la red (cerca y lejos), si la demo la tiene 
 - **Lo que la demo no tiene, se arma** («armada», dice arriba): un jugador movido a mano, cuadro a cuadro, sobre una cancha que espera un saque, y el mismo render lo dibuja. Pasa con:
   - **la estocada a la carrera**, porque la IA y el movimiento asistido frenan para pegar;
   - **las manías**, porque en la demo no las hace nadie;
-  - **el robo y el «perdón»**, cuando la demo no tuvo ninguno, porque son raros.
+  - **el robo y el «perdón»**, cuando la demo no tuvo ninguno, porque son raros;
+  - **las señas que la demo no tiene limpias**: «¡voy!» (cruzar por un globo es rarísimo) y casi siempre «¡arriba!» y «¡atrás!», que salen justo después del golpe de quien las hace. El estudio toma solo señas hechas con los brazos libres, para que se vean; armadas, se hacen parado, hacia donde espera el compañero.
 - **El personaje** cambia solo cómo se ve el jugador en pantalla: la jugada es la misma.
 - **Las cámaras.** «Zoom» es la cámara del juego llevada a 6,5 m del jugador. «Costado» está 7 m a su izquierda, a la altura del hombro. La cancha son las fotos horneadas apoyadas sobre sus planos, así que se sostiene desde ahí, un poco estirada. El vidrio de fondo propio no se dibuja en estas cámaras, porque quedaría en el medio.
 - **No toca la simulación ni la IA.** Lo único nuevo afuera del estudio son ganchos:
@@ -55,6 +57,8 @@ Cada una se muestra de cada lado de la red (cerca y lejos), si la demo la tiene 
 ## Para revisar desde la compu
 
 `npm run build` y después `node scripts/studio.mjs`: capturas del estudio a la densidad de un celular (360 × 800, DPR 3), con la lista de situaciones y cada situación en su instante clave. Opciones: `--situaciones bloqueo,estocada`, `--camara juego|zoom|costado`, `--lejos` y `--2d`.
+
+Para ver un movimiento y no una pose, `node scripts/strip.mjs`: varios cuadros de una situación uno al lado del otro, recortados alrededor del jugador, en una sola imagen por situación, cámara y lado. Opciones: `--situaciones mia,tuya`, `--camaras juego,zoom`, `--lados cerca,lejos`, `--cuadros -0.3,-0.15,0,0.15,0.3,0.45` (segundos desde el instante clave) y `--2d`.
 
 ## Lo que no hace
 

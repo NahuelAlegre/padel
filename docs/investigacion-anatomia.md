@@ -621,7 +621,7 @@ La medida de `npm run sim`, 1 contra 1 con el alcance actual (mediana / p90):
 - **Simulación (paso 3), lo que hace la sesión `zonas-golpe`.** En el 10 % de los golpes la pala queda a más de 11–15 cm de la pelota; en el 1 %, a más de 25 cm, y esas no se llevan a la pala.
 - **Tobillos.** Con el pie apoyado plano y la cadera baja, el tobillo pasa su flexión dorsal (13 % del estudio, 42 % cerca del golpe). Falta levantar el talón.
 - **Hombros en los gestos**, que suben de 50 % a 55 % de los cuadros.
-  - Algunos avisos llevan la mano adonde el hombro no llega («¡atrás!», por encima del hombro).
-  - Probablemente suma que la IK nueva gira el brazo por el camino más corto, sin la pista de «codo abajo y afuera» que tenía la de antes.
+  - Los avisos a la pareja ya no (2026-11-20): llevan la mano desde el hombro, nunca más lejos de lo que llega el brazo, y eligen hacia dónde apunta el codo girando el brazo alrededor de la línea hombro–mano (`swivelLimb` en `reach.ts`). El «¡atrás!» ya no pasa por encima del hombro, y la excepción del hombro libre bajó de 80° a 75°.
+  - Quedan los demás gestos (sorpresa, «perdón», manías, el gesto delator): la IK gira el brazo por el camino más corto, sin la pista de «codo abajo y afuera» que tenía la de antes. `swivelLimb` es esa pista.
 - **La estirada.** La cadera va tras la pelota y abre las piernas más que el clip (hasta +26°).
 - **La prueba todavía no verifica dos cosas de la sección 6:** la piel, que espera el paso 5, y que la pala quede a menos de 15 cm en el p90, que espera el paso 3.

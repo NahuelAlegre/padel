@@ -4,12 +4,14 @@ import { createScene, fillScene, type SceneOptions } from '../src/app/scene';
 import { CAST } from '../src/characters/cast';
 import { createConfig } from '../src/config';
 import { InputState } from '../src/input/state';
-import type { ScenePlayer, SceneWhy } from '../src/render/scene';
+import { CALL_SHOWS, type ScenePlayer, type SceneWhy } from '../src/render/scene';
 import { figureScale } from '../src/render/stage/camera';
 import { contactOf, FigureAnimator, holdOf, strideOf, strokeClipName, strokeTime } from '../src/render/toon/animator';
-import { parseCharacter, styleOf, type Character } from '../src/render/toon/character';
+import { boneToCharacter, parseCharacter, styleOf, type Character } from '../src/render/toon/character';
 import { Match } from '../src/sim/match';
+import type { CallKind } from '../src/sim/pair';
 import type { ShotKind } from '../src/sim/types';
+import { excess, measure, MEASURED } from './anatomy';
 import { aiEntry, humanEntry, SKILLS } from './helpers';
 
 function loadCharacter(): Character {
@@ -1198,5 +1200,167 @@ describe('en un partido de verdad', () => {
     // the body only goes so far.
     expect(median).toBeLessThan(0.3);
     expect(p90).toBeLessThan(1);
+  });
+});
+
+describe('las señas de dobles: dos que no se confunden, hechas por una persona', () => {
+  const k = 1.2;
+  const joint = (animator: FigureAnimator, name: string): number[] => {
+    const at = character.bone(name) * 3;
+    return [...animator.skeleton.pos.slice(at, at + 3)];
+  };
+  /**
+   * Somebody of the near pair (its back to the camera) telling its partner
+   * something from 0.3 s on, standing or running across, and every frame of
+   * it, from before it starts to after it ends (`said` is the time since it
+   * started). `toward` is where the partner is: 1 to its left (the side of
+   * its free hand), -1 to its right.
+   */
+  function sign(kind: CallKind | null, toward: 1 | -1, run = 0, see: (animator: FigureAnimator, said: number) => void = () => {}): FigureAnimator {
+    const animator = new FigureAnimator(character);
+    const from = 0.3;
+    for (let f = 0; f <= 1.6 * 60; f++) {
+      const t = f / 60;
+      const said = t - from;
+      // Seen from behind, the character's left is the court's -x.
+      const call = kind && said >= 0 && said < CALL_SHOWS ? { kind, t: said, towardX: -2.6 * toward, towardY: 0 } : null;
+      animator.update(player({ x: run * t, vx: run, stride: Math.abs(run) * t, call }), k, 1, noBall, f === 0 ? 0 : DT);
+      see(animator, said);
+    }
+    return animator;
+  }
+
+  it('«¡mía!»: la mano libre sube abierta por encima de la cabeza, con el codo doblado, y vuelve a bajar', () => {
+    let top = -Infinity;
+    let bentAtTop = 0;
+    let last: number[] = [];
+    sign('mine', 1, 0, (animator, said) => {
+      if (said < 0 || said > 1) return;
+      const hand = joint(animator, 'hand.L');
+      const head = joint(animator, 'head');
+      if (hand[2]! - head[2]! > top) {
+        top = hand[2]! - head[2]!;
+        bentAtTop = measure(character, animator.skeleton.rot)['elbow.free.flex']!;
+      }
+      last = hand;
+    });
+    // Over the head, and the arm bent: not a stick.
+    expect(top).toBeGreaterThan(0.25);
+    expect(bentAtTop).toBeGreaterThan(30);
+    expect(bentAtTop).toBeLessThan(120);
+    // And back down: nothing is held.
+    const shoulder = joint(sign(null, 1), 'upper_arm.L');
+    expect(last[2]!).toBeLessThan(shoulder[2]!);
+  });
+
+  it('«¡tuya!»: la cabeza y el tronco van hacia el compañero, y el brazo de ese lado sale bajo y al costado, con el codo doblado', () => {
+    for (const toward of [1, -1] as const) {
+      // Toward its left the free hand shows the way; toward its right, the hand with the racket.
+      const arm = toward > 0 ? 'L' : 'R';
+      let out = 0;
+      let bent = 180;
+      let low = Infinity;
+      let turned = 0;
+      let looked = 0;
+      sign('yours', toward, 0, (animator, said) => {
+        if (said < 0.25 || said > 0.5) return;
+        const hand = joint(animator, `hand.${arm}`);
+        const shoulder = joint(animator, `upper_arm.${arm}`);
+        out = Math.max(out, toward * (hand[0]! - shoulder[0]!));
+        low = Math.min(low, shoulder[2]! + 0.12 - hand[2]!);
+        const m = measure(character, animator.skeleton.rot);
+        bent = Math.min(bent, m[`elbow.${arm === 'L' ? 'free' : 'racket'}.flex`]!);
+        turned = Math.max(turned, toward * m['trunk.twist']!);
+        // Where the head looks: its own forward (-y), turned as the head is (rotations by rows).
+        const h = character.bone('head') * 9;
+        looked = Math.max(looked, toward * -animator.skeleton.rot[h + 1]!);
+      });
+      expect(out, `hacia ${toward}`).toBeGreaterThan(0.3);
+      expect(low, `hacia ${toward}`).toBeGreaterThan(0);
+      expect(bent, `hacia ${toward}`).toBeGreaterThan(12);
+      expect(turned, `hacia ${toward}`).toBeGreaterThan(toward > 0 ? 10 : 5);
+      expect(looked, `hacia ${toward}`).toBeGreaterThan(0.6);
+    }
+  });
+
+  it('«¡tuya!» con la pala la apunta hacia el compañero a la altura del hombro, nunca baja al costado como un armado; y la mano libre la suelta y cuelga', () => {
+    const resting = joint(sign(null, -1), 'hand.L');
+    let outward = 0;
+    let level = Infinity;
+    let hangs = -Infinity;
+    sign('yours', -1, 0, (animator, said) => {
+      if (said < 0.25 || said > 0.5) return;
+      const hand = joint(animator, 'hand.R');
+      const shoulder = joint(animator, 'upper_arm.R');
+      const racket = boneToCharacter(animator.skeleton, character.bone('racket'), character.meta.racketCenter, [0, 0, 0]);
+      // Out to its right (-x), beyond the hand: it goes on from the arm.
+      outward = Math.max(outward, hand[0]! - racket[0]);
+      level = Math.min(level, 0.2 - Math.abs(racket[2] - shoulder[2]!));
+      hangs = Math.max(hangs, joint(animator, 'hand.L')[2]!);
+    });
+    expect(outward).toBeGreaterThan(0.2);
+    // At the height of the shoulder, within 20 cm, the whole time it is out.
+    expect(level).toBeGreaterThan(0);
+    // The free hand, which held the racket by its throat in front of the chest, is down at its side.
+    expect(hangs).toBeLessThan(resting[2]! - 0.15);
+  });
+
+  it('no se confunden: la mano de «¡mía!» arriba y pegada a la cabeza; la de «¡tuya!» abajo del hombro y lejos del cuerpo', () => {
+    const peak = (kind: CallKind): [number, number] => {
+      let at: [number, number] = [0, 0];
+      sign(kind, 1, 0, (animator, said) => {
+        if (Math.abs(said - 0.32) > 0.5 / 60) return;
+        const hand = joint(animator, 'hand.L');
+        at = [hand[0]! - joint(animator, 'head')[0]!, hand[2]! - joint(animator, 'upper_arm.L')[2]!];
+      });
+      return at;
+    };
+    const [mineOut, mineUp] = peak('mine');
+    const [yoursOut, yoursUp] = peak('yours');
+    expect(mineUp).toBeGreaterThan(0.3);
+    expect(yoursUp).toBeLessThan(0);
+    expect(yoursOut).toBeGreaterThan(mineOut + 0.25);
+  });
+
+  it('ninguna seña rompe un cuerpo: lo que pasa de un límite duro es de la carrera o del clip, nunca de la seña', () => {
+    const worst = (kind: CallKind | null, toward: 1 | -1, run: number): Record<string, number> => {
+      const out: Record<string, number> = {};
+      sign(kind, toward, run, (animator) => {
+        const m = measure(character, animator.skeleton.rot);
+        for (const key of MEASURED) out[key] = Math.max(out[key] ?? 0, excess(key, m[key]!, m, 'hard'));
+      });
+      return out;
+    };
+    const problems: string[] = [];
+    for (const run of [0, 3.5, -3.5]) {
+      for (const toward of [1, -1] as const) {
+        const plain = worst(null, toward, run);
+        for (const kind of ['mine', 'yours', 'switch', 'up', 'back'] as const) {
+          const signed = worst(kind, toward, run);
+          for (const key of MEASURED) {
+            if (signed[key]! > plain[key]! + 1) problems.push(`${kind} (corriendo a ${run}, compañero a ${toward}): ${key} +${(signed[key]! - plain[key]!).toFixed(0)}°`);
+          }
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('dicha sobre su propio golpe, espera a que termine; camino a su pelota, le deja el brazo al armado', () => {
+    const rest = joint(sign(null, 1), 'hand.L');
+    const rises = (anim: ScenePlayer['anim'], animPhase: number): number => {
+      const animator = new FigureAnimator(character);
+      let most = 0;
+      for (let f = 0; f <= 40; f++) {
+        const call = { kind: 'mine' as const, t: f / 60, towardX: -2.6, towardY: 0 };
+        animator.update(player({ anim, animPhase, contactIn: anim === 'idle' ? Infinity : 0.4, call }), k, 1, noBall, f === 0 ? 0 : DT);
+        most = Math.max(most, joint(animator, 'hand.L')[2]! - rest[2]!);
+      }
+      return most;
+    };
+    expect(rises('idle', 0)).toBeGreaterThan(0.4);
+    // Armed for its own ball, or in the middle of a swing: the arms are the stroke's.
+    expect(rises('swing', -1)).toBeLessThan(0.15);
+    expect(rises('swing', 0.4)).toBeLessThan(0.15);
   });
 });

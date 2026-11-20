@@ -119,7 +119,7 @@ function press<T>(buttons: Map<T, HTMLButtonElement>, value: T): void {
 }
 
 const SPEED_LABEL: Record<Speed, string> = { 1: '1×', 0.5: '½×', 0.25: '¼×' };
-const GROUPS: Group[] = ['Golpes', 'IA', 'Cuerpo', 'Correr'];
+const GROUPS: Group[] = ['Golpes', 'IA', 'Cuerpo', 'Correr', 'Señas'];
 
 export class StudioUI {
   private readonly root = el('div', 'studio');

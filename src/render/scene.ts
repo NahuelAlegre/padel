@@ -155,9 +155,17 @@ export interface SceneCall {
   kind: CallKind;
   /** Seconds since it said it. */
   t: number;
-  /** Where its partner is, in metres across the court from it. */
+  /** Where its partner is, in metres across the court from it and along it. */
   towardX: number;
+  towardY: number;
 }
+
+/**
+ * Seconds a call to the partner is on offer to the body, from when it is said.
+ * What the body does for it is shorter, and starts when the body is free to
+ * (see the animator): one made over its own stroke waits for the stroke.
+ */
+export const CALL_SHOWS = 1.3;
 
 /** What the windup of a player gives away, before it swings. */
 export interface SceneTell {

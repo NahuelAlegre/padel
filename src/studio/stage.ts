@@ -1,5 +1,7 @@
 import type { MannerismClip } from '../characters/types';
-import type { Scene, ScenePlayer } from '../render/scene';
+import { CALL_SHOWS, type Scene, type ScenePlayer } from '../render/scene';
+import type { CallKind } from '../sim/pair';
+import { SIGN_PEAK } from './situations';
 
 /**
  * What the demo never shows, staged: one player moved by hand, frame by
@@ -160,6 +162,45 @@ export function stagedSteal(base: Scene, index: number, well: boolean): Staged {
       if (from < when && t >= when) react(index, well);
     },
     note: (t) => (t < SWING.contact + SWING.sorry ? 'golpe común' : well ? 'salió bien' : '«perdón» al compañero'),
+  };
+}
+
+/** A call staged: from this many seconds into the loop, which lasts this long. */
+const CALL = { from: 0.4, length: 1.9 };
+const CALL_NOTE: Record<CallKind, string> = {
+  mine: '«¡mía!»: va a pegarla',
+  yours: '«¡tuya!»: se la deja al compañero',
+  switch: '«¡voy!»: cruza por un globo',
+  up: '«¡arriba!»: a la red, juntos',
+  back: '«¡atrás!»: atrás, juntos',
+};
+
+/**
+ * A call to the partner, for when the demo has none of that kind: it is
+ * shown standing, where it waits for a serve, toward where its partner waits.
+ */
+export function stagedCall(base: Scene, index: number, kind: CallKind): Staged {
+  const who = base.players[index]!;
+  const mate = base.players.find((other, i) => i !== index && other.team === who.team);
+  const x0 = who.x;
+  const y0 = who.y;
+  const toward = (mate ? mate.x : x0 > 0 ? x0 - 4 : x0 + 4) - x0;
+  const along = (mate ? mate.y : y0) - y0;
+  return {
+    length: CALL.length,
+    key: CALL.from + SIGN_PEAK,
+    at(scene, t) {
+      clear(scene);
+      scene.ball.visible = false;
+      scene.ball.live = false;
+      const me = scene.players[index]!;
+      still(me);
+      me.x = x0;
+      me.y = y0;
+      const since = t - CALL.from;
+      me.call = since >= 0 && since < CALL_SHOWS ? { kind, t: since, towardX: toward, towardY: along } : null;
+    },
+    note: () => CALL_NOTE[kind],
   };
 }
 

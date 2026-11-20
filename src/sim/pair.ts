@@ -60,8 +60,26 @@ export const MIDDLE_BAND = 0.9;
  */
 export const BODY_REACH = 1.3;
 export const BODY_MARGIN = 0.9;
-/** A ball this close to the middle of the pair is worth a word: whose it is. */
+/**
+ * A ball this close to the middle of the pair is talked about: whose it is.
+ * Always said; shown with the body only when whose it is does not show by
+ * itself (see `PairState.unclear`).
+ */
 export const CALL_BAND = 1.7;
+/**
+ * A ball plainly goes to one of a pair when it comes closer to that one than
+ * to the other by more than this share of the distance between them (see
+ * `closestPass`): for two at the back, 4.6 m apart, more than 1.15 m closer.
+ * Short of that it goes between them.
+ */
+export const PLAIN = 0.25;
+/**
+ * A ball between the two of a pair is a toss-up when both get to it with at
+ * least this many seconds to spare and neither more comfortably than the
+ * other by more than `MIDDLE_MARGIN`: the edge that hands the middle to the
+ * one better placed for it.
+ */
+export const TOSS_UP = 0.2;
 /** The other one covers a ball its partner cannot get to only with at least this much time to spare. */
 export const COVER_SLACK = 0.15;
 /**
@@ -189,6 +207,20 @@ export interface PairState {
   why: OwnerReason;
   /** How far from the middle of the pair the ball goes, across the court (metres, world x). */
   offMiddle: number;
+  /**
+   * Whose the ball is does not show by itself, and is worth showing with the
+   * body. Who looks at a ball sees where it goes: one that plainly goes to
+   * one of the pair is that one's (see `PLAIN`). Between the two of them,
+   * somebody who plays padel knows the rule: each its own side, and the middle
+   * for the forehand. So it is shown when:
+   *   - it plainly goes to one of them and the other one plays it;
+   *   - it goes between them and is a toss-up (see `TOSS_UP`);
+   *   - next to a person, it goes between them and the partner does not do
+   *     what the rule says: it leaves the middle, or takes the person's.
+   * Two computer players understand each other, and talk with the body only
+   * over the first two: what a pair on a court would sort out out loud.
+   */
+  unclear: boolean;
   /** The partner has taken its second look at this ball (see `secondLook`). */
   switchChecked: boolean;
   /** The ball the two of a pair of computer players doubted over, or -1. */
@@ -202,7 +234,7 @@ export interface PairState {
 }
 
 export function createPairState(): PairState {
-  return { home: 'back', backSince: -1, trajId: -1, why: 'alone', offMiddle: 0, switchChecked: false, doubted: -1, leader: -1 };
+  return { home: 'back', backSince: -1, trajId: -1, why: 'alone', offMiddle: 0, unclear: false, switchChecked: false, doubted: -1, leader: -1 };
 }
 
 const depthOf = (player: Player): number => Math.abs(player.y);
@@ -256,17 +288,25 @@ export function chooseOwner(
   const passA = closestPass(trajectory, a, now, highest);
   const passB = closestPass(trajectory, b, now, highest);
 
+  // The rule: through the middle, the forehand (both or neither: whoever is closer to the net, which is the
+  // attacking one); otherwise, the one on that side.
+  let ruled: Player;
+  if (Math.abs(off) <= MIDDLE_BAND) {
+    const fa = forehandToMiddle(a, middle);
+    const fb = forehandToMiddle(b, middle);
+    ruled = fa !== fb ? (fa ? a : b) : depthOf(a) <= depthOf(b) ? a : b;
+  } else {
+    ruled = Math.sign(off) === Math.sign(a.x - middle) ? a : b;
+  }
+
   let owner: Player;
   if (Math.min(passA, passB) <= BODY_REACH && Math.abs(passA - passB) >= BODY_MARGIN) {
     // It comes at one of them: that one's, whatever the side or the middle say.
     owner = passA < passB ? a : b;
     state.why = 'body';
   } else if (Math.abs(off) <= MIDDLE_BAND) {
-    // Through the middle: the forehand. Both or neither: whoever is closer to the net, which is the attacking one.
-    const fa = forehandToMiddle(a, middle);
-    const fb = forehandToMiddle(b, middle);
-    if (fa !== fb) owner = fa ? a : b;
-    else owner = depthOf(a) <= depthOf(b) ? a : b;
+    // Through the middle: the forehand, by the rule.
+    owner = ruled;
     // Their attitudes may say otherwise: the keen one goes for it, the passive one leaves it. Next to a
     // person only leaving counts: the computer player's keenness is for its own calls (see `Attitude`).
     const keen = (player: Player): number => {
@@ -279,9 +319,17 @@ export function chooseOwner(
     if (spare(1 - i) > spare(i) + MIDDLE_MARGIN) owner = members[1 - i]!;
     state.why = 'middle';
   } else {
-    owner = Math.sign(off) === Math.sign(a.x - middle) ? a : b;
+    owner = ruled;
     state.why = 'side';
   }
+  // Whether whose it is shows by itself (see `PairState.unclear`).
+  const plainly = plainlyTo(passA, passB, Math.hypot(a.x - b.x, a.y - b.y));
+  const tossUp = Math.min(spare(0), spare(1)) >= TOSS_UP && Math.abs(spare(0) - spare(1)) <= MIDDLE_MARGIN;
+  const person = a.isHuman || b.isHuman;
+  const settle = (who: Player): Player => {
+    state.unclear = plainly >= 0 ? members[plainly] !== who : tossUp || (person && who !== ruled);
+    return who;
+  };
 
   const i = owner === a ? 0 : 1;
   const other = members[1 - i]!;
@@ -289,7 +337,7 @@ export function chooseOwner(
   if (spare(i) < 0 && spare(1 - i) >= COVER_SLACK) {
     // It cannot get there; the other one can, and goes.
     state.why = 'cover';
-    return other;
+    return settle(other);
   }
   // A lob over the head of an owner at the net, to be played after it bounces behind it: the
   // partner may cross for it. With a person as the owner that waits until the person has had
@@ -297,9 +345,19 @@ export function chooseOwner(
   if (!owner.manual && isLobOver(owner, mine) && spare(1 - i) >= COVER_SLACK && spare(1 - i) >= spare(i) + SWITCH_MARGIN) {
     state.why = 'switch';
     state.switchChecked = true;
-    return other;
+    return settle(other);
   }
-  return owner;
+  return settle(owner);
+}
+
+/**
+ * Which of a pair a ball plainly goes to (0 or 1), from how close it comes
+ * to each and how far apart they stand; -1 when it goes about as close to
+ * both (see `PLAIN`).
+ */
+export function plainlyTo(passA: number, passB: number, apart: number): -1 | 0 | 1 {
+  if (!(Math.abs(passA - passB) > PLAIN * apart)) return -1;
+  return passA < passB ? 0 : 1;
 }
 
 /**

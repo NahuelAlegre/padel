@@ -1,6 +1,7 @@
 import type { CallKind } from '../../sim/pair';
 import type { MannerismClip, TellPose } from '../../characters/types';
 import { clamp, lerp, smoothstep } from '../../core/math';
+import { callMotion, type CallMotion } from '../calls';
 import type { ScenePlayer } from '../scene';
 
 type Ctx = CanvasRenderingContext2D;
@@ -126,6 +127,13 @@ const overlay = {
   crouch: 0,
   /** Head off to one side. */
   head: 0,
+  /**
+   * The free arm bends at the elbow, which points this way on the screen
+   * (x across, y up), instead of being drawn as one piece.
+   */
+  elbow: false,
+  elbowX: 0,
+  elbowY: 0,
 };
 
 const TELL_RACKET: Record<'plantWide' | 'crouchOpenFace' | 'stepIn', Pose> = {
@@ -161,6 +169,7 @@ function resetOverlay(): void {
   overlay.stance = 0;
   overlay.crouch = 0;
   overlay.head = 0;
+  overlay.elbow = false;
 }
 
 function freeHand(x: number, y: number, across = false): void {
@@ -196,26 +205,82 @@ function setTell(pose: TellPose, kind: 'drive' | 'lob' | 'drop', aimX: number, t
   }
 }
 
-/** Doubles: what a player tells its partner, with the free arm (see the 3D one in the animator). */
-function setCall(kind: CallKind, t: number, towardX: number): void {
-  overlay.weight = tellWeight(t);
-  const beat = Math.sin(t * 14);
-  const side = clamp(towardX / 2.4, -1, 1);
+const motion: CallMotion = { arm: 0, beat: 0, away: 0, look: 0, room: 0 };
+
+/**
+ * For each player, the call it is telling, how far into it the last frame
+ * was and how far into it it started to show (-1: not yet): the movement is
+ * timed from there, so a call made over its own stroke waits for the stroke.
+ */
+const calls = new Map<number, { kind: CallKind; t: number; from: number }>();
+
+/** How far into its movement the call of `player` is, or -1 when it is not to be shown now. */
+function callTime(player: ScenePlayer): number {
+  const call = player.call;
+  if (!call) {
+    calls.delete(player.id);
+    return -1;
+  }
+  let seen = calls.get(player.id);
+  if (!seen || seen.kind !== call.kind || call.t < seen.t) {
+    seen = { kind: call.kind, t: call.t, from: -1 };
+    calls.set(player.id, seen);
+  }
+  seen.t = call.t;
+  // Never while its own stroke has the arms: from the windup to the end of the swing.
+  if (player.anim !== 'idle' && player.animPhase < 1) return -1;
+  if (seen.from < 0) seen.from = call.t;
+  return call.t - seen.from;
+}
+
+/**
+ * Doubles: what a player tells its partner, `t` seconds after it starts to
+ * show it, moving as the 3D one does (see `callMotion`), with the elbow bent:
+ * «¡mía!» the free hand up by the head; «¡tuya!» the arm out level toward
+ * the partner, below the shoulder, and the head toward it (with the partner
+ * on the side of the racket, the racket). `towardX` is where the partner is
+ * across the screen; `side` is the side of the racket.
+ */
+function setCall(kind: CallKind, t: number, towardX: number, side: number): void {
+  const m = callMotion(kind, t, 1, motion);
+  const toward = towardX >= 0 ? 1 : -1;
+  overlay.weight = m.arm;
+  overlay.elbow = true;
   switch (kind) {
     case 'mine':
-      freeHand(0.12, 2.05 + beat * 0.03);
+    case 'switch':
+      // Up next to the head, the elbow out to the side, and out first on the way down.
+      freeHand(0.16 + 0.24 * m.away, 1.98 + 0.05 * m.beat);
+      overlay.elbowX = -side;
+      overlay.elbowY = -0.3;
+      overlay.head = kind === 'switch' ? toward * 0.05 * m.look : 0;
       break;
     case 'yours':
-      freeHand(side * 0.62, 1.32, true);
-      break;
-    case 'switch':
-      freeHand(side * (0.4 + 0.1 * (beat + 1)), 1.55, true);
+      if (toward === side) {
+        // On the side of the racket: the racket shows the way, out level at the height of the shoulder, never low at
+        // its side or up behind it, which is a stroke being armed. The free hand hangs at its side.
+        overlay.racket = { hx: 0.52 + 0.04 * m.beat, hy: 1.36, rx: 0.97 + 0.04 * m.beat, ry: 1.4 };
+        overlay.elbow = false;
+      } else {
+        freeHand(toward * (0.6 + 0.05 * m.beat), 1.22, true);
+        overlay.elbowX = 0;
+        overlay.elbowY = -1;
+      }
+      overlay.head = toward * 0.06;
       break;
     case 'up':
-      freeHand(0.14, 1.5 + beat * 0.12);
+      // The forearm curls up from low in front to the chest, twice.
+      freeHand(0.36, 0.86 + 0.28 * m.beat);
+      overlay.elbowX = -side;
+      overlay.elbowY = -1;
+      overlay.head = toward * 0.05;
       break;
     case 'back':
-      freeHand(0.3, 1.78);
+      // Down past its side, twice, from the height of the shoulder.
+      freeHand(0.4 - 0.06 * m.beat, 1.18 - 0.36 * m.beat);
+      overlay.elbowX = -side;
+      overlay.elbowY = -1;
+      overlay.head = toward * 0.05;
       break;
   }
 }
@@ -269,7 +334,7 @@ function setAct(clip: MannerismClip, t: number, duration: number): void {
 }
 
 /** Limbs are capsules: [x0, y0, x1, y1, width] in screen pixels. Two for each leg, the torso and the arms. */
-const LIMBS = 7;
+const LIMBS = 8;
 const limbs = new Float32Array(LIMBS * 5);
 
 function setLimb(index: number, x0: number, y0: number, x1: number, y1: number, width: number): void {
@@ -284,6 +349,7 @@ function setLimb(index: number, x0: number, y0: number, x1: number, y1: number, 
 function strokeLimbs(ctx: Ctx, extra: number): void {
   for (let i = 0; i < LIMBS; i++) {
     const o = i * 5;
+    if (limbs[o + 4]! <= 0) continue;
     ctx.lineWidth = limbs[o + 4]! + extra;
     ctx.beginPath();
     ctx.moveTo(limbs[o]!, limbs[o + 1]!);
@@ -324,6 +390,30 @@ function stepWeight(eta: number): number {
 }
 
 const knee = { x: 0, y: 0 };
+const elbow = { x: 0, y: 0 };
+/** Upper arm and forearm of the plain figure, in metres, when its arm is drawn bent. */
+const UPPER_ARM = 0.33;
+const FOREARM = 0.33;
+
+/** Where the elbow of the free arm is, from the shoulder to the hand, bent toward (outX, outY) on the screen. */
+function bendElbow(sx: number, sy: number, hx: number, hy: number, outX: number, outY: number): void {
+  const dx = hx - sx;
+  const dy = hy - sy;
+  const d = Math.max(1e-4, Math.hypot(dx, dy));
+  const reach = Math.min(d, UPPER_ARM + FOREARM - 1e-3);
+  const along = (UPPER_ARM * UPPER_ARM - FOREARM * FOREARM + reach * reach) / (2 * reach);
+  const off = Math.sqrt(Math.max(0, UPPER_ARM * UPPER_ARM - along * along));
+  const ux = dx / d;
+  const uy = dy / d;
+  let px = -uy;
+  let py = ux;
+  if (px * outX + py * outY < 0) {
+    px = -px;
+    py = -py;
+  }
+  elbow.x = sx + ux * along + px * off;
+  elbow.y = sy + uy * along + py * off;
+}
 
 /** Where the knee of a leg is, between the hip and the foot, bent out to the side `out` says (-1 left, 1 right). */
 function bendKnee(hx: number, hy: number, fx: number, fy: number, out: number): void {
@@ -404,10 +494,11 @@ export function drawFigure(
   const tell = player.tell;
   const act = player.act;
   const call = player.call;
+  const said = callTime(player);
   if (tell?.pose && player.anim === 'swing' && player.animPhase <= 0) setTell(tell.pose, tell.kind, tell.aimX, tell.t);
   else if (player.why === 'block' && player.anim === 'swing' && Math.abs(player.contactIn) < 0.35) setBlock(player.contactIn);
   else if (player.surprise > 0.05) setSurprise(player.surprise);
-  else if (call && !(player.contactIn < 0.3 && player.contactIn > -0.2)) setCall(call.kind, call.t, call.towardX);
+  else if (call && said >= 0) setCall(call.kind, said, call.towardX, side);
   else if (act && resting) setAct(act.clip, act.t, act.duration);
   // A swing at the air: a moment later, «no» with the head.
   if (player.anim === 'whiff' && player.contactIn < -MISS_AFTER && player.contactIn > -MISS_AFTER - MISS_FOR) {
@@ -505,7 +596,19 @@ export function drawFigure(
     freeX = lerp(freeX, targetX, w);
     freeY = lerp(freeY, overlay.freeY - drop, w);
   }
-  setLimb(5, X(lean - side * 0.17), Y(shoulderY - 0.04), X(freeX), Y(freeY), 0.09 * scale);
+  const shoulderX = lean - side * 0.17;
+  const shoulderFreeY = shoulderY - 0.04;
+  if (overlay.elbow && w > 0) {
+    // In two, bent at the elbow, which goes from the middle of the arm to where it points as the gesture comes in.
+    bendElbow(shoulderX, shoulderFreeY, freeX, freeY, overlay.elbowX, overlay.elbowY);
+    const ex = lerp((shoulderX + freeX) / 2, elbow.x, Math.min(1, w));
+    const ey = lerp((shoulderFreeY + freeY) / 2, elbow.y, Math.min(1, w));
+    setLimb(5, X(shoulderX), Y(shoulderFreeY), X(ex), Y(ey), 0.09 * scale);
+    setLimb(7, X(ex), Y(ey), X(freeX), Y(freeY), 0.085 * scale);
+  } else {
+    setLimb(5, X(shoulderX), Y(shoulderFreeY), X(freeX), Y(freeY), 0.09 * scale);
+    setLimb(7, 0, 0, 0, 0, 0);
+  }
   setLimb(6, X(lean + side * 0.17), Y(shoulderY - 0.04), X(handX), Y(handY), 0.09 * scale);
 
   const headRadius = 0.135 * scale;

@@ -1,6 +1,7 @@
 import type { CallKind } from '../../sim/pair';
 import type { MannerismClip, TellCue, TellPose } from '../../characters/types';
 import { clamp, smoothstep } from '../../core/math';
+import { callMotion, type CallMotion } from '../calls';
 import type { ScenePlayer } from '../scene';
 import type { RacketFace } from '../stage/contact';
 import {
@@ -19,7 +20,7 @@ import {
   type Skeleton,
   type Style,
 } from './character';
-import { armOf, elbowOf, keepElbow, keepWrist, legOf, reachLimb, worldRotations, wristOf, type Elbow, type Limb, type Wrist } from './reach';
+import { armOf, elbowOf, keepElbow, keepWrist, legOf, reachLimb, swivelLimb, worldRotations, wristOf, type Elbow, type Limb, type Wrist } from './reach';
 
 /**
  * Turns what the simulation says about a player into the pose of its body.
@@ -152,8 +153,6 @@ const STEP_BACK = 0.4;
  * elbow folds the wrong way.
  */
 const LET_GO = 0.1;
-/** A call to the partner gives the arm back this long before the player's own contact, in seconds. */
-const CALL_CLEAR = 0.3;
 /** Seconds a gesture of a character takes to show, and to go away. */
 const GESTURE_IN = 0.14;
 const GESTURE_OUT = 0.12;
@@ -398,21 +397,55 @@ interface Gesture {
   /** Where the free hand goes, and the hand with the racket. */
   free: [number, number, number] | null;
   racket: [number, number, number] | null;
+  /**
+   * Those places are measured from the shoulder of each arm, not from the
+   * feet: the same gesture fits a body that stands, crouches or runs.
+   */
+  fromShoulder: boolean;
+  /** How much of the way there the hands go, 0..1 (a little over, for the snap of one): a gesture that moves eases them in and out. */
+  reach: number;
+  /**
+   * Where the elbow of each arm points while it gestures, or null: where the
+   * clip has it. Out to its own side is +x for either arm (the racket arm's
+   * is mirrored), -y in front, z up.
+   */
+  elbow: [number, number, number] | null;
+  racketElbow: [number, number, number] | null;
+  /**
+   * How much the racket points, 0..1: the hand turns for it to go on from the
+   * forearm, as far as a wrist bends, and the arm takes the middle of it out
+   * along `pointing` from the shoulder. Somebody shows the way with a racket
+   * so, instead of holding it up to swing.
+   */
+  point: number;
+  pointing: [number, number, number];
+  /** How much the free hand opens out straight on its wrist, 0..1: a hand that is shown, not one that holds. */
+  open: number;
   /** How far the hips drop, and how much further apart each foot is planted. */
   crouch: number;
   stance: number;
   /** The head tips to one side, in radians. */
   tip: number;
-  /** A step toward the net, in metres. */
+  /** A step toward the net, and one to its left, in metres: the feet take it. */
   step: number;
+  aside: number;
   /** The trunk leans forward (backward, if less than 0), in radians. */
   lean: number;
+  /** The trunk turns toward its left (its right, if less than 0) from the hips, in radians. */
+  turn: number;
   /** The hips sit back over the heels, in metres. */
   back: number;
+  /**
+   * The head looks at its partner instead of the ball, this much (0..1). The
+   * partner is `gazeX` metres to its left and `gazeY` behind it, on the court.
+   */
+  gaze: number;
+  gazeX: number;
+  gazeY: number;
 }
 
 function noGesture(): Gesture {
-  return { free: null, racket: null, crouch: 0, stance: 0, tip: 0, step: 0, lean: 0, back: 0 };
+  return { free: null, racket: null, fromShoulder: false, reach: 1, elbow: null, racketElbow: null, point: 0, pointing: [-1, 0, 0], open: 0, crouch: 0, stance: 0, tip: 0, step: 0, aside: 0, lean: 0, turn: 0, back: 0, gaze: 0, gazeX: 0, gazeY: 0 };
 }
 
 /**
@@ -482,35 +515,70 @@ function tellGesture(pose: TellPose, kind: TellCue, across: number, out: Gesture
   }
 }
 
+const motion: CallMotion = { arm: 0, beat: 0, away: 0, look: 0, room: 0 };
+
 /**
- * Doubles: what a player tells its partner, with the free arm, `t` seconds
- * after it said it. `toward` is where the partner is, in metres to the
- * character's left. Every character does it the same way, so it is learnt once.
+ * Doubles: what a player tells its partner with its body, `t` seconds after
+ * it starts to show it (how it moves in time: see `callMotion`). `toward` and
+ * `behind` are where the partner is, in metres to the character's left and
+ * behind it, and `still` (0..1) how much the player is standing. Every
+ * character does it the same way, so it is learnt once. The hands go where
+ * they go from the shoulder, never further than an arm reaches, and the elbow
+ * points where a person's would: out to the side for a hand raised over the
+ * head, down for one held out. Seen from behind or from the front a bend
+ * toward the camera hides; one to the side shows.
  */
-function callGesture(kind: CallKind, t: number, toward: number, out: Gesture): void {
-  const beat = Math.sin(t * 14);
-  const side = clamp(toward / 2.4, -1, 1);
+function callGesture(kind: CallKind, t: number, toward: number, behind: number, still: number, out: Gesture): void {
+  const side = toward >= 0 ? 1 : -1;
+  const m = callMotion(kind, t, still, motion);
+  out.fromShoulder = true;
+  out.reach = m.arm;
+  out.open = Math.min(1, m.arm);
+  out.gaze = m.look;
+  out.gazeX = toward;
+  out.gazeY = behind;
   switch (kind) {
     case 'mine':
-      // The free hand straight up: this one is mine.
-      out.free = [0.16, -0.12, 2.12 + beat * 0.03];
-      break;
-    case 'yours':
-      // The free hand points at the partner, and the head goes with it: yours.
-      out.free = [side * 0.55, -0.32, 1.32];
-      out.tip = side * 0.18;
-      break;
     case 'switch':
-      // The arm sweeps across, to where the partner has to go: I go, you cross.
-      out.free = [side * (0.35 + 0.1 * (beat + 1)), -0.15, 1.55];
+      // Up from the shoulder, next to the head and a little in front of it, with a push up at the top.
+      out.free = [0.07 + 0.22 * m.away, -0.1, 0.38 + 0.04 * m.beat];
+      out.elbow = [1, -0.35, 0];
       break;
+    case 'yours': {
+      if (side > 0) {
+        // Toward its left, the side of the free hand: out level toward the partner, below the shoulder.
+        out.free = [0.42 + 0.04 * m.beat, -0.18, -0.14];
+        out.elbow = [0.15, 0.35, -1];
+        out.turn = 0.36 * m.look;
+      } else {
+        // Toward its right, the side of the racket: the racket points the way, at the height of the shoulder and
+        // going on from the forearm, never held up behind it or low at its side, which is a stroke being armed.
+        // The trunk turns less than toward the free side: a turn toward the racket is the turn of a forehand. The
+        // free hand, which held the racket by its throat, lets go and hangs at its side.
+        out.racket = [-(0.46 + 0.04 * m.beat), 0, -0.06];
+        out.racketElbow = [0, 0.4, -1];
+        out.point = Math.min(1, m.arm);
+        out.pointing = [-1, 0.04 * m.beat, -0.02];
+        out.free = [0.1, 0.04, -0.46];
+        out.elbow = [0.2, 1, -0.2];
+        out.turn = -0.18 * m.look;
+      }
+      // Half a step back, and away from the partner: the way to the ball is the partner's.
+      out.step = -0.1 * m.room;
+      out.aside = -side * 0.12 * m.room;
+      break;
+    }
     case 'up':
-      // Beckoning forward: up to the net, together.
-      out.free = [0.18, -0.5, 1.5 + beat * 0.12];
+      // The hand low and out in front, the forearm curling up to the chest and down again.
+      out.free = [0.28 - 0.04 * m.beat, -0.3, -0.32 + 0.2 * m.beat];
+      out.elbow = [0.6, 0, -1];
+      out.turn = side * 0.25 * m.look;
       break;
     case 'back':
-      // Pointing back over the shoulder: back, together.
-      out.free = [0.22, 0.32, 1.8];
+      // From in front at the height of the shoulder to down behind it.
+      out.free = [0.22 - 0.04 * m.beat, -0.3 + 0.5 * m.beat, -0.14 - 0.26 * m.beat];
+      out.elbow = [0.5, 0.3, -1];
+      out.turn = side * 0.25 * m.look;
       break;
   }
 }
@@ -727,6 +795,16 @@ export class FigureAnimator implements AnimatedFigure {
   private gesture = noGesture();
   private gestureWeight = 0;
   private gestureRacket = 0;
+  /** The gesture on show moves by itself, from nothing: it needs no fading in. */
+  private gestureMoves = false;
+  /**
+   * The call to the partner it is telling, how far into it the last frame was,
+   * and how far into it it started to show (-1: not yet). Its movement is
+   * timed from there: a call made over its own stroke waits for the stroke.
+   */
+  private callKind: CallKind | null = null;
+  private callT = 0;
+  private callFrom = -1;
   /** What it does when a point ends, or its tic: a clip over whatever else, how far into it and how much of it shows. */
   private reaction: Clip | null = null;
   private reacting = false;
@@ -798,6 +876,7 @@ export class FigureAnimator implements AnimatedFigure {
     this.hopAt = -1;
     this.flash = null;
     this.sorryLeft = 0;
+    this.callKind = null;
   }
 
   /**
@@ -1115,8 +1194,11 @@ export class FigureAnimator implements AnimatedFigure {
     const windup = player.tell !== null;
     const showing = made && !(windup && player.contactIn < TELL_BODY_UNTIL);
     const holding = made && !(windup && player.contactIn < TELL_RACKET_UNTIL);
-    this.gestureWeight = snap ? (showing ? 1 : 0) : clamp(this.gestureWeight + dt / (showing ? GESTURE_IN : -GESTURE_OUT), 0, 1);
-    this.gestureRacket = snap ? (holding ? 1 : 0) : clamp(this.gestureRacket + dt / (holding ? GESTURE_IN : -GESTURE_OUT), 0, 1);
+    // One that moves by itself starts from nothing, so it is all there at once; any gesture goes away fading.
+    const at = (on: boolean, weight: number): number =>
+      snap || (on && this.gestureMoves) ? (on ? 1 : 0) : clamp(weight + dt / (on ? GESTURE_IN : -GESTURE_OUT), 0, 1);
+    this.gestureWeight = at(showing, this.gestureWeight);
+    this.gestureRacket = at(holding, this.gestureRacket);
     const gesture = smoothstep(0, 1, this.gestureWeight);
 
     // ------------------------------------------------------------ the body goes to the ball
@@ -1131,7 +1213,7 @@ export class FigureAnimator implements AnimatedFigure {
     const ease = snap ? 1 : 1 - Math.exp(-dt * (Math.abs(eta) < 0.06 ? 40 : 18));
     this.lungeX += (s * this.fit.slideX * k - this.lungeX) * ease;
     this.lungeY += (s * this.fit.slideY * k - this.lungeY) * ease;
-    this.x = player.x + this.lungeX;
+    this.x = player.x + this.lungeX + s * this.gesture.aside * gesture;
     this.y = player.y + this.lungeY + facing * this.gesture.step * gesture;
     const feet = this.feet;
     feet.moved[0] = snap ? 0 : this.x - player.x - feet.drawn[0]!;
@@ -1163,7 +1245,7 @@ export class FigureAnimator implements AnimatedFigure {
     if (gesture > 0.001) this.gesticulate(gesture, Math.min(gesture, smoothstep(0, 1, this.gestureRacket)));
     const lean = this.gesture.lean * gesture + TENSE.lean * tense;
     if (Math.abs(lean) > 1e-3) this.leanTrunk(lean);
-    this.look(pose, s, k, ball, dt, this.strokeWeight > 0.5 ? 0.4 : 0.8, snap);
+    this.look(pose, s, k, ball, dt, this.strokeWeight > 0.5 ? 0.4 : 0.8, snap, this.gesture.gaze * gesture);
     // And whatever the reach and the gestures did to them since; and a hand never flips over from one frame to
     // the next, which some clips have it do.
     for (const elbow of this.elbows) keepElbow(pose, elbow);
@@ -1695,6 +1777,16 @@ export class FigureAnimator implements AnimatedFigure {
    * its own is not a gesture: the clip does it.
    */
   private readGesture(player: ScenePlayer, s: number, clipped: boolean): boolean {
+    // A call to the partner is a new one when it changes or starts again.
+    const call = player.call;
+    if (!call) {
+      this.callKind = null;
+    } else if (call.kind !== this.callKind || call.t < this.callT) {
+      this.callKind = call.kind;
+      this.callFrom = -1;
+    }
+    this.callT = call ? call.t : 0;
+    this.gestureMoves = false;
     const tell = player.tell;
     if (tell && tell.pose) {
       this.gesture = noGesture();
@@ -1720,11 +1812,14 @@ export class FigureAnimator implements AnimatedFigure {
       surpriseGesture(this.gesture);
       return true;
     }
-    const call = player.call;
-    // What it tells its partner, as long as its own stroke is not about to need the arm.
-    if (call && !(player.contactIn < CALL_CLEAR && player.contactIn > -0.2)) {
+    // What it tells its partner, never while its own stroke has the arms: from the windup to the end of the swing.
+    // Told over a stroke, it is shown once the stroke is done; told on the way to its own ball, it gives way to it.
+    if (call && !(player.anim !== 'idle' && player.animPhase < 1)) {
+      if (this.callFrom < 0) this.callFrom = call.t;
       this.gesture = noGesture();
-      callGesture(call.kind, call.t, s * call.towardX, this.gesture);
+      const still = 1 - smoothstep(0.5, 1.5, Math.hypot(player.vx, player.vy));
+      callGesture(call.kind, call.t - this.callFrom, s * call.towardX, s * call.towardY, still, this.gesture);
+      this.gestureMoves = true;
       return true;
     }
     const act = player.act;
@@ -1743,6 +1838,16 @@ export class FigureAnimator implements AnimatedFigure {
    * be the one of the pose; it is solved again.
    */
   private leanTrunk(angle: number): void {
+    this.bendTrunk(0, angle);
+  }
+
+  /**
+   * Turns the trunk from the hips by `angle` radians round one of the
+   * character's own axes: 0, its left-to-right one (leaning), or 2, the
+   * vertical one (turning toward its left). The skeleton has to be the one of
+   * the pose; it is solved again.
+   */
+  private bendTrunk(axis: 0 | 2, angle: number): void {
     const spine = this.spineBone;
     const hips = this.character.meta.bones.parents[spine] ?? -1;
     if (spine < 0 || hips < 0) return;
@@ -1751,9 +1856,9 @@ export class FigureAnimator implements AnimatedFigure {
     // new = hips⁻¹ · turn · hips · old.
     const half = angle / 2;
     const q = this.q;
-    q[0] = Math.sin(half);
+    q[0] = axis === 0 ? Math.sin(half) : 0;
     q[1] = 0;
-    q[2] = 0;
+    q[2] = axis === 2 ? Math.sin(half) : 0;
     q[3] = Math.cos(half);
     const h = hips * 4;
     const inverse = this.turn;
@@ -1781,6 +1886,8 @@ export class FigureAnimator implements AnimatedFigure {
     const pos = skeleton.pos;
     const g = this.gesture;
 
+    // The trunk turns first: the arms reach from where it has put the shoulders.
+    if (Math.abs(g.turn * weight) > 1e-3) this.bendTrunk(2, g.turn * weight);
     if (g.free || g.racket) {
       worldRotations(character, pose, this.world);
       for (let i = 0; i < 2; i++) {
@@ -1788,19 +1895,30 @@ export class FigureAnimator implements AnimatedFigure {
         const target = i === 0 ? g.free : g.racket;
         if (!target || limb.upper < 0 || limb.lower < 0 || limb.end < 0) continue;
         const hand = limb.end * 3;
-        const w = i === 0 ? weight : racket;
-        if (w <= 0.001) continue;
-        // The elbow keeps pointing the way the clip has it: down and a little out for an arm at the side.
-        reachLimb(
-          character,
-          pose,
-          skeleton,
-          this.world,
-          limb,
-          pos[hand]! + (target[0] - pos[hand]!) * w,
-          pos[hand + 1]! + (target[1] - pos[hand + 1]!) * w,
-          pos[hand + 2]! + (target[2] - pos[hand + 2]!) * w,
-        );
+        const w = (i === 0 ? weight : racket) * g.reach;
+        if (Math.abs(w) <= 0.001) continue;
+        const from = limb.upper * 3;
+        const tx = target[0] + (g.fromShoulder ? pos[from]! : 0);
+        const ty = target[1] + (g.fromShoulder ? pos[from + 1]! : 0);
+        const tz = target[2] + (g.fromShoulder ? pos[from + 2]! : 0);
+        // The elbow keeps pointing the way the clip has it (down and a little out for an arm at the side), unless the
+        // gesture says where: then the arm turns about the line from the shoulder to the hand to put it there.
+        reachLimb(character, pose, skeleton, this.world, limb, pos[hand]! + (tx - pos[hand]!) * w, pos[hand + 1]! + (ty - pos[hand + 1]!) * w, pos[hand + 2]! + (tz - pos[hand + 2]!) * w);
+        const elbow = i === 0 ? g.elbow : g.racketElbow;
+        if (elbow) {
+          solveSkeleton(character, pose, skeleton, style);
+          const mirror = i === 0 ? 1 : -1;
+          swivelLimb(character, pose, skeleton, this.world, limb, elbow[0] * mirror, elbow[1], elbow[2], clamp(w, 0, 1));
+        }
+        if (i === 1 && g.point * racket > 1e-3) this.pointRacket(g.point * racket, g.pointing);
+        // A hand that is shown opens out straight on its wrist.
+        const open = i === 0 ? g.open * weight : 0;
+        if (open > 1e-3) {
+          const o = limb.end * 4;
+          const sign = pose[o + 3]! < 0 ? -1 : 1;
+          for (let c = 0; c < 3; c++) pose[o + c] = pose[o + c]! * (1 - open);
+          pose[o + 3] = pose[o + 3]! * (1 - open) + sign * open;
+        }
       }
     }
 
@@ -1814,6 +1932,74 @@ export class FigureAnimator implements AnimatedFigure {
       multiplyQuaternions(pose, this.neck * 4, this.q, 0, pose, this.neck * 4);
     }
     solveSkeleton(character, pose, skeleton, style);
+  }
+
+  /**
+   * Points with the racket, `amount` (0..1) of the way: the hand turns for the
+   * racket to go on from the forearm instead of crossing it, as far as the
+   * wrist goes (see `keepWrist`), and since a wrist never goes all the way,
+   * the arm makes up for the rest, as an arm does: it takes the middle of the
+   * racket out along `toward` from the shoulder. The skeleton has to be the
+   * one of the pose; it is solved again.
+   */
+  private pointRacket(amount: number, toward: readonly [number, number, number]): void {
+    const character = this.character;
+    const pose = this.pose;
+    const skeleton = this.skeleton;
+    const arm = this.arm;
+    if (this.racket < 0 || arm.lower < 0 || arm.end < 0) return;
+    solveSkeleton(character, pose, skeleton, this.style);
+    const pos = skeleton.pos;
+    const h = arm.end * 3;
+    const f = arm.lower * 3;
+    const center = boneToCharacter(skeleton, this.racket, character.meta.racketCenter, this.at);
+    // Where the racket goes from the hand, and where the forearm goes: the turn from one to the other.
+    let rx = center[0] - pos[h]!;
+    let ry = center[1] - pos[h + 1]!;
+    let rz = center[2] - pos[h + 2]!;
+    let fx = pos[h]! - pos[f]!;
+    let fy = pos[h + 1]! - pos[f + 1]!;
+    let fz = pos[h + 2]! - pos[f + 2]!;
+    const rl = Math.hypot(rx, ry, rz);
+    const fl = Math.hypot(fx, fy, fz);
+    if (rl < 1e-5 || fl < 1e-5) return;
+    rx /= rl;
+    ry /= rl;
+    rz /= rl;
+    fx /= fl;
+    fy /= fl;
+    fz /= fl;
+    const q = this.q;
+    const dot = rx * fx + ry * fy + rz * fz;
+    if (dot < -0.999 || dot > 0.99999) return;
+    q[0] = ry * fz - rz * fy;
+    q[1] = rz * fx - rx * fz;
+    q[2] = rx * fy - ry * fx;
+    q[3] = 1 + dot;
+    const n = Math.hypot(q[0]!, q[1]!, q[2]!, q[3]!) || 1;
+    for (let c = 0; c < 4; c++) q[c] = q[c]! / n;
+    // The hand turned so, in the axes of the forearm: forearm⁻¹ · turn · hand.
+    const world = worldRotations(character, pose, this.world);
+    const e = arm.end * 4;
+    const l = arm.lower * 4;
+    const turned = this.turn;
+    multiplyQuaternions(q, 0, world, e, turned, 0);
+    const forearm = [-world[l]!, -world[l + 1]!, -world[l + 2]!, world[l + 3]!];
+    multiplyQuaternions(forearm, 0, turned, 0, turned, 0);
+    const sign = pose[e]! * turned[0]! + pose[e + 1]! * turned[1]! + pose[e + 2]! * turned[2]! + pose[e + 3]! * turned[3]! < 0 ? -1 : 1;
+    for (let c = 0; c < 4; c++) pose[e + c] = pose[e + c]! * (1 - amount) + turned[c]! * sign * amount;
+    // As far as the wrist goes, and the arm takes the middle of the racket where it points, as far from the shoulder as it is.
+    keepWrist(pose, this.wrists[1]!);
+    solveSkeleton(character, pose, skeleton, this.style);
+    const s = arm.upper * 3;
+    const tip = boneToCharacter(skeleton, this.racket, character.meta.racketCenter, this.at);
+    const reach = Math.hypot(tip[0] - pos[s]!, tip[1] - pos[s + 1]!, tip[2] - pos[s + 2]!);
+    const along = Math.hypot(toward[0], toward[1], toward[2]) || 1;
+    const tx = tip[0] + (pos[s]! + (toward[0] / along) * reach - tip[0]) * amount;
+    const ty = tip[1] + (pos[s + 1]! + (toward[1] / along) * reach - tip[1]) * amount;
+    const tz = tip[2] + (pos[s + 2]! + (toward[2] / along) * reach - tip[2]) * amount;
+    reachLimb(character, pose, skeleton, worldRotations(character, pose, this.world), arm, tx, ty, tz, tip);
+    solveSkeleton(character, pose, skeleton, this.style);
   }
 
   /** Where the middle of the racket is, on the court, with the pose of the last update. */
@@ -1920,6 +2106,7 @@ export class FigureAnimator implements AnimatedFigure {
     dt: number,
     amount: number,
     snap: boolean,
+    gaze = 0,
   ): void {
     const { rot, pos } = this.skeleton;
     const head = this.head;
@@ -1942,12 +2129,24 @@ export class FigureAnimator implements AnimatedFigure {
     // A ball behind its back: it does not turn its head all the way round.
     if (Math.abs(yaw) > 1.9) yaw = 0;
     yaw = clamp(yaw, -1.1, 1.1);
-    const pitch = clamp(Math.asin(clamp(lz / length, -1, 1)), -0.35, 0.6);
+    let pitch = clamp(Math.asin(clamp(lz / length, -1, 1)), -0.35, 0.6);
+    if (gaze > 0) {
+      // Telling its partner something, it looks at the partner, at the height of its own eyes: over its shoulder as
+      // far as a neck turns, if the partner is behind it.
+      const g = this.gesture;
+      const px = g.gazeX / k - hx;
+      const py = g.gazeY / k - hy;
+      const gx = rot[o]! * px + rot[o + 3]! * py;
+      const gy = rot[o + 1]! * px + rot[o + 4]! * py;
+      const towardYaw = clamp(Math.atan2(gx, -gy), -1.1, 1.1);
+      yaw += (towardYaw - yaw) * gaze;
+      pitch -= pitch * gaze;
+    }
     const follow = snap ? 1 : 1 - Math.exp(-dt * 9);
     this.lookYaw += (yaw - this.lookYaw) * follow;
     this.lookPitch += (pitch - this.lookPitch) * follow;
     yawPitch(this.lookYaw * 0.85, -this.lookPitch * 0.8, q);
-    const w = amount * (ball.visible ? 1 : 0);
+    const w = amount * Math.max(ball.visible ? 1 : 0, gaze);
     const h = head * 4;
     const dot = pose[h]! * q[0]! + pose[h + 1]! * q[1]! + pose[h + 2]! * q[2]! + pose[h + 3]! * q[3]!;
     const sign = dot < 0 ? -1 : 1;

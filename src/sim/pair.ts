@@ -411,8 +411,8 @@ function isLobOver(player: Player, plan: InterceptPlan | null): boolean {
  *     back («¡atrás!», said by the match: this returns 'wait') and gives it
  *     until `PERSON_GOES` after the shot to show it is going. If it is not,
  *     the partner crosses after all, if it can get there at all: late, and
- *     from the other side of the court, so it gets there hurried. Nobody
- *     watches the lob bounce twice.
+ *     from the other side of the court (a high lob still leaves it time; a
+ *     low one, not). Nobody watches the lob bounce twice.
  *
  * `plans` are the contacts each of them could make from where they are now;
  * `elapsed` is how long ago the ball was struck, and `speed` and `reach` the

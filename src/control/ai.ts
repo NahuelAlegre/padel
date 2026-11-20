@@ -58,10 +58,11 @@ const PERSON_PAIRS_ONLY = true;
 const HOLE_DEPTH = 0.35;
 /**
  * Reading a habit: a person who stays at the net when a lob goes over it is
- * lobbed again. Every time it stays adds `HABIT_LOB` to how often a player who
- * reads the game (`smart`) lobs it, up to `HABIT_MOST`, and the lob goes over
- * that one; every time it goes back takes one away (docs/red.md). A lob is
- * "over" the one at the net nearest across the court to where it bounces.
+ * lobbed again, over its head, by anybody: it is there for all to see. Every
+ * time it stays adds `HABIT_LOB` to how often (up to `HABIT_MOST`), on top of
+ * the lobs each one plays anyway; every time it goes back takes one away
+ * (docs/red.md). A lob is "over" the one at the net nearest across the court
+ * to where it bounces.
  */
 const HABIT_LOB = 0.2;
 const HABIT_MOST = 0.6;
@@ -640,6 +641,12 @@ export class AIController implements Controller {
       return shot(away(), rivalAtNet ? rng.range(0.85, 1) : rng.range(FINISH_DEPTH[0], FINISH_DEPTH[1]), false);
     }
 
+    // Somebody who stays at the net under every lob is lobbed again, by anybody: it is there for all to see.
+    const camper = this.camperOf(opponents);
+    if (camper && !inTheAir && myNetDistance > NET_LINE && rng.chance(this.habit(camper))) {
+      return shot(clamp((camper.x / range) * 0.8 + rng.range(-0.2, 0.2), -1, 1), 1, true);
+    }
+
     if (rng.chance(1 - level.smart)) {
       // Not thinking: put it back somewhere in the middle.
       return shot(middle(), rng.range(0.45, 0.85), false);
@@ -648,8 +655,8 @@ export class AIController implements Controller {
     if (opponents.length === 2) return this.pairShot(match, plan, opponents, inTheAir, myNetDistance, range, shot, away);
 
     if (rivalAtNet && !inTheAir) {
-      // Somebody at the net: over their head, or at their feet. More over somebody who does not go back.
-      if (rng.chance(0.3 + level.lobChance + this.habit(opponents[0]!))) return shot(away(), 1, true);
+      // Somebody at the net: over their head, or at their feet.
+      if (rng.chance(0.3 + level.lobChance)) return shot(away(), 1, true);
       if (rng.chance(level.dropChance * 2.5)) return shot(away(), 0.1, false);
     }
     // Somebody far back: the short ball makes them run in. From the net it is the obvious one.
@@ -708,7 +715,7 @@ export class AIController implements Controller {
         if (!inTheAir && myNetDistance > NET_LINE && rng.chance(0.5)) return shot(aimAt(front.x), 1, true);
         return shot(between, HOLE_DEPTH, false);
       }
-      if (!inTheAir && myNetDistance > NET_LINE && rng.chance(SPLIT_LOB + this.habit(front))) return shot(aimAt(front.x), 1, true);
+      if (!inTheAir && myNetDistance > NET_LINE && rng.chance(SPLIT_LOB)) return shot(aimAt(front.x), 1, true);
       if (myNetDistance < NET_LINE && rng.chance(SPLIT_FEET)) return shot(aimAt(front.x), 0.1, false);
       const [aim, depth] = this.holeOf(match, plan, front, back);
       return shot(aim, depth, false);
@@ -716,10 +723,8 @@ export class AIController implements Controller {
     // Where the pair is not: between the two when they stand well apart, the open side when they do not.
     const hole = away();
     if (atNet(a) && atNet(b) && !inTheAir && myNetDistance > NET_LINE) {
-      // Both at the net: over them, at their feet, or low through the hole. Over the one who does not go back, more.
-      const camper = this.habit(a) >= this.habit(b) ? a : b;
-      const habit = this.habit(camper);
-      if (rng.chance(0.3 + level.lobChance + habit)) return shot(clamp((habit > 0 ? aimAt(camper.x) * 0.8 : between) + rng.range(-0.35, 0.35), -1, 1), 1, true);
+      // Both at the net: over them, at their feet, or low through the hole.
+      if (rng.chance(0.3 + level.lobChance)) return shot(clamp(between + rng.range(-0.35, 0.35), -1, 1), 1, true);
       if (rng.chance(level.dropChance * 2.5)) return shot(between, 0.1, false);
       return shot(hole, rng.range(0.3, 0.5), false, level.power * 0.9);
     }
@@ -756,10 +761,20 @@ export class AIController implements Controller {
     return best;
   }
 
-  /** How much more it lobs `player` for staying at the net under its lobs (see `HABIT_LOB`): 0 for anybody else. */
+  /** How often it lobs `player` for staying at the net under its lobs (see `HABIT_LOB`): 0 for anybody else. */
   private habit(player: Player): number {
     const stayed = this.stayed.get(player.id) ?? 0;
-    return stayed > 0 ? Math.min(HABIT_MOST, HABIT_LOB * stayed) * this.level.smart : 0;
+    return stayed > 0 ? Math.min(HABIT_MOST, HABIT_LOB * stayed) : 0;
+  }
+
+  /** The person of the other side at the net that has most stayed there under its lobs, or null. */
+  private camperOf(opponents: readonly Player[]): Player | null {
+    let best: Player | null = null;
+    for (const player of opponents) {
+      if (Math.abs(player.y) >= NET_LINE || this.habit(player) <= 0) continue;
+      if (!best || this.habit(player) > this.habit(best)) best = player;
+    }
+    return best;
   }
 
   /**

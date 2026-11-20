@@ -386,6 +386,64 @@ export interface RulesConfig {
   };
 }
 
+/**
+ * Hit zones (experimental, docs/zonas.md): where the ball is met around the
+ * body, in the player's own axes, decides how much of the shot it asked for
+ * comes out. Off, nothing of this happens and the game plays as it always
+ * did. See src/sim/zones.ts.
+ *
+ *   body    the ball comes at the chest: closer than `bodyFree` to the
+ *           body's forward line (all of it at `bodyFull`), up to `bodyAhead`
+ *           in front of it (none from `bodyAheadFree`), and below `bodyTop`
+ *           (none from the overhead height). It can only be blocked.
+ *   behind  the ball is past the line of the body: from `behindFrom` behind
+ *           it (`behindFromHigh` over the head, where the back arches), all
+ *           of it at `behindFull`. Further than `behindOut` it is not
+ *           reached at all: the golden rule (docs/dobles.md, section 4).
+ */
+export interface ZonesConfig {
+  on: boolean;
+  /** The body faces the net and turns toward the ball that is coming, by this much at most, in degrees. */
+  turn: number;
+  bodyFull: number;
+  bodyFree: number;
+  bodyAhead: number;
+  bodyAheadFree: number;
+  bodyTop: number;
+  behindFrom: number;
+  behindFromHigh: number;
+  behindFull: number;
+  behindOut: number;
+  /** How much each part adds to the pressure of the ball (see `ballPressure`). */
+  weights: { body: number; behind: number };
+  /** A block goes to the middle: its aim is cut by `blockAim` × how much at the body it was... */
+  blockAim: number;
+  /** ...and it is hard to direct: this much more scatter. */
+  blockScatter: number;
+  /** A late slap is wild: this much more scatter, times how far behind. */
+  behindScatter: number;
+  /**
+   * What a contact fully at the body, or fully past the line of it, costs
+   * when a contact is chosen (for whoever stands still, and for where to
+   * run to), against the comfort of the ball itself (see src/sim/intercept.ts).
+   */
+  dodge: number;
+  /**
+   * A computer player's feet end up this far from its spot, in metres per
+   * second of the spread of its timing for that ball (see src/control/ai.ts),
+   * and never further than `placeMost`: as steady as its hands, and as
+   * shaken by a demanding ball.
+   */
+  place: number;
+  placeMost: number;
+  /**
+   * How often a computer player plays the ball at the body of whoever is at
+   * the net, when it can, times its `aggression`: the aggressive often, the
+   * quiet hardly ever (see src/control/ai.ts).
+   */
+  bodyShot: number;
+}
+
 /** How a computer player plays. Nothing here lets it break the rules a person plays by. */
 export interface AILevel {
   /** Delay before it starts moving to a new ball. */
@@ -455,6 +513,7 @@ export interface GameConfig {
   timing: TimingConfig;
   shots: ShotsConfig;
   rules: RulesConfig;
+  zones: ZonesConfig;
   rivals: Record<RivalId, AILevel>;
 }
 
@@ -646,6 +705,29 @@ const defaults: GameConfig = {
     heatMax: 0.6,
     heatError: 1.5,
     strain: { carry: 0.5, from: 0.6, error: 2 },
+  },
+  zones: {
+    on: false,
+    turn: 15,
+    // At the body: closer than 30 cm or so to the body's own line, and right in front of it up to arm's length.
+    bodyFull: 0.15,
+    bodyFree: 0.45,
+    bodyAhead: 1,
+    bodyAheadFree: 1.6,
+    bodyTop: 1.6,
+    // Past the body: a ball a little behind the line is still met; 90 cm behind it, not any more.
+    behindFrom: 0.2,
+    behindFromHigh: 0.3,
+    behindFull: 0.9,
+    behindOut: 0.9,
+    weights: { body: 1, behind: 0.6 },
+    blockAim: 0.8,
+    blockScatter: 2,
+    behindScatter: 1,
+    dodge: 0.7,
+    place: 5.5,
+    placeMost: 0.6,
+    bodyShot: 0.5,
   },
   // How each character plays, worked out from its style (see src/characters).
   rivals: {

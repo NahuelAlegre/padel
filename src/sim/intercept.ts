@@ -3,6 +3,7 @@ import { teamDir } from './court';
 import { clampToHalf, lowestContact, lungeReach, playerReach, playerSpeed, travelTime, type Player } from './player';
 import { isPastPlayer } from './shots';
 import type { TrajPoint, Trajectory } from './trajectory';
+import { createZoneReading, outOfZone, readZone, zoneFacing, type Facing } from './zones';
 
 /** Where and when a player intends to meet the ball. */
 export interface InterceptPlan {
@@ -31,25 +32,47 @@ export interface InterceptPlan {
 
 const stance = { x: 0, y: 0, gap: 0 };
 const clamped = { x: 0, y: 0 };
+const facing: Facing = { x: 0, y: 0 };
+const zone = createZoneReading();
 
 /**
  * Best place to stand to hit the ball at `point`: the ball a comfortable
  * distance to one side and slightly in front. The side is the one that needs
  * less running, with a small preference for the forehand, and it flips by
  * itself when a wall leaves no room.
+ *
+ * With the hit zones on, "to one side and in front" is in the axes of the
+ * body that meets the ball, turned toward where it comes from (see
+ * src/sim/zones.ts), and a place a wall pushes toward the ball, so that it
+ * comes at the body, costs what a block costs.
  */
 function stanceFor(point: TrajPoint, player: Player, config: GameConfig): void {
   const pc = config.player;
   const dir = teamDir(player.team);
+  const zones = config.zones.on;
+  // Forward, and across (world +x for a body facing the net).
+  if (zones) zoneFacing(player.team, point.vx, point.vy, config, facing);
+  const fx = zones ? facing.x : 0;
+  const fy = zones ? facing.y : dir;
+  const lx = fy * dir;
+  const ly = -fx * dir;
   const bodyY = point.y - dir * pc.contactAhead;
   const forehand = player.hand * dir;
   let bestCost = Infinity;
   for (let side = -1; side <= 1; side += 2) {
-    clampToHalf(player.team, point.x - side * pc.sweetSpot, bodyY, config, clamped);
+    if (zones) {
+      clampToHalf(player.team, point.x - fx * pc.contactAhead - side * lx * pc.sweetSpot, point.y - fy * pc.contactAhead - side * ly * pc.sweetSpot, config, clamped);
+    } else {
+      clampToHalf(player.team, point.x - side * pc.sweetSpot, bodyY, config, clamped);
+    }
     const gap = Math.hypot(point.x - clamped.x, point.y - clamped.y);
     let cost = Math.hypot(clamped.x - player.x, clamped.y - player.y);
     if (side !== forehand) cost += 0.3;
     cost += Math.abs(gap - pc.sweetSpot) * 2;
+    if (zones) {
+      readZone(player.team, clamped.x, clamped.y, point.x, point.y, point.z, point.vx, point.vy, Infinity, config, zone);
+      cost += (zone.body + zone.behind) * config.zones.dodge;
+    }
     if (cost < bestCost) {
       bestCost = cost;
       stance.x = clamped.x;
@@ -116,6 +139,17 @@ function contactCost(
   // Waiting gives the opponent time to recover.
   cost += (point.t - now) * 0.25;
   return cost;
+}
+
+/**
+ * Where to stand to meet the ball at `point`, into `out`: the same place a
+ * plan would take the player to (see `stanceFor`). For a player that knows
+ * it is going to meet the ball later than planned, and sets up for that ball.
+ */
+export function stanceAt(point: TrajPoint, player: Player, config: GameConfig, out: { x: number; y: number }): void {
+  stanceFor(point, player, config);
+  out.x = stance.x;
+  out.y = stance.y;
 }
 
 function kindOf(point: TrajPoint): InterceptPlan['kind'] {
@@ -269,6 +303,7 @@ export function contactNear(
   const frontY = player.y + dir * pc.contactAhead;
   const retreating = -player.vy * dir > pc.holdNetMaxRetreat;
   const holdNet = Math.abs(player.y) <= pc.holdNetDistance ? 1 : 0;
+  const zones = config.zones.on;
 
   let best: TrajPoint | null = null;
   let bestScore = Infinity;
@@ -284,12 +319,22 @@ export function contactNear(
     const standing = real ? playerReach(player, config, point.z) : reach;
     if (gap > standing + lunge) continue;
     if (gap > standing && point.z < lowestContact(config, true)) continue;
-    // Distance to the nearer of the two comfortable spots, one on each side of the body.
-    let score = Math.hypot(Math.abs(dx) - pc.sweetSpot, point.y - frontY) * PLACEMENT_WEIGHT;
+    const past = isPastPlayer(player.team, player.y, point.y, point.bounces, config);
+    let score: number;
+    if (zones) {
+      // With the hit zones on, the comfortable spot is in the axes of the body, and a ball at the
+      // body or past it costs what it does to the shot. One that has gone too far past is not reached.
+      readZone(player.team, player.x, player.y, point.x, point.y, point.z, point.vx, point.vy, standing + lunge, config, zone, past);
+      if (outOfZone(zone, config)) continue;
+      score = Math.hypot(zone.side - pc.sweetSpot, zone.ahead - pc.contactAhead) * PLACEMENT_WEIGHT + (zone.body + zone.behind) * config.zones.dodge;
+    } else {
+      // Distance to the nearer of the two comfortable spots, one on each side of the body.
+      score = Math.hypot(Math.abs(dx) - pc.sweetSpot, point.y - frontY) * PLACEMENT_WEIGHT;
+    }
     if (gap > standing) score += (gap - standing) * LUNGE_WEIGHT;
     // Nobody has to run, so there is no hurry to count: only the ball itself.
     score += contactCost(point, player.y, 1, now, config, holdNet);
-    if (isPastPlayer(player.team, player.y, point.y, point.bounces, config)) {
+    if (past) {
       if (!allowPast) continue;
       score += LAST_RESORT;
     }

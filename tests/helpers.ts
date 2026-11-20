@@ -9,7 +9,7 @@ import type { InterceptPlan } from '../src/sim/intercept';
 // Doubles: a person who plays positionally stands where the game's own pairs stand (see src/sim/pair.ts).
 import { LANE, LANE_NET, MIDDLE_BAND, SLIDE, SLIDE_MAX, type Attitude } from '../src/sim/pair';
 import { Match, type Controller, type PlayerEntry, type SimEvent } from '../src/sim/match';
-import type { Player } from '../src/sim/player';
+import { playerReach, type Player } from '../src/sim/player';
 import type { Trajectory } from '../src/sim/trajectory';
 import type { PlayerIntent } from '../src/sim/types';
 
@@ -104,7 +104,31 @@ export interface ScriptedSkill {
    * At 0 it hits any shot anywhere and waits at the back.
    */
   tactics: number;
+  /**
+   * Where it goes to meet a ball (docs/zonas.md):
+   *   stance  to the side of it and behind where it is met, where a ball is
+   *           comfortable to hit: the advice on where to stand
+   *   anywhere  anywhere within a stride of where the ball is met: getting
+   *           to it is enough, so the ball comes where it comes (at the
+   *           body, past it, to the side)
+   *   reach   only as far as it takes to get to it, and no further
+   *   ball    to the ball itself: somebody who runs at it
+   * Left out, 'stance'. Only 'stance' uses `position`.
+   */
+  placement?: 'stance' | 'anywhere' | 'reach' | 'ball';
+  /**
+   * Metres from where it is going at which it starts easing the stick off,
+   * to stop right there (within 5 cm), the way a person feathers a stick.
+   * Left out, it pushes the stick all the way until it is within 30 cm, and
+   * stops wherever that leaves it.
+   */
+  settle?: number;
 }
+
+/** A person who does not set up for the ball (`placement: 'reach'`) stops once it is this much of its reach from it. */
+const LAZY_REACH = 0.8;
+/** A person for whom getting to the ball is enough (`placement: 'anywhere'`) stands anywhere this close to it, in metres. */
+const STRIDE = 0.9;
 
 export const SKILLS = {
   beginner: { timing: 0.16, position: 0.7, reaction: 0.35, aimSmart: 0.4, armEarly: 0.6, tactics: 0 },
@@ -240,6 +264,13 @@ export class ScriptedHuman implements Controller {
       this.trajectory = match.trajectory;
       this.offsetX = rng.gauss() * this.skill.position;
       this.offsetY = rng.gauss() * this.skill.position;
+      if (this.skill.placement === 'anywhere') {
+        // Not where the ball is comfortable to hit: anywhere within a stride of it.
+        const angle = rng.range(0, Math.PI * 2);
+        const radius = Math.sqrt(rng.next()) * STRIDE;
+        this.offsetX = Math.cos(angle) * radius;
+        this.offsetY = Math.sin(angle) * radius;
+      }
       this.thumbOffset = null;
       this.released = false;
       this.mine = null;
@@ -265,8 +296,22 @@ export class ScriptedHuman implements Controller {
       } else {
         if (partner && this.mine === null) this.mine = this.isMine(me, partner, guide);
         if (guide && (!partner || this.mine)) {
-          targetX = guide.stanceX + this.offsetX;
-          targetY = guide.stanceY + this.offsetY;
+          const placement = this.skill.placement ?? 'stance';
+          const atBall = placement !== 'stance';
+          targetX = (atBall ? guide.x : guide.stanceX) + this.offsetX;
+          targetY = (atBall ? guide.y : guide.stanceY) + this.offsetY;
+          if (placement === 'reach') {
+            // Only as far as it takes to get to the ball: once it is within reach, it stays where it is.
+            const near = playerReach(me, match.config) * LAZY_REACH;
+            const away = Math.hypot(targetX - me.x, targetY - me.y);
+            if (away <= near) {
+              targetX = me.x;
+              targetY = me.y;
+            } else {
+              targetX = me.x + ((targetX - me.x) * (away - near)) / away;
+              targetY = me.y + ((targetY - me.y) * (away - near)) / away;
+            }
+          }
         } else if (!partner) {
           moving = false;
         }
@@ -277,7 +322,12 @@ export class ScriptedHuman implements Controller {
     const distance = Math.hypot(dx, dy);
     // The stick is in screen space: up the screen is toward the net for team 0.
     const flip = me.team === 0 ? 1 : -1;
-    if (moving && distance > 0.3) this.input.setMove('stick', (dx / distance) * flip, (dy / distance) * flip);
+    const settle = this.skill.settle;
+    if (settle !== undefined) {
+      // Easing off on the way in: full stick far away, less and less over the last `settle` metres.
+      const push = moving && distance > 0.05 ? Math.min(1, distance / settle) : 0;
+      this.input.setMove('stick', (dx / Math.max(distance, 1e-6)) * flip * push, (dy / Math.max(distance, 1e-6)) * flip * push);
+    } else if (moving && distance > 0.3) this.input.setMove('stick', (dx / distance) * flip, (dy / distance) * flip);
     else this.input.setMove('stick', 0, 0);
 
     // In doubles a ball that is the partner's is left to the partner, even if it goes by within reach.
@@ -542,5 +592,6 @@ export function testConfig(): GameConfig {
   const config = createConfig();
   const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env;
   if (env?.SIM_REACH === 'real') config.player.realReach = true;
+  if (env?.SIM_ZONES === 'on') config.zones.on = true;
   return config;
 }

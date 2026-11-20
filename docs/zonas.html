@@ -1,0 +1,411 @@
+<title>Zonas de golpe</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+  /* Layout: one column like a coach's notebook page, the court diagram first; numbers in tables and small charts. */
+  :root {
+    --bg: #edf2f8;
+    --surface: #ffffff;
+    --ink: #13203a;
+    --muted: #56637d;
+    --rule: #c9d3e2;
+    --court: #2f62b7;
+    --court-line: #f4f7fb;
+    --ideal: #23935f;
+    --body: #e2752b;
+    --behind: #c7364c;
+    --far: #7b5bc6;
+    --ball: #c8d93a;
+    --accent: #2f62b7;
+    --display: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+    --text: "Barlow", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1422;
+      --surface: #141e31;
+      --ink: #e6ecf6;
+      --muted: #9aa8c3;
+      --rule: #2a3853;
+      --court: #2b5aa8;
+      --court-line: #eef3fa;
+      --ideal: #3cc285;
+      --body: #f08c45;
+      --behind: #ec5a6f;
+      --far: #a58af0;
+      --ball: #d6e64e;
+      --accent: #7fa8ee;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1422;
+    --surface: #141e31;
+    --ink: #e6ecf6;
+    --muted: #9aa8c3;
+    --rule: #2a3853;
+    --court: #2b5aa8;
+    --court-line: #eef3fa;
+    --ideal: #3cc285;
+    --body: #f08c45;
+    --behind: #ec5a6f;
+    --far: #a58af0;
+    --ball: #d6e64e;
+    --accent: #7fa8ee;
+    color-scheme: dark;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 400 16px/1.55 var(--text);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 28px 56px;
+  }
+  main { max-width: 860px; margin: 0 auto; display: grid; gap: 40px; }
+  h1, h2, h3 { font-family: var(--display); font-weight: 700; line-height: 1.05; text-wrap: balance; margin: 0; letter-spacing: 0.01em; }
+  h1 { font-size: clamp(40px, 8vw, 64px); }
+  h2 { font-size: clamp(26px, 4.6vw, 34px); }
+  h3 { font-size: 20px; font-weight: 600; }
+  p { margin: 0; max-width: 65ch; }
+  .lede { font-size: 19px; max-width: 60ch; }
+  .eyebrow { font-family: var(--display); font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; font-size: 14px; color: var(--muted); }
+  header { display: grid; gap: 14px; }
+  .try { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--muted); font-size: 15px; }
+  code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.9em; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 1px 6px; color: var(--ink); }
+  section { display: grid; gap: 16px; }
+  figure { margin: 0; display: grid; gap: 10px; }
+  figcaption { color: var(--muted); font-size: 15px; max-width: 65ch; }
+  .plate { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 18px; overflow-x: auto; }
+  svg { display: block; max-width: 100%; height: auto; }
+  svg.zones { min-width: 470px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 18px; font-size: 15px; }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .key { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+  .key.ideal { background: var(--ideal); }
+  .key.body { background: var(--body); }
+  .key.behind { background: var(--behind); }
+  .key.far { background: var(--far); }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-family: var(--display); font-weight: 600; font-size: 15px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+  td.num, th.num { text-align: right; padding-right: 0; padding-left: 12px; white-space: nowrap; }
+  .zone-name { font-weight: 600; white-space: nowrap; }
+  .zone-name::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; background: var(--zc); }
+  .z-ideal { --zc: var(--ideal); }
+  .z-body { --zc: var(--body); }
+  .z-behind { --zc: var(--behind); }
+  .z-far { --zc: var(--far); }
+  .z-plain { --zc: var(--rule); }
+  .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  .split > * { min-width: 0; }
+  .shot { border-radius: 12px; border: 1px solid var(--rule); width: 100%; height: auto; }
+  .note { font-size: 15px; color: var(--muted); }
+  ol.decisions { margin: 0; padding-left: 22px; display: grid; gap: 12px; max-width: 70ch; }
+  ol.decisions b { font-weight: 600; }
+  .chart-text { fill: currentColor; font-family: var(--text); font-size: 13px; }
+  .chart-muted { fill: var(--muted); }
+  @media (max-width: 640px) {
+    .split { grid-template-columns: minmax(0, 1fr); }
+    .lede { font-size: 17px; }
+  }
+</style>
+
+<main>
+  <header>
+    <div class="eyebrow">Pádel · prototipo experimental</div>
+    <h1>Zonas de golpe</h1>
+    <p class="lede">Importa dónde te queda la pelota alrededor del cuerpo. Al costado sale como la pediste. Al cuerpo solo la podés bloquear, y sale blanda al medio. Si ya te pasó, sale un manotazo flojo, o no llegás. A la computadora le pasa lo mismo.</p>
+    <div class="try">Para probarlo: <code>?zonas</code> <code>?zonas&amp;dobles&amp;alcance=real</code> u Opciones → Experimental → Zonas de golpe. Apagadas, el juego es el de siempre.</div>
+  </header>
+
+  <section aria-labelledby="where">
+    <h2 id="where">Dónde está la pelota</h2>
+    <p>Se mide en los ejes del jugador, en el instante en que la pala la encuentra. Mira a la red y gira hasta 15° hacia la pelota que viene. Cada zona es gradual: una pelota un poco cerca está un poco apretada, nunca es un error seguro.</p>
+    <figure>
+      <div class="plate">
+        <svg class="zones" viewBox="0 0 560 430" role="img" aria-label="Vista desde arriba de un jugador diestro mirando a la red. Al costado y un poco adelante, a 62 centímetros, está la zona ideal. En la franja de 30 centímetros a cada lado de la línea del cuerpo, hasta el largo del brazo adelante, la pelota está al cuerpo. Detrás de la línea del cuerpo, desde 20 centímetros, la pelota está atrás, y a más de 90 centímetros ya no se llega. Pasado el alcance cómodo, la estirada.">
+          <defs>
+            <clipPath id="frontHalf"><rect x="60" y="20" width="440" height="262"></rect></clipPath>
+            <linearGradient id="behindFade" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-opacity="0.12" style="stop-color:var(--behind)"></stop>
+              <stop offset="1" stop-opacity="0.62" style="stop-color:var(--behind)"></stop>
+            </linearGradient>
+            <linearGradient id="bodyFade" x1="0" y1="1" x2="0" y2="0">
+              <stop offset="0" stop-opacity="0.72" style="stop-color:var(--body)"></stop>
+              <stop offset="1" stop-opacity="0.05" style="stop-color:var(--body)"></stop>
+            </linearGradient>
+            <pattern id="gone" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <rect width="10" height="10" style="fill:var(--court)"></rect>
+              <line x1="0" y1="0" x2="0" y2="10" stroke-width="4" stroke-opacity="0.75" style="stroke:var(--behind)"></line>
+            </pattern>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" style="fill:var(--court-line)"></path>
+            </marker>
+            <marker id="tick" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <line x1="5" y1="0" x2="5" y2="10" stroke="currentColor" stroke-width="1.6"></line>
+            </marker>
+          </defs>
+          <!-- The court: 110 px per metre; the player's feet at (280, 260); the net is up. -->
+          <rect x="60" y="20" width="440" height="380" rx="10" style="fill:var(--court)"></rect>
+          <!-- Stretch: past the comfortable reach (0.89 m), up to a lunge (1.60 m). -->
+          <circle cx="280" cy="260" r="136.5" fill="none" stroke-width="78" stroke-opacity="0.45" clip-path="url(#frontHalf)" style="stroke:var(--far)"></circle>
+          <circle cx="280" cy="260" r="176" fill="none" stroke-width="1.2" stroke-dasharray="4 5" clip-path="url(#frontHalf)" style="stroke:var(--court-line)"></circle>
+          <!-- Behind: from 0.2 m past the line of the body, all of it at 0.9 m; past that, not reached. -->
+          <rect x="60" y="282" width="440" height="77" fill="url(#behindFade)"></rect>
+          <rect x="60" y="359" width="440" height="41" fill="url(#gone)"></rect>
+          <!-- At the body: within 30 cm of its own line (soft to 45), up to arm's length in front (1 m), fading to 1.6 m. -->
+          <rect x="230.5" y="84" width="99" height="176" fill="url(#bodyFade)" opacity="0.45"></rect>
+          <rect x="247" y="150" width="66" height="132" fill-opacity="0.72" style="fill:var(--body)"></rect>
+          <rect x="247" y="84" width="66" height="66" fill="url(#bodyFade)"></rect>
+          <!-- The line of the body. -->
+          <line x1="66" y1="260" x2="494" y2="260" stroke-width="1.4" stroke-dasharray="7 6" style="stroke:var(--court-line)"></line>
+          <!-- The player from above: shoulders, head, racket on the right. -->
+          <ellipse cx="280" cy="262" rx="27" ry="13" fill="#f2c9a5" stroke="#1d2433" stroke-width="2"></ellipse>
+          <circle cx="280" cy="258" r="10" fill="#5b3a26" stroke="#1d2433" stroke-width="2"></circle>
+          <line x1="304" y1="262" x2="322" y2="244" stroke="#1d2433" stroke-width="3" stroke-linecap="round"></line>
+          <ellipse cx="327" cy="238" rx="7" ry="9" transform="rotate(45 327 238)" fill="#2b2f3a" stroke="#1d2433" stroke-width="1.5"></ellipse>
+          <!-- Ideal: at the side, 0.62 m across and 0.2 m in front. -->
+          <circle cx="348.2" cy="238" r="26" fill-opacity="0.9" style="fill:var(--ideal)"></circle>
+          <circle cx="211.8" cy="238" r="26" fill-opacity="0.9" style="fill:var(--ideal)"></circle>
+          <!-- Facing: the net, turning up to 15 degrees toward the ball. -->
+          <line x1="280" y1="244" x2="280" y2="196" stroke-width="2.2" marker-end="url(#arrow)" style="stroke:var(--court-line)"></line>
+          <path d="M 266.8 205.7 A 56 56 0 0 1 293.2 205.7" fill="none" stroke-width="1.2" stroke-dasharray="3 3" style="stroke:var(--court-line)"></path>
+          <!-- Labels on the court. -->
+          <g font-weight="600" font-size="17" text-anchor="middle" style="font-family:var(--display);fill:var(--court-line)">
+            <text x="280" y="44">RED</text>
+            <text x="348" y="243">IDEAL</text>
+            <text x="212" y="243">IDEAL</text>
+            <text x="280" y="125">AL CUERPO</text>
+            <text x="280" y="321">ATRÁS</text>
+            <text x="280" y="386">NO SE LLEGA</text>
+            <text x="430" y="150">LEJOS</text>
+            <text x="130" y="150">LEJOS</text>
+          </g>
+          <g font-size="13" text-anchor="middle" style="font-family:var(--text);fill:var(--court-line)">
+            <text x="348" y="276">derecha</text>
+            <text x="212" y="276">revés</text>
+            <text x="280" y="186">15°</text>
+            <text x="420" y="256">línea del cuerpo</text>
+          </g>
+          <!-- Measures, outside the court. -->
+          <g class="chart-text" font-size="13">
+            <line x1="280" y1="414" x2="348.2" y2="414" stroke="currentColor" stroke-width="1.2" marker-start="url(#tick)" marker-end="url(#tick)"></line>
+            <text x="314" y="428" text-anchor="middle">62 cm</text>
+            <line x1="508" y1="260" x2="508" y2="282" stroke="currentColor" stroke-width="1.2" marker-start="url(#tick)" marker-end="url(#tick)"></line>
+            <text x="514" y="276">20 cm</text>
+            <line x1="508" y1="282" x2="508" y2="359" stroke="currentColor" stroke-width="1.2" marker-end="url(#tick)"></line>
+            <text x="514" y="324">90 cm</text>
+            <line x1="52" y1="260" x2="52" y2="150" stroke="currentColor" stroke-width="1.2" marker-start="url(#tick)" marker-end="url(#tick)"></line>
+            <text x="46" y="210" text-anchor="end">1 m</text>
+            <line x1="52" y1="150" x2="52" y2="84" stroke="currentColor" stroke-width="1.2" marker-end="url(#tick)"></line>
+            <text x="46" y="122" text-anchor="end">1,6 m</text>
+            <text x="246" y="14" text-anchor="middle">±30 cm</text>
+            <line x1="247" y1="20" x2="313" y2="20" stroke="currentColor" stroke-width="1.2" marker-start="url(#tick)" marker-end="url(#tick)"></line>
+            <text x="470" y="98" text-anchor="middle">1,60 m</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption>Un jugador diestro visto desde arriba, a escala (110 píxeles por metro). La pelota ideal está al costado y un poco adelante. Una pelota en línea con el cuerpo, desde el pecho hasta el largo del brazo, solo se bloquea. Pasada la línea del cuerpo es un manotazo, y a 90 cm ya no se llega: es la regla de oro, ahora también hacia atrás. Por altura: abajo de 40 cm es una pelota al piso, entre la rodilla y el hombro es la cómoda, y desde 1,9 m es un golpe por arriba de la cabeza, donde no hay «al cuerpo».</figcaption>
+    </figure>
+    <div class="legend" aria-hidden="true">
+      <span><i class="key ideal"></i>Ideal</span>
+      <span><i class="key body"></i>Al cuerpo</span>
+      <span><i class="key behind"></i>Atrás</span>
+      <span><i class="key far"></i>Lejos</span>
+    </div>
+  </section>
+
+  <section aria-labelledby="what">
+    <h2 id="what">Qué le hace al golpe</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Zona</th><th>Dónde</th><th>El golpe</th><th>Lo que muestra el cuerpo</th></tr></thead>
+        <tbody>
+          <tr><td class="zone-name z-ideal">Ideal</td><td>Al costado, cerca de 62 cm, un poco adelante, entre la rodilla y el hombro</td><td>Va adonde apuntaste, con la fuerza y el golpe que pediste</td><td>El golpe limpio</td></tr>
+          <tr><td class="zone-name z-body">Al cuerpo</td><td>A menos de unos 30 cm de la línea del cuerpo, hasta el largo del brazo adelante</td><td>Bloqueo: hasta un 40 % más lenta, alta y corta, al medio (80 % de la dirección se pierde) y difícil de dirigir</td><td>La pala adelante del pecho, sin armado; la mano libre a la cara. Cartel «Bloqueo»</td></tr>
+          <tr><td class="zone-name z-behind">Atrás</td><td>Pasó la línea del cuerpo: desde 20 cm; a 90 cm no se llega</td><td>Manotazo flojo e impreciso; o no hay golpe</td><td>Apurado: sin armado, el golpe entra tarde</td></tr>
+          <tr><td class="zone-name z-far">Lejos</td><td>En el borde del alcance</td><td>Como hoy: estirada, sale floja</td><td>La estirada de siempre</td></tr>
+          <tr><td class="zone-name z-plain">Arriba y abajo</td><td>Por arriba de la cabeza, o al ras del piso</td><td>Como hoy: bandeja, víbora o remate; levantarla flexionando</td><td>Los golpes de siempre</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Todo pasa por la presión que ya existía, la misma que bajaba el ritmo, la altura y el ángulo de una pelota difícil. Un bloqueo o un manotazo flota, y el otro lado lo ve: la computadora remata esa pelota, si puede atacarla, por lo menos 7 de cada 10 veces.</p>
+  </section>
+
+  <section aria-labelledby="ai">
+    <h2 id="ai">La computadora, igual</h2>
+    <div class="split">
+      <div style="display:grid;gap:12px">
+        <p><b>Se acomoda</b> para dejar la pelota en su zona ideal, en los ejes del cuerpo que la recibe.</p>
+        <p><b>Pero no queda clavada.</b> Termina al costado de su lugar, más cerca o más lejos de la pelota, tanto como dan sus manos. Con una pelota cómoda, bien parada; con una que le exigiste, encajonada o estirada. El error lo provocás vos.</p>
+        <p><b>Si va a pegar tarde, llega tarde con todo el cuerpo:</b> se acomoda para la pelota que de verdad va a encontrar. Ya no le pega a la pelota detrás de los pies.</p>
+        <p><b>Te tira al cuerpo</b> cuando estás en la red: Romina en casi la mitad de esas pelotas, Beto y Chela de vez en cuando.</p>
+      </div>
+      <figure>
+        <img class="shot" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBAUEBAYFBQUGBgYHCQ4JCQgICRINDQoOFRIWFhUSFBQXGiEcFxgfGRQUHScdHyIjJSUlFhwpLCgkKyEkJST/2wBDAQYGBgkICREJCREkGBQYJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCT/wAARCAEzAWgDASIAAhEBAxEB/8QAHAAAAgIDAQEAAAAAAAAAAAAAAAECAwQFBgcI/8QASxAAAQMCAwQGBgYHCAECBwAAAQACAwQRBRIhBhMxQQcUFSJRYTJScZGSsRYjM0KBoSQlQ0RTYsEXNEVUY3KC0XMINSZVdIOisuH/xAAbAQACAwEBAQAAAAAAAAAAAAAAAQIDBAUGB//EADgRAAIBAwEGAwYEBQUBAAAAAAABAgMEEVEFEhMUITFBUmEVMnGBkcEiIzOhJEJi4fEGNESx0fD/2gAMAwEAAhEDEQA/APCpXUpoYSHyl4IuNbK2U0XW4SHTFhHeve6RdVHCGnLDu2nQ314q6ofWdYpHkQA8G2PzXocemngc/wDuUxdR61OCZ8tu7xuqmdU7OlBEu8F7cbcVmxurBiMtjBmLNddFTD1rqVS0Ohy3N78U93018BZ+xXP1TdUxa2XNmbmvf8lY7qYxFtmTbvIdNb3RO6qNDTOL4coc21uKuldVjEoHGSHOWkAjgnj008AMeDqmeqBjmOvdtf8ANV/oxw0fVy5weOtuKyqc1Iq6sCWEE2zX4H2KlhqDhb/rosgJ7vNLHTtr4DT+xKU0olpSIZbfe46q+I0naMl6aUsLBZvNVVBqLUjjPEdRa3JWsdUjEz+kxZiz0raIcevbxXgPIUhpuqVgNLK52Z2Uj7qnIabsqnIpJQ+7bv5FKjdUbqtaKqJouc1x6XsTkNR2HFerjLA5tmW1GqpcenyJ5MufqvaVLbD5g2xuwjVylTCmFfV3w2VzS3RttWp1Jqu0aEuxCFzjcB4As3TmrKZtV2rVDtOFriwEvsLO/NJrr/gDrehQwfSWAdRe113jekaexY/S02Bu1zsuEytO+GZ1h9Z7FkdDImG0sGatjLN44bsAXPmq+l9tR9LXntFhbvW5WWF2LP8Azl+fwnKu3Axph7HkymL7Kwvx4qukERfiA7Ie/vm2g+r0V79923HfFGF26P1lhYeSrod5vcRAxNrCX6mw7+iu8f8ABSY1o+wW2ww3v9tYa6q+qDOs0VsJLP5bDvrHBf8AR8WxBtr/AGVuGqyasu6xQXxMO1429DRC7fTQAiaO15/1TfuD6uw081iwsvh9Z+rr953f07qy49MYmvilvq/tPHyWNDl7PrP1jY5ndz1lJP76CKKtjuzaT9ADO83v+spTNkGJwDs8A5T3PFSqgw4bSfrAuOdvc9VSqWxdq0/6xcRkdd/q+SlvfbQjgrpt6KurtQNcbat9VQY6Xsd9qJmW57/PipQCHrVWDiD28LOv6SpaYeyH/prw657l/NGcr66DwZ9Q6c9QvQRt7wtr6WiyGOqu23Ww+LPuh9XfQea10xpr0dsRlOoza+ir2PpO1nk4lMGbsfWX1Pkk31/wBfQuqtziTm0MRG8dmufR05KqTrYwKnBo4RGSLPvqdVVSupBTVxdiEzXF7i0A+n7VGXqnZFNaunL7tzR30aoZ6EkjY1JrxiVEDQwB9jlAdofanSuxDtWsIoqcvyjM0u0Cxp+o9pUuXEKlzLHM7NqPZolAaLrtWXVtQG27rgdXe1PPUMDhdWjA6q1LBuiXXdm1GqsrTX9Uw5jqaBo3jMhB4+1YLOqdjy3qp97c2bfQ6q2qNFloQ2oqT3xnuTppyUc9AwbCU4gccjvT04lbEbNvoqqN1fnxBzYqfjZ9zw05KnNQnGbb+p3Qi9K5ve6qpzRbuuLpKi+Y5bX19qeQwWONZ2C0FkG6c4a314rIqzXmrw8ObThwuWWOnDmtdJ1IYTCA6oMhcLjW3FXz9QNfSgdZLADmve/4Jf2DBnU5r3Y3UuHV96I2g34WWNSurezK54dBkL35r8fwVdP1DtCrLm1JYGjLa9/xWPGaJuDTkx1BlJdYgHLxRn7gZtQK0YZQsL4MjnNy24hZEwxA4zA0y0+cRmxA0WuqhQiGha2GpBzNzXB105K4nDziwtTVRjDNW2N7o/sBkUfX+s4hI2enBHpEjjpyWN+mR7NuInh3bj6Fu9qVXTGgDK1zqapcbnIQDp7VXIKLseIClqN6XNu4g5TqlnoPHU2Nc2v3+HRuqqc94ZSG+jpz1QsapbQOxCjDaGoawAl7SDd2nJCmu7Is0DDTHDX3Mu8BNuNuKsmNNamLd7xGa9/yXYs2cw9tO+DO/K+9z4KTtn8OfFEwvf8AVkEHxsup7Pq4x0MvMwOPHVevcJshZ53uoQimyVILZb3OVdscEw41Anu/MBltySZgWHRmUgv+s4p+z6mfAXMxOIf1fqEZDJM4cLnkrZerdapyIpctjcHmuy7Bwzq4g75aDfipPwfDXyRvIfePhqj2dU9PAOZicXEKbrk4MEpaQLDmFVHuDQy3gkLg42dyC7luE4a2Z0wa/M4WOqTMGwtkL4gyTK8knXxR7OqeniHMxOJlNPuKcinkBuLnxVhNOK9v6LLly+jbVdmcGwt0UcZjkyxkFveUuysNM4m3cmcCw7yfs6p6eAczE4qnNOHVIdSSO1009FMOp+ygBRyZ7i8ltOK7WPCsNY6QtifeT0u8rY8HwvcdXML93e9syi9m1Md0NXUTkpjSmrosuHStbc5mkenor6cUnas47Lkc3di0dtR5rtGYdhb3xPfA4ui9DvcFmxUOFipNSIHbxzcpObkq3s+afgSVzE1vQ3uRtXABQPzb1wElvR04I6Ydz9LZv1a8HeMu+3pruejykwyi2jpm00BbneXE5udk9u48NrtqKmKrpszmEFpvobLFykuLuehp4y3N48dkEQxeG2FODd2fq/HzUaQMFRX/AKrLtdB6mi9LNHhb5hU9VBlYMoueAURR4TG58jaZuaX0zdaeQnnuUcdHllgNn/8A2/W/2v4rJq2/X4f+rAzvWt6+i9HNBg7YOqijZuTyurH02FufFmpIy6I3ZfkjkJ47hzCPOGB3bMoGFgnd/Z34eaogD+z622GtIzO79/RXp+5w0TGdtJEZCMpPOyi2nwpjXxCii3cmrtOKfIT1Djo8wqBIcMo/1cwDO2z7+ksioZOcYp/1XGHCM/V34+a9HEOFZGxPoYMjNWAjRSf2eZN8aGDesFmkjWyasZ6i460PMaVlQauvy4bG4gi7S70NFjNE/YbiKGPJc/WX14r1P9XsLnsoYA6T07N1KqdDhrYxB1KnEbvu5dE1Yz1DjrQ84qW1Qkob4dE3UZe96eivibWdsSEYdDn3erLiwXoOWheQTSQHd+icvBWNdRNeZRSQiQixdl1IUuQnqLjrQ82phV9RriKGEtJdmJOrfYioZWdj0YNFE1mdmV44uXpAfRRtLBRwBjz3hl4qwS0Tg2M0kBY2xaMugUOQljuPmFoefTtrzjVLeiga8MNmjgVGkZX9dryKSAn7wPLTkvRzVUbnGQ00OdmjTlUWVVK27hTQhz/Ss3inyMs9w5haHmTY67sJ4FNFuy70ra8VdVx4gZMOaaeEEG7bDjpzXo7qmla0Rinh3Z5ZdEGsgc4Xgi7nonLwS5CWocwtDz2OLEjjktoIN4IgCLaWVFJHiIocQe2KHKXuzXGv4L0jr8QvIIYg/gTlGqTcQiaLbmINdxGUap8g9RcwtDzWeDERhFI0siyEty2br+KyZ4MVOMU4LYN4GG1m6L0Pr8ZIbuoso4d0aJjEgS4lkWYcDlCOQeocwtDzqkhxU1Ve9u5Dh6V2nXTksYQYmNnH23W6cdW5Dm4r0xuKWaSI47njZo1Tdigblbu48ruWQafgjkHqHMeh57V0mLmfDY3Ohve7LMOlhzVkVLjLsblIfDvWxC7shy2XfOxWzh3WE8u6E2Yq52ZwY0H/AGhPkXqHMeh5zTUeLigrnNLA1znZhkNz7EVGH4sMNomFzSwvbZoYbhejdpuy6NZx1GUJ9pHmG25d0aJch6hzHocBLh2MOxmnvIC9sZs7IbBC77tRxdwb7bIUlY48ROucrx8E8p8kBlkw0Begwc7IrO/lRZ3i33KdggBPAZI2d4j3IObxHuVgb7E8vkEsBkp18fyTBPj+StsfAJ29iMBkr1P3gnY+sp5fMe5Ox8U8CKuepVjbHmVID2e5O3mjAyTXDxWRGGOGrjqsdrQeJV8Zy8FXKJJM6jYFkf0kpW5iRc6I20ZDLtDWNzlr82h8FLo9efpPT92+h1sobVzA7QVt2XGfQrm4/ifkbN78k0kMkVsr3kPb97xUyKf09T4iym/JLEA6Mh7fRdbiiOpLjYxkTj7tuIWvBnTKwaQOOrrezgg9WdcHNfkbK9srQ7M2A3+80hPOC0jdEtPPwRgMmMeruZpma8cgOKl+iZxfORzFlfmNgCw35FJsr8/2JzDy4pYHkod1YOcDmLeRtwUGmnc03D7j0XW4rJdM7VwiJ8RZRzuyj6o5Tw8k0mIpdJBZvccHjiLcUv0cuFo3Ec7jgslznaNMfsckXPz92M3HHzSYZKLQ62jdl8bJWjy6xvB5acVkCSS5O7OXmECWS32ZLeXkmGSn6qwG5cXeCkBCdN0/z04K1z5dLx68ipCSQn7Ozh+aTQZKLxfwnZB5JOfG79g6/Iq3eyZid1pzCC+TL9n3fHwSSDJWJIh+7uvz0RnY646u6ylvJjYbvTkfFAkmz33dvK/FPAZKt5HbKKV9uRRna4i9M4OCtBn1cI9Dy8EfXFurfx8EYHkhnbmu2ldfmFD7pvA6x/JZBbUC2g8j4pHrBPdaL8weaMBkpBysA6ufJyLneMfuO8OPmp/pDbnLdvMeCkN8WjQW5EcksBkix3fe4UwseSTXObFIDBcHh5K5rZudgfHxTInsbAeY8UYDJAudum3gF7aFQc55e1gp7Hn5qz6+1hb2eCbxOA090jxHJLAZKml+8+wFhy8EKf1z5r90Ec/FCMAc9lA+6jT1VZZ3MFRcDfgVuyZyOnqpgD1UAO9UqQDvAqQAGnwRlPgnld4FMNf6pSAQb5J5fJPLJ4FMMk9UoAB5hMgH7qMknqlGST1SgBWPgpAeIS3cnqlG7k9QoAnpyAUmPI5KsRyeqVIMk9UpMZ1/RyZHbSRFtrBpJusXaSWQ47WEBjhvDoszoyildtE0AW+rK1u0UUvbtb/5SuX/AMp/A2N/kIqb1gMs4MIPDXgoyRzyubYMbI3g5VCOYgDMrxBO6wz281sM+QY+rlkIcI2vbx80wKkXtltzCH0soNy/vjgfFEUM0lzms4cQoNjQy2cMAuz2oeKnM1pLA7kVJ9LIQC2TTmEdTkDgTJdvj4IGQAqXPPoBw4jxRlnsSHNtzCkKZ+Y3eb8ioGCTU57EcfNCACyfKO+0t+SeWdrgC5vkUMpnkZg82PEJmlI4yEtQxDY2cuJzNB+ajlmaCQ5vm1NlI4u1kOnApOpJHEneWd7eKWQE7fZBaQH+iQjlc4ZpWg8il1R1iRJrzCiKRwPpkj2oyBMslzkmVt/ZxUQyXKbSi3MKRpCdC8+RSFHe95LEfmjIiIbMG/bAjwUJGzOeLygHkVYKQHvNcQeYSNICdXGyMjItbLck1FigRPcCRN7QmaMXtm0TbTd21yD4o6DI7t2n15I+SkYjmB359qYoxlvmsfDxUhTNaNCbeCMoCrJIHE77X5oawhp+tI8QrBSNB1cSEnUw4X/FGUABmZoBmOX5JvjDSPrjbxSFMLaE38FM0rLAi58ksoCvd2dfeuued+KW545Z3X5i6uNOxoAuSD+SiKeNpLTf2oygKTE0H7Z3suhWugZfVpuhG8gyY7YWn7oQ6FvqhWAkcAUEk8irVIpwUmNo+6EBjfAKwjxBSsFNMTFkb4BGRvgE0J5ELKPAJho8EJhABlHgEZR4BNCMgKw8Aiw8k0IyArDwCLDwCaSAOu6Mh/8AEd/CJy0+PG+N1p/1XLd9GQ/Xjz4RFaHGnXxmsP8AquXOj1upfA2P9FFDQCr2hp1zEeSxmk8grBmP3VsaM2TItHbU6oexr25gbOHhzVIbIfuKwMm5MVTiSRKPduFzcHmFY5sIIyk2PFUbqcn7NWNhqLfZI6EgtHctN7clAsj4cT4qZhqf4SW4qf4aFgGiGRo4FAMfMaKfVqn1EdVqf4aMoQmiIHnZDhGTY6+Cl1Wq/ho6pVeok2h4ItERGo1SIiGoB9in1Sq9RHU6r1E8oMFZcy/o6JgRahzfYpdTqvUR1Oq9VG8gwRBYNLaozMPBifU6v1UdSq/AJb0QwAyccvFFowMtiU+pVngE+pVvgEbyDqVnJa2XhzUt40j0NQn1OtHII6pW+ASytQ6iL47XDTdLMwC2S4Kl1St9UJijrPVCWVqHUQewNtu7+aHPaQO5qpdTrPVCOp1fgEZWodSG8HKNBc0WszRS6nV+CRoqzwCMrUOpFzx6OXRCDRVngEIytQwzLZSRn7gSfSsH3Qs9keig9nKyhvslumqkga3g0e5Y0kIPABbWSLyWPJFpwVsZEHE1T2ZSquazpY7rGdHZXplTRUmEy1K1lLIhoSTTAEIRZAAhOyLBGQOx6Mh+tpz4RFc1i5vitUf9R3zXU9GLP1hVu8IlymJ64jUn/Ud81zqXW5kbJ/oohG6yy4njRYLSro5AFtkZkbONwtwWQwgrXxSArLjes8kyxGU0K5oVDHK5rlTImkWW9iMoQCi6rJ4QWCeiV0IwLCHcIukhAYQ7pEoUSUDwPRJK6EBgEIQgMAhJCBBdCEIAYTCQQkMkkUkIAFGykkUARIQmUIAk0WSkarWhJ4UsgYckax5WaFZ72qiRnEKyMmQaNY+LQrHfGtk9ndIWNIyyvjNlTia97LKhyzZGLFkbqr4sraK0wkmFMQ1IBRCsakAZU8qmAmBdIeDtOi9n6VXnwjXHV4vWTn/Ud812/Rg20mJnwjHyXE1bT1mU/wA7vmufQ/3EzZV/RiYoBUmp5SElvMhkRvssqKUrAabLIicq5IkmbOKTRZDHrXxPTrcQhw2jkqpycjBezRck8gPNZ5pJZZbHLeEbQOupXXnFZtLX1UpfPVVNLDcjq9MAHtHK7zz9nBYcO0tRRMEsGJ4gJWglzakiWM/1XAlt22U91ZfqdeOyK7jvPB6mldafZTaOHabCm1bAGSNJZIzwcP6Fbmy60JKSUo9mc2UXF4YrounZFlIiK6CnZIhACRdBQgAui6EIAEIQgARZClZACQnZFkh5EhBQgMgUk0WQAkJ2QgC1oTIQEXQBAtVMjNVkKDm3UkxMw5GW1WLKy4uthI3RYr28ldGRW0YD2aFYkjNVsZGcVjOYr4yISRgObZRWU9ioe2xVylkraKwdVaxU2sVYxybEi8cFNoUGFTaoskd50ZNs3E3eLB8iuKqReeX/AHu+a7no2FqLE3/y/wBFxUzbzSH+Y/Ncy3f8RM21V+VExCxQcxZWVQdGugmY8GNwVkbiTlaC51ico1NhxWHi9X1CmzsjfLNIRHFGwXL3ngFsepU+zWF08UksjsVxCnD55ZCbB5H2TSPR/qubtDacbaUaUVmcuyOhZbPnXjKq+kI92ShlDgHA3B1BWBj+6qpsNoZ5txHNUAmQg2GUEgX5f/xZUJtYXutdtawvwlsjSM0MzHi/tt/VWbSpuVtUUejwyuxnGNxByWVlEG4Vs0XOdNjkkj73cWNGpWG+m2NYXB9VWSA/ycFpJWCKtkYCLAkW9hW22LwCTHtooo+rukponZ5tNMvh+K+VKGPFn0fjpdoL/wC+ZDo/mgpNpZ6XB5ZJ6SUEzNkGUsA4Ot+X4r01cHgOHQ4Vtu80rCxtRDLnaTwAeLLvAvoWyc8sss8NtVp3LwsfAEwEBSXROcLKkQpJFAECkQpFJACQiyLIAEIsiyAGE0k0YAEJ2RZIBFJSsiyAIoTIRZAxIQUIAuCSkkgBIIui6iXWQDE5twsOduUrMzqmVuZTiyLRgvCx3sWc9iqdGrlIg0YD2XCxnsK2L47LHexXRkVtGA9ir4FZr47LHey3JWplbRKNyvYVjMFlYw2TYz0fo7FsJxN38v8ARcRKbyP/ANx+a7jYDTZ/E3fyn5Lh3avd7SuRbfrzN9Z/lREAgtUmhMhdBGNleBURxbbXDqZgY5lE19XNmFw3SzQfaVjbXytrNupqRrQyCihY9scTjkzHxudSug6LpKXtDaSofpWtkjjsRqIg2+n4og6Ke3MSqsdlxirpoK92c00TA12S+gJN+K8JcbRpw2pKvXX4Y9F0PX29tUezlRpPrLqzl31tNT6y1ELP9zwFrdoa+GrwSSalkjqWRSMc8Mfe9nDRe+7IdFuxQwmCpdglJJNmc5z5bvJcDb7xPgr9reiHZnavq8TIThrWm0vUWtjEzPVcALfiujP/AFFCvBxcMRa+Zy/ZboVMb3WL+XQ+atm8Oodots46GtnlpG1LHZXxi5zXvl10HtXt9Fh+F7G4WYKCIyWGawsZJj5lbno96F6XYvG6zE56mOsDw6KCJ0dxGwm9yTxPAL0KTDKN7dKWnBHA7sf9LyEqW8116HolfQi3lZPk/AXtqds66Wa0MkMZjZE/RxJdckA8Qu1aV6rtPsBgG1MWTEKBjZmehPD3JGHycF5/tZsXW4bhPbWzznSjD80NbRTSZhIGcXtdb0vmvW2G0acIKnNY9TgXlvKrUdSL7mtHFSWLhtfFiVDBWQ33czA9t+IWUu+nlZOS1joCRTQgCBCLKVkrIAVkWTsiyAFZFkJ2RkBWQnZOyWQABFkJ3QAWRZF0XQBEhJSJUUgBCEIAuStqmlfVMMkSq3FTcVW4JoTI3SOqEKQEXNuqyxZHFJzU0xGG+NY741nuaqHs4qyMiDRgPYqHxrPexUPYroyINGCW2SvYrIexUluqtUskD0XYR+XZbFHeTvkuHDru9pXZ7GHLsbiz/J/yXDMfexXNtl+bM21/ciZTCpFUsOquGq2MzI1lfhdQ+freHVbqOqIDXnUtkA4Ai62TNqdumRbrrWEgBuVrty4n28VMBMhc+42Xa15b9SGWbaO0LijHchLoVU+13SBTUTaOHGKGlYCSZIqe73E+0qeyu2+KbM7e0WJbSY9W4hTVEMkcgfYNae7Yho0QWLl9rI6Z1bhLamUxMM5u8NzEC2unuWK/2fb0bSbpxw0jVa3la4uYqo85fU+qIdssCnYHsxBhBAI7pHH8Fc7aXCQ3u18JJ4XK42g2brTh1K9mEUdREYY3Ncx2QuGUeKqqtnauMtz7PEg30bUr58q1XPWP7M9etn2cu039Y/8AqOprdpsLpKWapkrInNjYXkNcCTbwWuEoj6P56maYOlqaeWoJeRdxcCVwG3FDJhOzdRMcIdSl/dbI6ozeZFreF1Zh8seL9HFPiozNkkojJYPJymxFlsVxUjGMpR7v1+6K6lhbqW7Cb/Z/9M4fYR5+jsLCdY5JGcfBy2dVtJhFBOKeqxCnil9Vzxce3wXmFHtBVS4PHg2Gb6F2+eZ5Wek8k+i32rv8A6LcPwPDmY7tIZ8+j20zBd1zwzOPPyXqbrbNK0pR3u7/AHeiPKRs5Vq0owXj9Pj/AOG+pqqCsiEtPNHNGeDmOBCtXDYHPTYNtGKClEv6e58pY51wxnL3FdzddO0uVcUlUj4ma4oOjNwYIRdK4WkoGkUZkXQArJoQgACaSLoEOyLIQgYWSsmhACISsmUJAKyEFCALCVBzlIqt3FMQi5K91FyQKkAykmhMBtTISCldICtwVbmXV5CiWqSYjFfGqHR6rOLVU+NWKRFowXxhY74xqs98ZVD4yrFIraOz2TZk2CxQ+Of5Lz1nJekbOt3ewGIeeb5LzrLayx2bzUn8TTc+5EtYdVkMN1jN4q6M6rczKmZDRdTyqDCrQoMlkiW6LQ7R0Aq58KLGl07a+ERtH3ruFx7rroSFDZ9tLVdI+z0FVK1kVM99U/NwuBZt/eVg2lUULacpaGqyi5Vo7p9JRtDI2taAAAAAOSpqR3mm6tjljlaHMe1zSLgg8VTVObmaLjReAp9zvYeTzbpyDjsVIGXLrvtbjfduXA9HUuJRdEdVDVUxYwQyOpHm15YyDYkctV6t0mdTOyNW6p3RDC0tzcjcA2/C6892ilOG7DU2H4TvpnzxtgpzEMzrHW9hqQr7h71OFNam+1W7mb7JHM9DWyUTxLjdUzM2ndu4g4aF54vv5LO282ijnqXtFUXUVKCc19CeJ9tuF1y2BdKlZgOCP2apMMklqGPcDJALvFzrccjdUU+zOJbRVEU+NFtLRNObqbHXc/8A3FVx2PdXd7KrUX4V0XwMdC9o29ssP8T6v4lmwtJLi+MVO0UzHNhDTDShwtdvMrvb3WPAyOCJkUTGsjYLNa0WACvBXvLe3jQpqnHwPP1qzqzc2NJHFCtKgQEimEANO6SEMB3RdK6LpCJISBRdAxoSui6AyBKV0FJAwJQkUIAtKg7igkpX1TERIUQFYlZSAQCE7J2SAjZNOyLIASE7IARkCJCiWq3KnkCeQMR7PJUuiutg5gVLo9VNSINHVYPGW7A1nnmXnhiIXpmHjLsDUed15/Kyyy2D6zfqaLpfhiYVrFSabKZYoFtl0smItY9XscsRt1cxyixpmTfRcLtFVN7brjvd3PEyFkQvZxF3Eke8LtmvXD7f0T4q2mxGNoyPbupXAattqD+ZXP2hTcqXzRooyxnHfBdR7f7SYdlZT4rO0N11N7BE/SjtZNcOxeUgnwC5N7rAuNzbVY7K+OWN72NkLWC7jl0C4PKUe7gvoXQvrv8AlqS+rNpj21eLYhSSNrsRnla8Wyl+jvwXpuB7VuwjZ7AKyMNdNFQZXCRjmZCfA8xbmvF6PB8T2ik3kEdogbZ3aNaPLxXfSYCKiCGGqrqydsbQ1wfISHgcvIexWy2RK4ilTikl8jdabR5duVeTk2sa/wDZn7O1MVe+rxFtJDBv5jZ7GBu8A+8uijeFqaZrYWNjjaGsaLBo4ALOicvR0qHCpqmvA5FWtxajnqZ7XK1rliscr2FRaEmXApqDSpKJILIQhIYXTukhAAhCEACLoRZIAui6dkrIALoQgoARQhCAGeKSCkmBIFCQTTAE0k0gBCEIAE7JKQQAwE7ICEAIi6gWqxIhGRHYU7cmwMh8R/VcBKy5XoZGTo9cfIfNcG5izWMve+Jpu+0TCMaqdGs0xqt0a6SkYcGJksmBZXmNLdqWRYKwqcRp4aqgnhqLbp7CHHwFuP4LK3a1W0kjmYVLExxEk5bAy3G7nAfIlVVZqMHJ9kidOLlJJGRsf0V4fjez1DiVc+shfJe4a4ZZGhxAdYi4uLLk8d2fgwaeOgEDo4mVlpWF2rgSbX8eIXueL19Jsds3Ssmkjijp2RQ3foOQ/wCyuS6Tdi46/Ba3GaV+aXIydjWcH21vfzFl85tdoTdVSqv8LfT6nt5WFKFNqmsSwc1HTxwMEUMbY2N0DWiwCsFO48k8FnhxChhq2OvG5gcT4eK9HwLoprsZwiDEZsTZQb5udsIgzEN5XJI1X0G72nRtIpy650018DxFK2qVZNLwPOmxOaeCyIit7tFs7Ps9XNoquSGR8oc+F8dxnaDbUcitJlyuUrK+oX1FV6EsxYp0pUpbs+5kMKvYVjxrIYNFZJDRa0qYUGqYVLJBdNCYSGCdkBMIGKyLKSLJARsnZNMIAjZFlJOyQELJZVZZKyAIWQpEIQBXxSyqIephymILIsmEJDCyEIQAIQhAApBRUggBhNJMIAEFCEn2EdrU2HR6PMD/APZcK4aLu6zTYKIeIHzXEOGiyWT974mq6XYoLVEsV2VIsW9MyNGOYyjdFXFiWVS3iOCkx2U9ncI7e27wXD5qXf0UbnVU92kt7g7oJHDU/ko1cpp6WaYMc8xsc7K3ibBavDNq8d6M6OLFY44ampxaAOlfMS7Lrma3w0DguXtW53afBj70+i+5stKfes+0e/zOk/8AUHU0WJV+G7LQZmSVBMs+S1soGgPgbra9Htc3HthKaKobnkgY6lma43uW6fKy8uwvEq/aTafEsaxkA1k8bDGWsIYI9dG39i6bo+xJ+B7aVGFyE9Vxhu8iGga2Vo734kLz+0Nmr2fGtTXWLydyzvWrvhT8V+/c0eFUvYuLYxs+CMtPIXQ6aZXa29gXveze3eHYphTOs1UVHPA0MlhmkDSCBxF+IK8U6RKGTAtvKXETCYaauhMTpLd1zwfnwURVi/ea0nzF1fV2P7bsqUlVcJR6apr1WUc66rcndTSjlPqdtt7tJTY9ikUVG5r6aiDrzBvpvOlgfABce83eVUakuFgAB4BNmuq9BsbZUNmWqt4PPi3q2cqvXdae+zJjWQzgqIwsho0W6RCJMKxqg0KxoVTJgmmE0hiCkkApBIYWRZOyLIAVkJ2RZJgNOyAmkArJWUrIsgCNkKVkIA14U2lLKpAK0RMJpBNIYJ2QE0gFZFlKyLIAjZMBOyYQAkwhMIAEAJoHFRl2YeJ2uI93YmBvkPmuJIXbYz3dj6YeIC4risdn2ZrufAWVGVSTstplwVFqiWq4hQITyIpcwOaWuFwRYqtuEUW1WAHDsQ2gwulq8NnDQypeI3bu4IPmLG1/JZJatdXYBhWIy72sw+mqJLWzyMubLFfWSuoxWcOLymarS64DllZTWGjWYTHCaqvFJVMqqWCU08UjLWs0k6EctVHF5qnC5KPGKNmefDahtSGWuXgek38QSt3DSQUsLYaeJkUbdA1gsAtZtDJLT4ZJ1dgfPKWwxtPAueco+a0KlCnbcKXZIrnVlVuOKu7Z2HTbj+BbUdHFNiFFilH1hroq2KEPG8NuIA4+PuXnuHVcWI0kdRC9rg5oJANyCfFZ+0PRuzC9k4Kekc+orYWF9TLk1f4t8gP6LSbHULsPZW4ZNDup6ea5aRZxa4XBIXI2Be023TpvPf8AY3bUs60I71WOMYx8/wDBuGsIWRE1T3FuSsZHZencjiYLIwsho0VTWq9o0VEmTihtCsaEmhTaq8kxWTspBFkZGKyYRZNIACaAnZJgRsiylZKyTAYTCSkkAWSspISyMjZCkhGRGDZASBUlcIkEJISGSCahdSugCSFEFSCABMJJhAAmEkIAkgcUkwoz7MF3O12g7uydIPHKuLXabTd3ZiiH+35Liisdl7rNd13Q0IQtplBIpoQBGyiWqdkEJ5I4K8l1i4hTvkpiYm5pY3NlYPFzSHAe8LOAWhxfaXs2tNO2ESAAEm9kbu+nHUlDOco2lV064rg4lpaDY4U0zwC59VM0kkjU6ea5rBMVl2gx2txXEY2x4jUjvBnokf8AazMRZS7Q4S6phAFRGLgcwfArz2PHqjDa5skej43aj5hZ7PZtC3X5a6m6tc1LhNS7nrG6QI1q8D2mpsXia70XHSx8VvMgOoWttruc5xa7lQYrGtUg1MNUcgkACkAiydlEkATSsmEAKyAE0wkAWQhCABCEKLAYCYQgIAadkBCTAVkJoSGa8KS5EbVYufRwWX8UjtTjZ9HBnqPNw0f0L+WlqjsELiX7W462ZsPZZD3i7QTxVn0h2mPDCUczHRhy0tUdkmuL7d2qPDCwkcZ2uPDDG+8I5laP6By0tUdsFILh+1dsjww+Me5AxLbQ/uMQ9yOZWj+gcu9V9TuELhjX7anhSxD3IZUbbyG25iHuRzC8rFy71R3KYXE5Nt3DhCPcjq+25+9CPxRzH9LDgeqO3CkOK4R1NtuP2sSi2m21cbb+Mfiozr9H0YKh195HuO1vd2coR5t+S4orT4/hfSF2ZS9YrojGbZRfyXOSYVtpb++x+9ZbWruxfQ0XFLL7o7tC4DsjbN3+IRj/AJI7D2wPHFGD/ktfHflZRwP6kegIXn/0f2vP+LtH/JL6ObWn/GG/Gnxn5WHAXmR6ChefjZnas8cZ/wDzKPottQeOMn4ilxn5WHAXmR6BcLjtsaPd1bKpoOWQWcfAhYI2T2kPHGT8RWBjGzGNxRRxzYo6QTPDAM3NSjcuLzuslCis9JGTg9c2hqw57vqnjK/2LW7Z4A6lnNbC0GJ+riPPmtK/Z/EmPcx1c4FpsdVvsI2UxHGKN0b8UcQzulrjfRXSuJrruFvDSe9vHP4XicmHThzTdhOouvXsAxGOvoGSCRp043XmGJ9GOI0R3jKp0sfi0aj8EYLgNTFL1d+KSQsfwIJsCoyrSksqIp0oyWUz2HeRj77fejexfxGe9cK3YGtcAe2pSDzBKl/Z/VnjjE35/wDap40vKU8GPmO430X8RnxBG/i/is+ILiG9HczjZ2Mzj3/9q0dGZPHGqk+//tLiz8onSgv5jsesQ/xY/iCOswD9tH8QXH/2ZN54xVH3pHoyaOGK1J/EpcWfl/cOFDzfsdf1unH7eP4gjrtMP3iL4guN/s4jHpYlU+9WM6Nqd3HEan3o4s/KPhQ8x1xxCkHGpi+IKPaVEP3qL4guVPRpTW/v9QfxUP7N6TnWVHvRxZ+UFSh5jrDilCONXD8QS7Xw8fvkPxLlB0b0POrqPiTHRvh99amo+JLi1PKPhU/MdV21hw/fYPiS7bw0fvsHxLmB0b4bznqT/wAlIdG2Fc5aj4kcSpoHCp+Y6Xt/Chxr6f4kfSLCR/iFP8S5v+zbB+b6g/8ANH9muC+tUfGo8Spog4VPVnRfSTBx/iNP8SFxuObCYVh9LG+ATF75Ws7zvEoVbuJp4aLI28GspnXgIITuhbMopwaXExlxrD3+0LdBafGu7XYc/wD1bLcAHwUItZZZJdEMcVJRAdfgpWd6pT3kQwCE8rvVPuSyPP3T7kby1DDInipA2KN2/wBR3uUhE/1He5PeWosMsjl5FXAgrG3UnqO9ysjbK3TI+3sS3o6husutdRbD3xbxVjWSOGjHe5Wwwyb1gMbtXDkoTnHdfUIxeUdDtg4swuhHs+S5QPDguw20iMlDRNaCTbl7FxppZ28In/Cs9nKO51ZpuYtyB8fMKp1wslkNQdDC/wCEqTqGoeNIH/CtW/HUz7stDD/FFyr3YfVj9hJ8KXZ9Yf3eT4Ub8dSW5LQqBRdXDDq3/LSfCn2ZXH92l+FLiw1Dhy0KQVqNodX4f/8AUt+RXQDCq/8AysvwrT7Q4ZWtmw4OppBeoFu7x0VdSpHd7llKnLe7HP7U0HV63rDGERy6k8sy11BiU+GyOfTkAuGU3F16RPs/WVcDoZqKVzHDUZVx2M7E4thd5m0kz6f1svo+1aoXEGt1slCLxhowJNo8SlYWb/KDxLRqtaSXG54lbjBdmazGKl1OyORrw3MO7e63TujDGMgyMJfzDmmyk69OLw2S3ceBzOH4tU0E7ZGSOc0aFhOhC7mgr4cRgE0Lva3m0rjcQ2exDDap9NUU7g9vkQD7FLD24hh04lhjd5tPBwSk4yWUxSpNncqTXlqswmkqMYphNTQuJGjm82lZw2dxH/LuWV1oro2U8KWhhtcHcFKyzG7O4mDpTlXs2dxJ37A+9R48NSPCloap0YcqXNLSt/8ARjEv4P5pHZXEnD7Ae9Ljw1Dhy0NG1/Iplgdqtq7ZLFR+wHxBSZstio4wt+II5iGo+FLQ0rmZUraroPoniTh9mz4gq3bIYkD6DPiCFcQ1BUpaGksmt19EsR5iP4k/olX/AOn8STuIakuFI0iS3v0SrfGL4kfRKs9eIf8AJLmIahwpHD7S992HRetVNJ/BC3G0OzVS3GMIpzJFd8pcNfAIVfFg5Nl25JRSN79IsE5YSPyTG0eD/wDyhv5LlwFIBW8qtSvmGZG1e0GGOGHPjwtrMlWwnhqFvvpRhY4YPH+S4LacWooXerOw/mtuLFoKiraO80WSrvdTOm+lWHDhg8SPpZQ8sJiC5jS6NFPlIFfMSOn+l1HywqJH0vpxwwyFcwknykB8xI6c7YQ8sNh9yPpizlh0HuXMWUgnykBcxI6b6ZW4YfB7kvpo/lQU/uXNKQS5WAcxI6Qbbzt4UNP7lk0u2800rI3UVMMzgOC5OwUon7qRrwNWkFKVpBroLjyyeh7QYq/Bo4HRxMk3mpz62WlO2lUW2FLTj8FrMW2hlxcRNkjawRiwssEEHgqqFmoxxJdSVWvLeyjdP2yrW8KeD3KI25rgbGGH3LT2uqZYuYV/LU9CHMTOh+mlbIPs4fcqn7YYiODYrf7VzwcWFWtkDtCjlqegceepuPpniX+n8KX0yxP1ox/xWnfHzCqRy1PQfHnqb36Y4p67PhWj2k2pxKafDS6RvcnBHdQCtRj32tB/5gq6lvBR7FlKtNy7nZja/FuU7R/xSftXisjS187XNOhBbxWmCas5eGhXxpGVR10tBVvqqYMileLEtbw9izztVip41P5LTX1TTdGD7oXFka/bGsrquNtbvbvZo424hcj2rWfxSu9libPE+J4u1wsV5/X0bqKrkhcPROnmFopQjjdLadVvoZ2F7U4rhNSJ6apc08HN5OHgV3uG7aVeKQ54qtwcPSYeLSvLFkUVbLQVDJ4XEEHUeI8EqlvCXh1JSk2erHHsS/zT0du4l/mpPetJhuKU+Jwh8TgH27zL6tWaAs3Biu6KHORsWY9iB0dVSe9TOMV7v3uX3rVlSY+2hOifChoRc5GwOK15/epfiVTsRr+PW5viVQsRcJgJcKGguJIkMVrgf71L8SsGJ1bh/eZfiWO+MHgqrFpRwo6DU2Zb6ys4iol+JVdeq+dRJ8STJL6FD2X1HFLhx0DiSDrtUf28nxINXUn9tJ8SqtY2QhU46DU5GmxSomk2gw4GV5LA48UKuoJftVTN9WFxQlGEevQnUk8L4GweACk3ghC1lCNRtT/7X/8AcZ81tYvsm+wIQq177+RY/cXxf2BJCFaVAjmhCSGPkmhCBApBCEMATQhIaDmrIyfFCEyUi4IPBCEFZRMB4KnghCBoujNxqlIB4IQgCsLU4/8Aa0H/AJwhCqq+6XUfeRuAmEIVhUMphCEhkguW2wY0VEDg0BxabnxQhTp+8Tp9znUIQr/EuMvDZ5KetifE8sdmAuF6DndvY230LblCFRV7ormWI5oQqiolGTfir2oQoiZJVyAWQhAioK2MkjVCEmNg8CypQhBKJouO1x8qbT3oQhRh4/EtqeHwP//Z" alt="El jugador cercano, visto desde atrás, bloquea una pelota que le llega al cuerpo: la pala adelante, la mano libre arriba al lado de la cara." width="360" height="307">
+        <figcaption>Un bloqueo en el juego, con <code>?zonas</code>: la pelota al cuerpo y la mirada que ya existía para la computadora, ahora también para vos.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section aria-labelledby="numbers">
+    <h2 id="numbers">Los números</h2>
+    <p>Con <code>npm run sim</code>, informe <code>zones</code>, 100 partidos por casilla. «Bien parado» y «sin acomodarse» tienen las mismas manos, las mismas piernas y la misma cabeza: uno termina a unos centímetros del lugar cómodo, el otro en cualquier lugar a un paso de la pelota. 1 contra 1 con el alcance de hoy; dobles al revés con el alcance real.</p>
+    <figure>
+      <div class="plate" id="pays"></div>
+      <figcaption>Cuántos puntos más gana el que se para bien que el que no se acomoda, sin zonas y con zonas. La línea punteada es la meta: +15 puntos porcentuales.</figcaption>
+    </figure>
+    <div class="table-wrap">
+      <table id="general">
+        <thead><tr><th>¿Más difícil o más fácil? Puntos ganados</th><th class="num">Bien parado</th><th class="num">Persona de los otros informes</th><th class="num">Segundos por punto</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="note" id="general-note"></p>
+    <figure>
+      <div class="plate" id="behind"></div>
+      <figcaption id="behind-caption">Golpes con la pelota detrás de la línea del cuerpo, en dobles con Beto contra Romina y Chela: la situación en la que la investigación de anatomía midió un 21 %. En 1 contra 1, de 17–26 % a 11–13 %.</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="next">
+    <h2 id="next">Lo que te toca decidir</h2>
+    <ol class="decisions" id="decisions"></ol>
+  </section>
+</main>
+
+<script>
+  // Every number on this page comes from `npm run sim`, report `zones` (tests/sim/zones.sim.ts), 100 matches per cell.
+  const DATA = {
+    pays: [
+      { name: '1 contra 1 · Beto', off: 4, on: 12 },
+      { name: '1 contra 1 · Romina', off: 10, on: 19 },
+      { name: '1 contra 1 · Chela', off: 14, on: 23 },
+      { name: 'Dobles con Beto', off: 5, on: 10 },
+      { name: 'Dobles con Romina', off: 3, on: 8 },
+      { name: 'Dobles con Chela', off: 1, on: 6 },
+    ],
+    general: [
+      { name: '1 contra 1 · Beto', careful: [87, 87], usual: [77, 71], seconds: [10.5, 10.7] },
+      { name: '1 contra 1 · Romina', careful: [77, 76], usual: [65, 57], seconds: [11.3, 10.5] },
+      { name: '1 contra 1 · Chela', careful: [77, 78], usual: [66, 56], seconds: [14.9, 14.8] },
+      { name: 'Dobles con Beto', careful: [66, 70], usual: [56, 58], seconds: [13.7, 13.8] },
+      { name: 'Dobles con Romina', careful: [81, 85], usual: [74, 75], seconds: [10.6, 10.4] },
+      { name: 'Dobles con Chela', careful: [75, 77], usual: [64, 65], seconds: [11.1, 10.3] },
+    ],
+    generalNote: 'Al que se para bien no le cambia nada, y los puntos duran lo mismo. La persona de los otros informes se para con unos 45 cm de error y la palanca a todo o nada: en 1 contra 1 pierde 6 a 10 puntos de cada 100, sobre todo por los bloqueos propios que Romina y Chela rematan. En dobles no pierde nada. Una persona que lo prueba aprende a acomodarse; la primera impresión puede ser «está más difícil».',
+    behind: [
+      { name: 'Todos los golpes', off: 19, on: 8 },
+      { name: 'La persona de siempre', off: 34, on: 26 },
+      { name: 'La computadora', off: 15, on: 3 },
+    ],
+    decisions: [
+      { title: '¿Se siente justo?', text: 'Lo más importante: que un bloqueo se entienda y no parezca un castigo de la máquina. Si castiga de más, hay perillas: el peso del bloqueo, cuánto te ayuda la simulación a no quedar encajonado y cuánto se remata una pelota regalada.' },
+      { title: '¿Contra Romina?', text: 'Remata toda pelota que flota. Quien se para con unos 45 cm de error pierde unos 10 puntos de cada 100 contra ella con las zonas. Es su personaje; si se siente injusto, se ajusta.' },
+      { title: '¿Lo tarde cuenta como «atrás»?', text: 'Hoy sí: si soltás tarde la pelota ya pasó, sale un manotazo y a más de 90 cm no hay golpe. Soltar antes no cuesta nada: el golpe queda armado.' },
+      { title: '¿El bloqueo va al medio o vuelve a quien la pegó?', text: 'Hoy al medio, como se acordó. En dobles eso hace dudar a la pareja rival, y por eso ahí estar bien parado paga menos. Vale la pena probar que vuelva a quien la pegó.' },
+      { title: '¿Las zonas por defecto?', text: 'Cuando se sientan bien en el celular: subir la versión de la física, recalibrar a los rivales, la lección «Al costado» y las pisadas dibujadas como suelas de zapatilla.' },
+      { title: '¿La ronda de animación?', text: 'El bloqueo con el codo arriba primero, y después el golpe tarde. Hoy se usan las miradas que ya existían.' },
+    ],
+  };
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const make = (tag, attrs, text) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [key, value] of Object.entries(attrs)) {
+      // Colors from the theme go through style: a presentation attribute does not take var().
+      if (typeof value === 'string' && value.startsWith('var(')) node.style.setProperty(key, value);
+      else node.setAttribute(key, String(value));
+    }
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+  const signed = (n) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
+
+  // Dumbbell: what standing well pays, without and with the zones, on one scale from 0 to 30 points.
+  (function pays() {
+    const rows = DATA.pays;
+    const W = 640, left = 170, right = 40, top = 34, row = 40;
+    const H = top + rows.length * row + 26;
+    const max = 30;
+    const x = (v) => left + (Math.max(-2, Math.min(max, v)) / max) * (W - left - right);
+    const svg = make('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Lo que paga estar bien parado, sin zonas y con zonas, por casilla.' });
+    for (let v = 0; v <= max; v += 5) {
+      svg.append(make('line', { x1: x(v), y1: top - 12, x2: x(v), y2: H - 26, stroke: 'var(--rule)', 'stroke-width': 1 }));
+      svg.append(make('text', { x: x(v), y: H - 8, 'text-anchor': 'middle', class: 'chart-text chart-muted' }, signed(v)));
+    }
+    svg.append(make('line', { x1: x(15), y1: top - 16, x2: x(15), y2: H - 26, stroke: 'currentColor', 'stroke-width': 1.4, 'stroke-dasharray': '5 4' }));
+    svg.append(make('text', { x: x(15) + 6, y: top - 18, class: 'chart-text' }, 'meta +15'));
+    svg.append(make('circle', { cx: left, cy: 12, r: 5, fill: 'var(--surface)', stroke: 'var(--muted)', 'stroke-width': 2 }));
+    svg.append(make('text', { x: left + 10, y: 16, class: 'chart-text chart-muted' }, 'sin zonas'));
+    svg.append(make('circle', { cx: left + 100, cy: 12, r: 6, fill: 'var(--accent)' }));
+    svg.append(make('text', { x: left + 110, y: 16, class: 'chart-text chart-muted' }, 'con zonas'));
+    rows.forEach((r, i) => {
+      const y = top + i * row + row / 2;
+      svg.append(make('text', { x: 0, y: y + 4, class: 'chart-text' }, r.name));
+      svg.append(make('line', { x1: x(r.off), y1: y, x2: x(r.on), y2: y, stroke: 'var(--accent)', 'stroke-width': 3, 'stroke-opacity': 0.45 }));
+      svg.append(make('circle', { cx: x(r.off), cy: y, r: 5.5, fill: 'var(--surface)', stroke: 'var(--muted)', 'stroke-width': 2 }));
+      svg.append(make('circle', { cx: x(r.on), cy: y, r: 6.5, fill: 'var(--accent)' }));
+      svg.append(make('text', { x: x(r.on) + 10, y: y + 4, class: 'chart-text', 'font-weight': 600 }, `${signed(r.on)} pp`));
+    });
+    document.getElementById('pays').append(svg);
+  })();
+
+  // General difficulty: points won by each simulated person, without → with the zones.
+  (function general() {
+    const body = document.querySelector('#general tbody');
+    for (const r of DATA.general) {
+      const tr = document.createElement('tr');
+      const cell = (text, num) => {
+        const td = document.createElement('td');
+        if (num) td.className = 'num';
+        td.textContent = text;
+        tr.append(td);
+      };
+      cell(r.name, false);
+      cell(`${r.careful[0]} → ${r.careful[1]} % (${signed(r.careful[1] - r.careful[0])})`, true);
+      cell(`${r.usual[0]} → ${r.usual[1]} % (${signed(r.usual[1] - r.usual[0])})`, true);
+      cell(`${r.seconds[0].toFixed(1).replace('.', ',')} → ${r.seconds[1].toFixed(1).replace('.', ',')}`, true);
+      body.append(tr);
+    }
+    document.getElementById('general-note').textContent = DATA.generalNote;
+  })();
+
+  // Behind the feet: share of hits, without and with the zones.
+  (function behind() {
+    const rows = DATA.behind;
+    const W = 640, left = 190, right = 60, top = 10, row = 46, bar = 14;
+    const H = top + rows.length * row + 26;
+    const max = 40;
+    const x = (v) => left + (v / max) * (W - left - right);
+    const svg = make('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Golpes con la pelota detrás de los pies, sin zonas y con zonas.' });
+    for (let v = 0; v <= max; v += 10) {
+      svg.append(make('line', { x1: x(v), y1: top, x2: x(v), y2: H - 26, stroke: 'var(--rule)', 'stroke-width': 1 }));
+      svg.append(make('text', { x: x(v), y: H - 8, 'text-anchor': 'middle', class: 'chart-text chart-muted' }, `${v} %`));
+    }
+    rows.forEach((r, i) => {
+      const y = top + i * row + 6;
+      svg.append(make('text', { x: 0, y: y + bar + 4, class: 'chart-text' }, r.name));
+      svg.append(make('rect', { x: left, y, width: x(r.off) - left, height: bar, fill: 'var(--muted)', 'fill-opacity': 0.45, rx: 2 }));
+      svg.append(make('text', { x: x(r.off) + 6, y: y + bar - 2, class: 'chart-text chart-muted' }, `${r.off} % sin zonas`));
+      svg.append(make('rect', { x: left, y: y + bar + 3, width: Math.max(2, x(r.on) - left), height: bar, fill: 'var(--behind)', rx: 2 }));
+      svg.append(make('text', { x: x(r.on) + 6, y: y + 2 * bar + 1, class: 'chart-text', 'font-weight': 600 }, `${r.on} % con zonas`));
+    });
+    document.getElementById('behind').append(svg);
+  })();
+
+  (function decisions() {
+    const list = document.getElementById('decisions');
+    for (const d of DATA.decisions) {
+      const li = document.createElement('li');
+      const b = document.createElement('b');
+      b.textContent = d.title;
+      li.append(b, ` ${d.text}`);
+      list.append(li);
+    }
+  })();
+</script>

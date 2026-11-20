@@ -46,6 +46,8 @@ export const TEXT = {
     late: 'Tarde',
   } satisfies Record<Quality, string>,
   whiffFar: 'No llegás',
+  /** With the hit zones on: a ball at the body, that could only be blocked (docs/zonas.md). */
+  block: 'Bloqueo',
 
   reason: {
     doubleBounce: 'Doble pique',
@@ -200,6 +202,11 @@ export const TEXT = {
     reachHint: {
       generous: 'Llegás un poco más lejos que una persona: alcanza con acercarse.',
       real: 'Como una persona: lo que el cuerpo no alcanza no se pega. Igual para todos.',
+    },
+    zones: 'Zonas de golpe',
+    zonesHint: {
+      on: 'Importa dónde te queda la pelota: al costado sale como la pediste; al cuerpo, solo la bloqueás; si ya te pasó, sale floja. Igual para todos.',
+      off: 'Alcanza con llegar a la pelota.',
     },
     side: 'Tu lado',
     sideDrive: 'Drive',

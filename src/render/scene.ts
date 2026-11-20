@@ -52,6 +52,11 @@ export interface Scene {
   tutorial: SceneTutorial | null;
   /** Rally pace above the base: 0 at the start, up to 1 in a long rally. */
   heat: number;
+  /**
+   * The hit zones are on (docs/zonas.md): where the ball is met around the
+   * body changes the shot, so a block is worth naming when it happens.
+   */
+  zones: boolean;
   pointer: PointerFeedback;
   reduceMotion: boolean;
   /** Show numbers meant for tuning (timing error in milliseconds). */
@@ -118,7 +123,9 @@ export interface ScenePlayer {
    * The computer: what the stroke it is winding up for, or in the middle of,
    * is like, when the body has something to show about it (docs/ia.md):
    * a ball it gets to with no time to set up, or one at its body that it can
-   * only block. Null for an ordinary one.
+   * only block. Null for an ordinary one. With the hit zones on
+   * (docs/zonas.md), anybody, the person too: a ball at the body is
+   * blocked, and one that has gone past it is a hurried, late slap.
    */
   why: SceneWhy | null;
   /**

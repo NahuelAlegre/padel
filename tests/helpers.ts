@@ -7,7 +7,7 @@ import { Rng } from '../src/core/rng';
 import { InputState } from '../src/input/state';
 import type { InterceptPlan } from '../src/sim/intercept';
 // Doubles: a person who plays positionally stands where the game's own pairs stand (see src/sim/pair.ts).
-import { LANE, LANE_NET, MIDDLE_BAND, SLIDE, SLIDE_MAX, type Attitude } from '../src/sim/pair';
+import { BODY_MARGIN, BODY_REACH, closestPass, LANE, LANE_NET, MIDDLE_BAND, plainlyTo, SLIDE, SLIDE_MAX, type Attitude } from '../src/sim/pair';
 import { Match, type Controller, type PlayerEntry, type SimEvent } from '../src/sim/match';
 import { playerReach, type Player } from '../src/sim/player';
 import type { Trajectory } from '../src/sim/trajectory';
@@ -128,8 +128,17 @@ export interface ScriptedSkill {
    * out: all of it, at once, as if it were said out loud. 'signs': only what
    * the partner shows with the body (`Player.callShown`), and `SIGN_READ`
    * seconds after it starts, as a person playing without sound does.
+   * 'every-sign': the same, as if the body showed every call, as it did
+   * before calls were sorted.
    */
-  hears?: 'words' | 'signs';
+  hears?: 'words' | 'signs' | 'every-sign';
+  /**
+   * Doubles: how it tells whose a ball is by itself. 'rule', left out: its
+   * side, and the middle for the forehand. 'court': before that, what anybody
+   * sees, as a padel player reads the court: a ball that comes at somebody's
+   * body, or plainly closer to one than to the other, is that one's.
+   */
+  reads?: 'rule' | 'court';
 }
 
 /** Seconds it takes a person to read what its partner shows with the body (`ScriptedSkill.hears`). */
@@ -220,9 +229,18 @@ export class ScriptedHuman implements Controller {
    * forehand toward it (for two right-handers, the one on the left). Without
    * tactics every ball it can get to is its own: a sprinter.
    */
-  private isMine(me: Player, partner: Player, guide: InterceptPlan | null): boolean {
+  private isMine(me: Player, partner: Player, guide: InterceptPlan | null, match: Match): boolean {
     if (!guide) return false;
     if (!this.thinking) return true;
+    if (this.skill.reads === 'court' && this.trajectory) {
+      // The court first: at somebody's body, or plainly closer to one of them.
+      const highest = match.config.player.maxContactZ;
+      const mine = closestPass(this.trajectory, me, match.time, highest);
+      const theirs = closestPass(this.trajectory, partner, match.time, highest);
+      if (Math.min(mine, theirs) <= BODY_REACH && Math.abs(mine - theirs) >= BODY_MARGIN) return mine < theirs;
+      const plainly = plainlyTo(mine, theirs, Math.hypot(me.x - partner.x, me.y - partner.y));
+      if (plainly >= 0) return plainly === 0;
+    }
     const dir = me.team === 0 ? 1 : -1;
     const mid = (me.x + partner.x) / 2;
     const off = guide.x - mid;
@@ -256,7 +274,9 @@ export class ScriptedHuman implements Controller {
 
   /** Whether it takes in what its partner is telling it now (see `ScriptedSkill.hears`). */
   private hearsIt(partner: Player): boolean {
-    return this.skill.hears !== 'signs' || (partner.callShown && this.now - partner.callAt >= SIGN_READ);
+    const hears = this.skill.hears ?? 'words';
+    if (hears === 'words') return true;
+    return (hears === 'every-sign' || partner.callShown) && this.now - partner.callAt >= SIGN_READ;
   }
 
   /** Is this decision a padel one? Draws nothing at the two ends, so 0 plays exactly as it always did. */
@@ -311,7 +331,7 @@ export class ScriptedHuman implements Controller {
         // Still reading the ball. In doubles it keeps its place in the pair meanwhile.
         moving = partner !== null;
       } else {
-        if (partner && this.mine === null) this.mine = this.isMine(me, partner, guide);
+        if (partner && this.mine === null) this.mine = this.isMine(me, partner, guide, match);
         if (guide && (!partner || this.mine)) {
           const placement = this.skill.placement ?? 'stance';
           const atBall = placement !== 'stance';
@@ -349,7 +369,7 @@ export class ScriptedHuman implements Controller {
 
     // In doubles a ball that is the partner's is left to the partner, even if it goes by within reach.
     if (partner && incoming && this.mine === null && me.plan && this.trajectory && match.time >= this.trajectory.t0) {
-      this.mine = this.isMine(me, partner, me.guide ?? me.plan);
+      this.mine = this.isMine(me, partner, me.guide ?? me.plan, match);
     }
     // What the partner says about the ball settles it, with tactics: "¡mía!", "¡voy!", "¡atrás!" or "¡tuya!".
     if (partner && incoming && this.thinking && this.trajectory && partner.callTraj === this.trajectory.id && partner.call && this.hearsIt(partner)) {

@@ -295,24 +295,27 @@ describe('señas de dobles', () => {
   });
 
   it('¿lo que se dice sin mostrarlo le hace falta a quien juega sin sonido?', () => {
-    const out: string[] = [`\nUna persona promedio, posicional, al revés, que se entera de todo lo que dice su compañero o solo de lo que muestra (${MATCHES} partidos):`];
+    const out: string[] = [
+      `\nUna persona promedio, posicional, al revés, que se entera de lo que le dice su compañero (${MATCHES} partidos): todo y al instante, como si lo oyera; viendo todas las señas, como antes; o viendo solo las que se muestran ahora. Viendo, tarda 0,25 s en leerlas.`,
+    ];
     const lineups: Array<[RivalId, [RivalId, RivalId]]> = [
       ['beto', ['romina', 'chela']],
       ['romina', ['beto', 'chela']],
       ['chela', ['beto', 'romina']],
     ];
-    for (const [mate, rivals] of lineups) {
+    for (const [mate, rivals, reads] of lineups.flatMap(([mate, rivals]) => (['rule', 'court'] as const).map((reads) => [mate, rivals, reads] as const))) {
       const cells: string[] = [];
-      for (const hears of ['words', 'signs'] as const) {
+      for (const hears of ['words', 'every-sign', 'signs'] as const) {
         const result = together((config, seed) => {
-          const me = humanEntry(seed, { ...withTactics(SKILLS.average, 1), hears });
+          const me = humanEntry(seed, { ...withTactics(SKILLS.average, 1), hears, reads });
           return [[partnerEntry(config, mate, seed + 1), me], [pairEntry(config, rivals[0], seed + 2), pairEntry(config, rivals[1], seed + 3)]];
         });
-        keep(`${mate}-${hears}`, result);
+        keep(`${mate}-${reads}-${hears}`, result);
         const per100 = (value: number): string => ((100 * value) / Math.max(1, result.balls)).toFixed(1);
-        cells.push(`${hears === 'words' ? 'todo' : 'solo señas'}: gana ${pct(result.won, result.points)} de los puntos; van los dos a ${per100(result.both)} y ninguno a ${per100(result.neither)} de cada 100`);
+        const name = { words: 'oye todo', 'every-sign': 'todas las señas', signs: 'las señas de ahora' }[hears];
+        cells.push(`${name}: gana ${pct(result.won, result.points)} de los puntos, no va ninguno a ${per100(result.neither)} de cada 100${result.both ? `, van los dos a ${per100(result.both)}` : ''}`);
       }
-      out.push(`  con ${mate}: ${cells.join('   |   ')}`);
+      out.push(`  con ${mate}, ${reads === 'rule' ? 'por la regla del lado y el medio' : 'leyendo la cancha (al cuerpo o claramente más cerca, y si no, la regla)'}:\n    ${cells.join('\n    ')}`);
     }
     console.log(out.join('\n'));
   });

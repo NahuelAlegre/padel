@@ -84,7 +84,9 @@ Medido en 30 partidos (`npx vitest run --config vitest.sim.config.ts calls`), vo
 | Pelotas que te llegan a la pareja con seña de tu compañero | 76 % | 21 % |
 | Pelotas que le llegan a la pareja rival con alguna seña | 85 % | 30 % (la mitad, las de su desorden) |
 
-Con Romina de compañera hace seña en el 36 % (sus robos y lo que no hace por la regla) y con Chela en el 21 %. Una persona simulada que solo ve las señas, y tarda 0,25 s en leerlas, gana 2 a 3 puntos porcentuales menos que una que oyera todo lo que dice su compañero, y hay 1 o 2 pelotas más de cada 100 a las que no va ninguno de los dos.
+Con Romina de compañera hace seña en el 36 % (sus robos y lo que no hace por la regla) y con Chela en el 21 %.
+
+**¿Le falta algo a quien juega sin sonido?** Medido en 100 partidos por casilla con una persona simulada, promedio y posicional, que tarda 0,25 s en leer una seña. Si lee la cancha como un jugador de pádel (la pelota que le viene al cuerpo o le pasa claramente más cerca es suya; si no, la regla), gana lo mismo con las señas de ahora que viendo todas como antes: con Beto, 62,5 % de los puntos antes y 61,3 % ahora; con Romina, 78,0 y 77,9; con Chela, 72,8 y 71,3 (el ruido de la medida es de ±1 punto). Si solo aplica la regla del lado y el medio, sin mirar a quién va la pelota, pierde de 3 a 6 puntos (con Beto, de 63,7 a 57,8 %) y no va ninguno de los dos a 2 pelotas más de cada 100: las señas de las pelotas claras le avisaban que tomara las que le venían al cuerpo.
 
 Los avisos salen cuando el compañero terminó de leer la pelota (su reacción, 0,2 a 0,35 s después del golpe rival), así hay medio segundo o más para actuar. Uno dicho sobre su propio golpe espera a que el golpe termine.
 

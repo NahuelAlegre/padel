@@ -636,7 +636,7 @@ export class ToonGL {
       order.splice(at, 0, figure);
     }
     for (const figure of order) {
-      if (!ballDrawn && ballBehind(ball.y, figure)) {
+      if (!ballDrawn && ballBehind(ball, figure)) {
         this.drawBall(ball, frame);
         ballDrawn = true;
       }

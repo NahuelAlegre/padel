@@ -252,7 +252,7 @@ export class FlatPainter {
       order.splice(at, 0, figure);
     }
     for (const figure of order) {
-      if (!ballDrawn && ballBehind(ball.y, figure)) {
+      if (!ballDrawn && ballBehind(ball, figure)) {
         this.drawBall(frame);
         ballDrawn = true;
       }

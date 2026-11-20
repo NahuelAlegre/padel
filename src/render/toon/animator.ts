@@ -2,6 +2,7 @@ import type { CallKind } from '../../sim/pair';
 import type { MannerismClip, TellCue, TellPose } from '../../characters/types';
 import { clamp, smoothstep } from '../../core/math';
 import type { ScenePlayer } from '../scene';
+import type { RacketFace } from '../stage/contact';
 import {
   blendPose,
   boneToCharacter,
@@ -18,7 +19,7 @@ import {
   type Skeleton,
   type Style,
 } from './character';
-import { bendLimb, worldRotations, type Limb } from './reach';
+import { armOf, elbowOf, keepElbow, keepWrist, legOf, reachLimb, worldRotations, wristOf, type Elbow, type Limb, type Wrist } from './reach';
 
 /**
  * Turns what the simulation says about a player into the pose of its body.
@@ -44,7 +45,10 @@ import { bendLimb, worldRotations, type Limb } from './reach';
  *     knee near the floor; for one further away the front foot steps toward
  *     it while the back one stays planted, and the hips go after the step;
  *     a jump is made smaller for a ball that is not so high. The arm takes
- *     the racket the rest of the way.
+ *     the racket a little further, never by force: what it does not reach,
+ *     it does not reach, and the swing goes on as the clip has it.
+ *   - Elbows and knees bend only the way they bend, and every wrist is kept
+ *     within its range, whatever the clips and the reach ask of them.
  *   - Just before the rival hits, somebody standing takes a little hop.
  *   - A character adds its own on top: how it stands and how wide it
  *     gestures, the windup that gives its shot away, a short tic between
@@ -100,9 +104,22 @@ const TELEPORT = 1.5;
  * of a real person that is next to nothing.
  */
 const BODY = {
-  /** What the arm takes before the body moves at all, and the most it takes. */
+  /** What the arm takes before the body moves at all. */
   armEasy: 0.16,
-  arm: 0.42,
+  /**
+   * The most the arm takes the hand from where the stroke has it: the swing
+   * still looks like itself, the elbow a little more or less bent, never
+   * thrown at the ball. Past `armSoft` it gives less and less, so it never
+   * stops dead at the most.
+   */
+  arm: 0.22,
+  armSoft: 0.12,
+  /**
+   * A block is all arm: no swing, nothing else moves, and the racket is put
+   * in front of the body, which an elbow folds to without strain.
+   */
+  armBlock: 0.4,
+  armBlockSoft: 0.3,
   /** Of that, how much is across the floor: past it the figure slides. */
   armAcross: 0.34,
   /** How far the hips go toward the ball with the feet where they are; running, leaning into it, a little more. */
@@ -128,6 +145,13 @@ const BODY = {
 /** The step toward the ball is taken this long before the contact, and taken back this long after it. Seconds. */
 const STEP_BEFORE = 0.34;
 const STEP_BACK = 0.4;
+/**
+ * The hand lets go of the ball this long after the contact, in seconds: the
+ * follow-through is the clip's. Held on to for longer, the arm keeps reaching
+ * for a ball that is gone while the clip swings across the body, and the
+ * elbow folds the wrong way.
+ */
+const LET_GO = 0.1;
 /** A call to the partner gives the arm back this long before the player's own contact, in seconds. */
 const CALL_CLEAR = 0.3;
 /** Seconds a gesture of a character takes to show, and to go away. */
@@ -173,8 +197,16 @@ const HEIGHTS = {
   above: 1.5,
   /** From here up any ball is played from above, whatever the shot is called. */
   aboveAnyway: 2.0,
-  /** From here up a volley is the one at the shoulder; below, a low one with the stroke of a drive. */
-  volley: 1.05,
+  /**
+   * From here up a volley is played as one; below, a ball this low in the air
+   * (half a volley) is played with the stroke of a drive. Measured on the
+   * figure, which is drawn bigger than life: a volley at the chest of a person
+   * is at the waist of the rival drawn half as big again, and still a volley,
+   * the knees bent for it.
+   */
+  volley: 0.75,
+  /** From here up a short ball (a drop shot) is played with the stroke of a volley. */
+  drop: 1.05,
   /** From here up a ball that has bounced is taken like a volley. */
   shoulder: 1.1,
   /** Up to here a ball far to the side is reached for at full stretch. */
@@ -216,6 +248,12 @@ const STEP_SETTLES = 0.6;
 const KNEE_FLOOR = 0.08;
 /** A jump made smaller still lifts the feet this much of what the clip lifts them. */
 const JUMP_KEEPS = 0.4;
+/**
+ * The head of the racket, in metres at life size: how far from its middle a
+ * ball hit with it is drawn (the sweet part of a head 25 cm across), and half
+ * its thickness.
+ */
+const RACKET_FACE = { reach: 0.06, half: 0.02 };
 
 /** Bones that belong to the legs: they follow the ground when the player moves. */
 const LEG_BONES = ['thigh.L', 'shin.L', 'foot.L', 'toe.L', 'thigh.R', 'shin.R', 'foot.R', 'toe.R'];
@@ -296,8 +334,9 @@ export function strokeClipName(player: ScenePlayer, k = 1, has: (name: string) =
     case 'lob':
       return forehand ? 'globo' : 'reves';
     case 'volley':
-    case 'drop':
       return height >= HEIGHTS.volley ? pick(side('volea'), plain) : plain;
+    case 'drop':
+      return height >= HEIGHTS.drop ? pick(side('volea'), plain) : plain;
     default:
       return height >= HEIGHTS.shoulder ? pick(side('volea'), plain) : plain;
   }
@@ -556,6 +595,7 @@ export class FigureAnimator implements AnimatedFigure {
   private lungeY = 0;
   private started = false;
   private readonly hits = new Map<string, [number, number, number]>();
+  private readonly heldHits = new Map<string, [number, number, number]>();
   /**
    * The feet. A foot on the floor stays where it is on the court, whatever
    * the pose above it does. When the pose wants it somewhere else (a step
@@ -632,9 +672,15 @@ export class FigureAnimator implements AnimatedFigure {
   /**
    * Where the racket meets the ball with the body of this frame: the clip's
    * own place when the whole body plays the stroke, somewhere else when the
-   * legs and the hips are running. And what it takes to work it out.
+   * legs and the hips are running; as the clip has it, and as it is drawn,
+   * with the wrists within range. And what it takes to work it out.
    */
   private readonly contact: [number, number, number] = [0, 0, 0];
+  private readonly contactHeld: [number, number, number] = [0, 0, 0];
+  /** Where the racket is going to meet the ball, in the character's own axes, as the stroke on show plans it; and whether it does in this frame. */
+  private readonly planned: [number, number, number] = [0, 0, 0];
+  private planning = false;
+  private readonly lag: [number, number, number] = [0, 0, 0];
   private readonly probe: Float32Array;
   private readonly probeAt: Float32Array;
   private readonly probeSkeleton: Skeleton;
@@ -664,6 +710,10 @@ export class FigureAnimator implements AnimatedFigure {
   private readonly arm: Limb;
   private readonly freeArm: Limb;
   private readonly bothLegs: Limb[];
+  /** Both elbows and both wrists, kept within their range in every frame; and the wrists for working out a pose aside. */
+  private readonly elbows: Elbow[];
+  private readonly wrists: Wrist[];
+  private readonly probeWrists: Wrist[];
   private readonly world: Float32Array;
   private readonly ankles = new Float32Array(6);
   /** The balls of the feet, where the toes bend: what a foot stands on. And where the ankles have to go. */
@@ -719,16 +769,16 @@ export class FigureAnimator implements AnimatedFigure {
     this.neck = character.bone('neck');
     this.braid = ['braid1', 'braid2', 'braid3'].map((name) => character.bone(name)).filter((bone) => bone >= 0);
     this.racket = character.bone('racket');
-    // The racket is in the right hand: the arm is the one that hand hangs from.
+    // The racket is in the right hand: the arm is the one that hand hangs from, the other one is free.
     const hand = character.meta.bones.parents[this.racket] ?? -1;
-    const fore = character.meta.bones.parents[hand] ?? -1;
-    this.arm = { upper: character.meta.bones.parents[fore] ?? -1, lower: fore, end: hand };
-    this.freeArm = { upper: character.bone('upper_arm.L'), lower: character.bone('forearm.L'), end: character.bone('hand.L') };
-    this.bothLegs = ['L', 'R'].map((side) => ({
-      upper: character.bone(`thigh.${side}`),
-      lower: character.bone(`shin.${side}`),
-      end: character.bone(`foot.${side}`),
-    }));
+    const side = character.meta.bones.names[hand]?.endsWith('.L') ? 'L' : 'R';
+    const other = side === 'L' ? 'R' : 'L';
+    this.arm = armOf(character, side);
+    this.freeArm = armOf(character, other);
+    this.bothLegs = [legOf(character, 'L'), legOf(character, 'R')];
+    this.elbows = [elbowOf(character, other), elbowOf(character, side)];
+    this.wrists = [wristOf(character, other, false), wristOf(character, side, true)];
+    this.probeWrists = this.wrists.map((wrist) => ({ ...wrist }));
     this.world = new Float32Array(character.bones * 4);
     this.inHand = this.measureHand();
     this.toes = ['toe.L', 'toe.R'].map((name) => character.bone(name));
@@ -813,6 +863,7 @@ export class FigureAnimator implements AnimatedFigure {
     const clips = character.clips;
     const style = this.style;
     const tempo = style?.tempo ?? 1;
+    this.planning = false;
     // Put somewhere else between two frames (a new point): nothing is carried over.
     const moved = Math.hypot(player.x - this.seenX, player.y - this.seenY);
     this.seenX = player.x;
@@ -1045,6 +1096,17 @@ export class FigureAnimator implements AnimatedFigure {
     // How it stands, and the turn of the pelvis for the legs that follow the ground.
     if (style) stand(pose, style);
     if (this.twist !== 0) twistHips(character, pose, this.twist * (1 - lower));
+    // In a stroke, the elbow and the wrist of the racket arm within their range from the start: what the body and
+    // the arm do for the ball is done with the racket where it is going to be drawn.
+    for (const wrist of this.wrists) {
+      if (!snap) continue;
+      wrist.held = 0;
+      wrist.kept = false;
+    }
+    if (swing && this.strokeWeight > 0) {
+      keepElbow(pose, this.elbows[1]!);
+      keepWrist(pose, this.wrists[1]!);
+    }
     solveSkeleton(character, pose, this.skeleton, style);
 
     // What the character adds: its tell while the racket is back, a tic while it rests.
@@ -1093,14 +1155,19 @@ export class FigureAnimator implements AnimatedFigure {
     );
 
     // ------------------------------------------------------------ life
-    // The arm takes the racket the rest of the way. The ball of a serve is the one the server dropped: only the arm.
+    // The arm takes the racket a little further toward the ball, and lets go of it right after the contact.
+    // The ball of a serve is the one the server dropped: only the arm.
     const serving = player.anim === 'serve' && this.strokePhase !== 'off' && Number.isFinite(eta);
-    const arm = serving ? lungeWeight(eta) * upper : this.fit.arm;
-    if (swing && arm > 0.001) this.reachArm(player, serving ? this.hitOf(swing) : this.contact, s, k, arm);
+    const arm = (serving ? lungeWeight(eta) * upper : this.fit.arm) * (eta < 0 ? 1 - smoothstep(0, LET_GO, -eta) : 1);
+    if (swing && arm > 0.001) this.reachArm(player, serving ? this.hitOf(swing, true) : this.contactHeld, s, k, arm);
     if (gesture > 0.001) this.gesticulate(gesture, Math.min(gesture, smoothstep(0, 1, this.gestureRacket)));
     const lean = this.gesture.lean * gesture + TENSE.lean * tense;
     if (Math.abs(lean) > 1e-3) this.leanTrunk(lean);
     this.look(pose, s, k, ball, dt, this.strokeWeight > 0.5 ? 0.4 : 0.8, snap);
+    // And whatever the reach and the gestures did to them since; and a hand never flips over from one frame to
+    // the next, which some clips have it do.
+    for (const elbow of this.elbows) keepElbow(pose, elbow);
+    for (const wrist of this.wrists) keepWrist(pose, wrist, dt);
     solveSkeleton(character, pose, this.skeleton, style);
     skinMatrices(character, this.skeleton, this.bones, style);
   }
@@ -1124,20 +1191,35 @@ export class FigureAnimator implements AnimatedFigure {
    * Where the middle of the racket is at the contact of a clip, for this
    * character: its bones are scaled and it stands its own way, so it is not
    * quite where the clip says for everybody. Null for a clip with no contact.
+   *
+   * `held` says where it is drawn: with the wrist kept within its range, a
+   * racket the clip holds with a wrist beyond it is somewhere else. The body
+   * goes to the ball as the clip has it; the arm, from where the racket is.
    */
-  hitOf(clip: Clip): [number, number, number] | null {
+  hitOf(clip: Clip, held = false): [number, number, number] | null {
     if (!clip.hit) return null;
     const style = this.style;
-    if (!style || (!style.scale && style.posture.length === 0) || this.racket < 0) return clip.hit;
-    let hit = this.hits.get(clip.name);
+    if (this.racket < 0 || (!held && (!style || (!style.scale && style.posture.length === 0)))) return clip.hit;
+    const hits = held ? this.heldHits : this.hits;
+    let hit = hits.get(clip.name);
     if (!hit) {
       const pose = samplePose(this.character, clip, contactOf(clip), new Float32Array(this.character.poseSize));
-      stand(pose, style);
+      if (style) stand(pose, style);
+      if (held) this.keepJoints(pose);
       const skeleton = solveSkeleton(this.character, pose, createSkeleton(this.character), style);
       hit = boneToCharacter(skeleton, this.racket, this.character.meta.racketCenter, [0, 0, 0]);
-      this.hits.set(clip.name, hit);
+      hits.set(clip.name, hit);
     }
     return hit;
+  }
+
+  /** The elbows and the wrists of a pose worked out aside, kept within their range as the ones on show are. */
+  private keepJoints(pose: Float32Array): void {
+    for (const elbow of this.elbows) keepElbow(pose, elbow);
+    for (const wrist of this.probeWrists) {
+      wrist.held = 0;
+      keepWrist(pose, wrist);
+    }
   }
 
   /** Where the ball sits in the free hand, in the axes of the hand, from what the serve says about its start. */
@@ -1201,16 +1283,23 @@ export class FigureAnimator implements AnimatedFigure {
    * legs and the hips running, the arms of the stroke go on top of the hips
    * of the run, and the racket ends up somewhere else: this says where.
    * `lower` is how much of the legs the stroke has once it is all there.
+   *
+   * It is worked out twice: as the clip has it, for the body (`this.contact`),
+   * and as it is drawn, with the wrists within range, for the arm
+   * (`this.contactHeld`). False for a clip with no contact.
    */
-  private contactWith(clip: Clip, lower: number): [number, number, number] | null {
+  private contactWith(clip: Clip, lower: number): boolean {
     const hit = this.hitOf(clip);
-    if (!hit || this.racket < 0) return hit;
+    const held = this.hitOf(clip, true);
+    if (!hit || !held) return false;
     const out = this.contact;
+    const drawn = this.contactHeld;
     if (lower >= 0.999 && this.twist === 0) {
-      out[0] = hit[0];
-      out[1] = hit[1];
-      out[2] = hit[2];
-      return out;
+      for (let c = 0; c < 3; c++) {
+        out[c] = hit[c]!;
+        drawn[c] = held[c]!;
+      }
+      return true;
     }
     const character = this.character;
     samplePose(character, clip, contactOf(clip), this.probeAt);
@@ -1219,7 +1308,11 @@ export class FigureAnimator implements AnimatedFigure {
     if (this.style) stand(this.probe, this.style);
     if (this.twist !== 0) twistHips(character, this.probe, this.twist * (1 - lower));
     solveSkeleton(character, this.probe, this.probeSkeleton, this.style);
-    return boneToCharacter(this.probeSkeleton, this.racket, character.meta.racketCenter, out);
+    boneToCharacter(this.probeSkeleton, this.racket, character.meta.racketCenter, out);
+    this.keepJoints(this.probe);
+    solveSkeleton(character, this.probe, this.probeSkeleton, this.style);
+    boneToCharacter(this.probeSkeleton, this.racket, character.meta.racketCenter, drawn);
+    return true;
   }
 
   /** Nothing to reach: the body does nothing for a ball, and the feet go back to where the clips have them. */
@@ -1258,12 +1351,12 @@ export class FigureAnimator implements AnimatedFigure {
     fit.arm = (block ? blockWeight(eta) : lungeWeight(eta)) * upper * (miss ? MISS_ARM : 1);
     fit.short = miss;
     if (fit.body <= 0 && fit.arm <= 0) return;
-    const hit = this.contactWith(clip, upper > 0 ? lower / upper : 1);
-    if (!hit) {
+    if (!this.contactWith(clip, upper > 0 ? lower / upper : 1)) {
       fit.body = 0;
       fit.arm = 0;
       return;
     }
+    const hit = this.contact;
     // Where the ball is from where the clip meets it, in the character's own axes at life size.
     fit.dx = (s * player.reachX) / k - hit[0];
     fit.dy = (s * player.reachY) / k - hit[1];
@@ -1516,12 +1609,14 @@ export class FigureAnimator implements AnimatedFigure {
     solveSkeleton(character, pose, skeleton, this.style);
     worldRotations(character, pose, this.world);
     this.bendLegs();
-    // A knee never goes through the floor: if one would, the hips come up for it. Up comes the knee by
-    // less than the hips do, so it may take a second look.
+    // A knee never goes through the floor, and a leg folded as far as a knee goes does not push its foot
+    // through it either: the hips come up for them. Up comes the knee by less than the hips do, so it may
+    // take a second look.
     for (let pass = 0; pass < 3; pass++) {
       const knee = Math.min(pos[this.bothLegs[0]!.lower * 3 + 2]!, pos[this.bothLegs[1]!.lower * 3 + 2]!);
-      if (knee >= KNEE_FLOOR - 0.002) break;
-      const up = (KNEE_FLOOR - knee) * 1.5;
+      let up = knee < KNEE_FLOOR - 0.002 ? (KNEE_FLOOR - knee) * 1.5 : 0;
+      for (let i = 0; i < 2; i++) up = Math.max(up, this.tooFolded(i));
+      if (up <= 0) break;
       pose[root + 2] = pose[root + 2]! + up;
       fit.z += up;
       solveSkeleton(character, pose, skeleton, this.style);
@@ -1530,40 +1625,66 @@ export class FigureAnimator implements AnimatedFigure {
     }
   }
 
-  /** Bends both legs so the ankles are at `this.targets`, knees forward: the character looks along its own -y. */
+  /**
+   * How much higher the hips would have to be for leg `i` to get its ankle to
+   * its target, when the knee is as bent as it goes and the ankle is further
+   * from the hip than the target: 0 otherwise. The skeleton has to be solved.
+   */
+  private tooFolded(i: number): number {
+    const pos = this.skeleton.pos;
+    const leg = this.bothLegs[i]!;
+    const h = leg.upper * 3;
+    const a = leg.end * 3;
+    const o = i * 3;
+    const reached = Math.hypot(pos[a]! - pos[h]!, pos[a + 1]! - pos[h + 1]!, pos[a + 2]! - pos[h + 2]!);
+    const wanted = Math.hypot(this.targets[o]! - pos[h]!, this.targets[o + 1]! - pos[h + 1]!, this.targets[o + 2]! - pos[h + 2]!);
+    return reached - wanted > 0.005 ? reached - wanted : 0;
+  }
+
+  /** Bends both legs so the ankles are at `this.targets`, each knee the way the pose has it pointing. */
   private bendLegs(): void {
     const character = this.character;
     for (let i = 0; i < 2; i++) {
       const o = i * 3;
-      bendLimb(character, this.pose, this.skeleton, this.world, this.bothLegs[i]!, this.targets[o]!, this.targets[o + 1]!, this.targets[o + 2]!, 0, -0.6, 0);
+      reachLimb(character, this.pose, this.skeleton, this.world, this.bothLegs[i]!, this.targets[o]!, this.targets[o + 1]!, this.targets[o + 2]!);
     }
     solveSkeleton(character, this.pose, this.skeleton, this.style);
   }
 
   /**
-   * Takes the racket from where the clip has it to where the ball really is,
-   * with the body where the fit put it. `weight` is how much of the way: it
-   * grows as the contact comes and goes away after it, so the whole swing is
-   * bent toward the ball instead of the racket jumping to it. The skeleton
-   * has to be the one of the pose.
+   * Takes the racket from where the clip has it toward where the ball really
+   * is, with the body where the fit put it: a little, never all the way at
+   * any cost (see `BODY.arm`). `weight` is how much of that: it grows as the
+   * contact comes and goes away right after it, so the whole swing is bent
+   * toward the ball instead of the racket jumping to it. `hit` is where the
+   * racket meets the ball as it is drawn, without the arm. The skeleton has to
+   * be the one of the pose.
    */
   private reachArm(player: ScenePlayer, hit: readonly [number, number, number] | null, s: number, k: number, weight: number): void {
-    if (!hit || this.arm.upper < 0) return;
+    if (!hit || this.arm.upper < 0 || this.racket < 0) return;
     const character = this.character;
     const fit = this.fit;
-    const pos = this.skeleton.pos;
     // What still separates the ball from where this clip meets it, in the character's own axes at life size.
     // The ball of a serve drops from the server's own hand: it is as much bigger than life as the server.
     const own = player.anim === 'serve' ? k : 1;
     const dx = (s * (player.x + player.reachX * own - this.x)) / k - hit[0] - fit.x;
     const dy = (s * (player.y + player.reachY * own - this.y)) / k - hit[1] - fit.y;
     const dz = (player.reachZ * own) / k - hit[2] - fit.z;
-    // As far as an arm goes.
+    // As far as the arm goes without being thrown at the ball: the further, the less of it.
     const far = Math.hypot(dx, dy, dz);
-    const scale = (far > BODY.arm ? BODY.arm / far : 1) * weight;
+    if (far < 1e-6) return;
+    const block = player.why === 'block' && player.anim === 'swing';
+    const taken = soften(far, block ? BODY.armBlockSoft : BODY.armSoft, block ? BODY.armBlock : BODY.arm) / far;
+    const scale = taken * weight;
+    // Where the racket is going to be when it gets there: the clip's place, the body's way and all of the arm's.
+    this.planned[0] = hit[0] + fit.x + dx * taken;
+    this.planned[1] = hit[1] + fit.y + dy * taken;
+    this.planned[2] = hit[2] + fit.z + dz * taken;
+    this.planning = true;
     worldRotations(character, this.pose, this.world);
-    const hand = this.arm.end * 3;
-    bendLimb(character, this.pose, this.skeleton, this.world, this.arm, pos[hand]! + dx * scale, pos[hand + 1]! + dy * scale, pos[hand + 2]! + dz * scale);
+    // It is the racket that the arm takes there, with the wrist as the clip has it: the wrist is never bent for it.
+    const racket = boneToCharacter(this.skeleton, this.racket, character.meta.racketCenter, this.at);
+    reachLimb(character, this.pose, this.skeleton, this.world, this.arm, racket[0] + dx * scale, racket[1] + dy * scale, racket[2] + dz * scale, racket);
     solveSkeleton(character, this.pose, this.skeleton, this.style);
   }
 
@@ -1669,8 +1790,8 @@ export class FigureAnimator implements AnimatedFigure {
         const hand = limb.end * 3;
         const w = i === 0 ? weight : racket;
         if (w <= 0.001) continue;
-        // Elbows stay low and a little out, so an arm that comes up does not cross the body.
-        bendLimb(
+        // The elbow keeps pointing the way the clip has it: down and a little out for an arm at the side.
+        reachLimb(
           character,
           pose,
           skeleton,
@@ -1679,9 +1800,6 @@ export class FigureAnimator implements AnimatedFigure {
           pos[hand]! + (target[0] - pos[hand]!) * w,
           pos[hand + 1]! + (target[1] - pos[hand + 1]!) * w,
           pos[hand + 2]! + (target[2] - pos[hand + 2]!) * w,
-          i === 0 ? 0.15 : -0.15,
-          0,
-          -0.35,
         );
       }
     }
@@ -1705,6 +1823,91 @@ export class FigureAnimator implements AnimatedFigure {
     out[0] = this.x + s * this.at[0] * k;
     out[1] = this.y + s * this.at[1] * k;
     out[2] = this.at[2] * k;
+    return out;
+  }
+
+  /**
+   * The head of the racket on the court, with the pose of the last update:
+   * where a ball is drawn when it is hit (see `stage/contact.ts`). False when
+   * there is no racket. The head is flat across the racket bone's own x and
+   * y: its faces look along the bone's z.
+   */
+  racketFace(k: number, facing: 1 | -1, out: RacketFace): boolean {
+    if (this.racket < 0) return false;
+    const s = facing > 0 ? -1 : 1;
+    boneToCharacter(this.skeleton, this.racket, this.character.meta.racketCenter, this.at);
+    out.x = this.x + s * this.at[0] * k;
+    out.y = this.y + s * this.at[1] * k;
+    out.z = this.at[2] * k;
+    const o = this.racket * 9;
+    const rot = this.skeleton.rot;
+    out.nx = s * rot[o + 2]!;
+    out.ny = s * rot[o + 5]!;
+    out.nz = rot[o + 8]!;
+    out.reach = RACKET_FACE.reach * k;
+    out.half = RACKET_FACE.half * k;
+    return true;
+  }
+
+  /**
+   * Where the middle of the racket is going to meet the ball, on the court,
+   * as the stroke on show plans it in the last update: the clip's place, with
+   * the body and the arm as they go for it. False when no stroke is going for
+   * a ball.
+   *
+   * A hand that turns no faster than a wrist does can be a little behind the
+   * turn the clip has it in at the moment, and so is the racket: `behind` is
+   * how much of that to count, all of it to say where the racket is right at
+   * the contact.
+   */
+  racketAtContact(k: number, facing: 1 | -1, out: number[], behind = 1): boolean {
+    if (!this.planning) return false;
+    const s = facing > 0 ? -1 : 1;
+    const lag = behind > 0 ? this.racketBehind(this.lag) : this.lag.fill(0);
+    out[0] = this.x + s * (this.planned[0] + lag[0] * behind) * k;
+    out[1] = this.y + s * (this.planned[1] + lag[1] * behind) * k;
+    out[2] = (this.planned[2] + lag[2] * behind) * k;
+    return true;
+  }
+
+  /**
+   * How far the middle of the racket is, in the character's own axes, from
+   * where it would be if its hand had turned as far as it was going to in the
+   * last update (see `keepWrist`): nothing, most of the time.
+   */
+  private racketBehind(out: [number, number, number]): [number, number, number] {
+    out[0] = 0;
+    out[1] = 0;
+    out[2] = 0;
+    const wrist = this.wrists[1]!;
+    const hand = wrist.bone;
+    const fore = this.arm.lower;
+    if (!wrist.kept || hand < 0 || fore < 0 || this.racket < 0) return out;
+    const { rot, pos } = this.skeleton;
+    // The racket from the wrist, in the axes of the forearm.
+    boneToCharacter(this.skeleton, this.racket, this.character.meta.racketCenter, this.at);
+    const vx = this.at[0] - pos[hand * 3]!;
+    const vy = this.at[1] - pos[hand * 3 + 1]!;
+    const vz = this.at[2] - pos[hand * 3 + 2]!;
+    const f = fore * 9;
+    const ux = rot[f]! * vx + rot[f + 3]! * vy + rot[f + 6]! * vz;
+    const uy = rot[f + 1]! * vx + rot[f + 4]! * vy + rot[f + 7]! * vz;
+    const uz = rot[f + 2]! * vx + rot[f + 5]! * vy + rot[f + 8]! * vz;
+    // Turned from the hand it has to the hand it was going for: wanted · last⁻¹.
+    const l = wrist.last;
+    const w = wrist.wanted;
+    const q = this.turn;
+    multiplyQuaternions(w, 0, [-l[0]!, -l[1]!, -l[2]!, l[3]!], 0, q, 0);
+    const cx = q[1]! * uz - q[2]! * uy + q[3]! * ux;
+    const cy = q[2]! * ux - q[0]! * uz + q[3]! * uy;
+    const cz = q[0]! * uy - q[1]! * ux + q[3]! * uz;
+    const tx = ux + 2 * (q[1]! * cz - q[2]! * cy);
+    const ty = uy + 2 * (q[2]! * cx - q[0]! * cz);
+    const tz = uz + 2 * (q[0]! * cy - q[1]! * cx);
+    // Back to the character's axes: how far the racket is from there.
+    out[0] = vx - (rot[f]! * tx + rot[f + 1]! * ty + rot[f + 2]! * tz);
+    out[1] = vy - (rot[f + 3]! * tx + rot[f + 4]! * ty + rot[f + 5]! * tz);
+    out[2] = vz - (rot[f + 6]! * tx + rot[f + 7]! * ty + rot[f + 8]! * tz);
     return out;
   }
 
@@ -1784,6 +1987,13 @@ export class FigureAnimator implements AnimatedFigure {
       multiplyQuaternions(pose, this.braid[i]! * 4, q, 0, pose, this.braid[i]! * 4);
     }
   }
+}
+
+/** `x` as it is up to `knee`, and from there on less and less, never past `top`: it comes to a stop softly, not dead. */
+function soften(x: number, knee: number, top: number): number {
+  if (x <= knee) return x;
+  const room = top - knee;
+  return knee + room * (1 - Math.exp(-(x - knee) / room));
 }
 
 /** How much of the arm's way to the ball is taken `eta` seconds before the contact (negative after it). */

@@ -56,6 +56,11 @@ export interface BallFrame {
   y: number;
   z: number;
   visible: boolean;
+  /**
+   * The figure it is drawn over whatever their depths: the one it is on the
+   * racket of, right as it is hit. Null otherwise.
+   */
+  over: FigureFrame | null;
   /** 0..1: lit up in the last instant before the person has to hit it. */
   glow: number;
   /** Where it was in the last few frames, newest first: x, y, z each. */
@@ -96,8 +101,8 @@ export interface EffectFrame {
  * meets the ball in front of their body, which from the camera is behind it,
  * and the ball a player is about to hit has to be seen.
  */
-export function ballBehind(ballY: number, figure: FigureFrame): boolean {
-  return ballY > figure.y + (figure.facing > 0 ? BALL_IN_FRONT * figure.k : 0);
+export function ballBehind(ball: BallFrame, figure: FigureFrame): boolean {
+  return ball.over !== figure && ball.y > figure.y + (figure.facing > 0 ? BALL_IN_FRONT * figure.k : 0);
 }
 
 /** How far beyond a player with its back to the camera the ball is still drawn over it, in metres at life size. */

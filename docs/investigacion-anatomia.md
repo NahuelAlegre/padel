@@ -6,6 +6,8 @@ Lo pidió el usuario después de mirar el estudio con Zoom: *«los personajes se
 
 Hay un Artifact privado con las capturas, los diagramas y las comparaciones de antes y después: [«Anatomía de los personajes»](https://claude.ai/artifact/LEj1ZAt7EvqgGJVuchgZyw).
 
+**Implementado el 2026-11-20:** los pasos 0, 1 y 2, sin la segunda pasada al centro de la pala y con la pelota dibujada en la pala. Qué cambió, los números de antes y después y lo que queda están en la sección 8.
+
 ## Resumen
 
 | | Qué pasa | Cuánto | De dónde sale |
@@ -502,3 +504,124 @@ Y en `npm run sim`, un informe `anatomia` con la tabla de la sección 1 por fami
   - las charlas de GDC se citan por su ficha y por lo que publicaron sus autores o la prensa;
   - de TopSpin 2K25, lo que dice el artículo de Xbox Wire;
   - el foro de GameDev.net y el estudio de Loushin no se pudieron abrir y se citan por su resumen.
+
+## 8. Lo implementado (2026-11-20)
+
+Rama `claude/anatomy-ik-a8966f`. **Solo dibujo:** la simulación da exactamente lo mismo. En `npm run sim`, de 621 líneas cambian solo las 28 que miden el dibujo en `reach.sim.ts`.
+
+Se hicieron los pasos 0, 1 y 2 de la sección 5, **sin la segunda pasada al centro de la pala**: si la pala no llega a la pelota, no llega. En su lugar, la pelota se dibuja apoyada en la pala alrededor del contacto.
+
+Las capturas de antes y después están en un Artifact privado: [«Anatomía: antes y después»](https://claude.ai/artifact/T7Jxas28dg52HuHWF9Ehaf).
+
+### Qué cambió
+
+- **La vara: `tests/anatomy.test.ts`**, en la suite normal (unos 2 s).
+  - Mide con los límites duros de la sección 6 cada clip con cada personaje, las situaciones del estudio que salen de un partido (el jugador que muestran) y un minuto de dobles (los cuatro jugadores).
+  - Lo que hoy pasa un límite está en dos listas explícitas. `CLIPS` es lo que traen de Blender. `DRAWN` es lo que todavía se dibuja fuera, cada entrada con su porqué.
+  - Las listas solo se achican: la prueba falla si algo empeora, si una entrada sobra o si sobra por 10° o más.
+  - `tests/contact.test.ts` prueba la pelota en la pala: llega sin saltos, se suelta igual de suave cuando el golpe se erra y no va hacia una pala que quedó lejos.
+- **IK de dos huesos con bisagra y topes** (`reachLimb` en `src/render/toon/reach.ts`, en lugar de `bendLimb`), para brazos, piernas y gestos.
+  - El codo y la rodilla doblan solo alrededor de su bisagra: de 2° a 145° y de 2° a 150°. Una articulación que el clip ya trae fuera de rango no se lleva más lejos.
+  - El miembro entero gira desde el hombro o la cadera por el camino más corto, así el pliegue queda del lado donde lo tiene el clip. Un polo explícito, como proponía la sección 5, daba vuelta las rodillas.
+  - El brazo se estira cada vez más despacio cerca del tope. La pierna no, para que el pie apoyado no patine.
+  - Si una pierna doblada al máximo no llega al pie apoyado, sube la cadera, igual que cuando una rodilla tocaría el piso.
+- **El brazo no se fuerza.**
+  - Lleva la pala hacia la pelota hasta 32 cm, suave desde 16 cm. Antes eran 42 cm de golpe.
+  - Mueve la pala con la muñeca como la tiene el clip: no dobla la muñeca para llegar.
+  - Suelta 0,1 s después del contacto. Antes, 0,32 s.
+- **Pasada final de límites**, en cada cuadro:
+  - los dos codos quedan bisagras dentro de su rango; el giro del antebrazo sobre sí mismo, que traen algunos clips, pasa a la mano;
+  - las dos muñecas quedan dentro de la elipse de flexión, extensión y desvío y dentro de su pronación y supinación; la de la pala se mide con el agarre diagonal de 45°;
+  - una mano no gira más de 1500°/s sobre el antebrazo: los saltos de los clips se reparten en dos o tres cuadros.
+- **La pelota dibujada en la pala** (`src/render/stage/contact.ts`). Unos cuadros alrededor del contacto, la pelota que se ve deja su camino, se apoya en la cara de la pala con la que se pega y vuelve a su camino al salir. La sombra, la estela y el destello van con ella, y se dibuja delante del cuerpo que la taparía.
+  - Antes del contacto va adonde la pala va a encontrarla, no adonde la pala todavía está. En el contacto toma el punto de la cara donde la pala estaba de verdad, y sale de ahí.
+  - Solo si la pala quedó cerca: entera hasta 25 cm (en metros del personaje), cada vez menos hasta 45 cm y, desde ahí, nada.
+  - Nunca salta: de un cuadro al otro se aparta de su camino, o vuelve, a lo sumo un 35 % de lo que avanza (unos 20° de curva). Si el golpe se erra o se corta, vuelve igual de suave.
+  - En 2D no hace falta: la pala del dibujo plano ya va al punto de contacto de la simulación.
+- **La volea de Romina**, y la de cualquiera que se dibuje más grande, usa el clip de volea desde 0,75 m de altura en metros del personaje. Antes era desde 1,05 m, que en el rival, dibujado 1,5 veces más grande, quedaba a la altura de la cintura. El drop sigue usándolo desde 1,05 m.
+
+### Antes y después
+
+**Partidos de dobles con alcance real** (el script de la sección 1, `PROTO=0`, tres partidos de cada tipo):
+
+| Medida | Antes | Ahora |
+| --- | --- | --- |
+| Rodillas fuera de rango, todos los cuadros | 73 % | **0 %** |
+| Codo de la pala, ±0,3 s del golpe | 63 % | **3 %**, de los clips |
+| Codo libre, en los gestos | 44 % | **0 %** |
+| Muñeca de la pala con agarre diagonal, ±0,3 s del golpe | 78 % | **0 %** |
+| Muñeca libre, ±0,3 s del golpe / en los gestos | 59 % / 79 % | **0 % / 0 %** |
+| Caderas, ±0,3 s del golpe | 17 % | 11 % |
+| Tobillos, ±0,3 s del golpe | 45 % | 42 % |
+| Hombros, ±0,3 s del golpe / en los gestos | 28 % / 50 % | 27 % / 55 % |
+| Pie apoyado alrededor de un golpe parado (p99 por cuadro) | 2,2 mm | 2,2 mm |
+
+**El estudio** (las 35 tomas, 4878 cuadros del jugador enfocado):
+
+| Grupo | Antes | Ahora |
+| --- | --- | --- |
+| Muñeca libre | 38 %, hasta +152° | **0 %** |
+| Codo de la pala | 22 %, hasta +169° | **1 %**, hasta +69°: doblado de costado, de los clips |
+| Codo libre | 15 %, hasta +170° | **0,4 %**, hasta +72°: lo mismo |
+| Rodillas | 64 %, hasta +108° | **0 %** |
+| Caderas | 4 %, hasta +15° | 1 %, hasta +26°: la estirada |
+| Muñeca de la pala tal cual (agarre de martillo) | 96 %, hasta +126° | 89 %, hasta +43°: es el agarre del modelo |
+| Hombros | 19 % | 21 % |
+| Tobillos | 13 % | 13 % |
+| Cuánto se afina la muñeca de la pala, en la peor toma | hasta 100 % | hasta 57 % |
+
+**La pala y la pelota en el instante del contacto**, entre el cuadro de antes y el de después. Son cuatro partidos de cada tipo, en metros del personaje (mediana / p75 / p90):
+
+| | Antes | Ahora |
+| --- | --- | --- |
+| La pala, de la pelota (sin truco), 1 contra 1 | 1,4–1,5 / 2,5–2,6 / 6 cm | 4,0–4,1 / 8,2–8,6 / 14–15 cm |
+| La pala, de la pelota (sin truco), dobles | 1,0–1,3 / 2,4–2,5 / 5,8–6,6 cm | 4,0–4,2 / 7,3–7,8 / 11–13 cm |
+| La pelota dibujada, del centro de la cabeza de la pala | no había | 4,5–4,7 / 4,8–5,1 / 6,7–7,4 cm |
+
+- **La pala queda más lejos que antes**, porque el brazo ya no se tira a la pelota.
+- **La pelota dibujada queda apoyada en la cara en más del 90 % de los golpes.** Apoyada es a 4,5 cm del centro (el radio de la pelota más medio grosor de la pala), y hasta 7,5 cm sigue sobre la cara. Antes la pelota pasaba por el centro de la cabeza, metida en la pala.
+- **El resto son pelotas que la simulación pone donde el cuerpo no llega** (el p99, de 18 a 64 cm). Esas no se llevan a la pala: se ve que no llega. Lo resuelve el paso 3.
+- **Cuánto se aparta la pelota de su camino**, en metros de la cancha: mediana 9 cm, p90 18–20 cm, máximo 33 cm. De un cuadro al otro, a lo sumo 13–15 cm, y nunca más del 50 % de lo que avanza.
+- **`npm run sim` mide la pala un cuadro después del golpe**, en metros de la cancha (mediana / p90):
+  - 1 contra 1: 8 / 20 → 15 / 37 cm con el alcance actual, y 8 / 17 → 14 / 30 con el real;
+  - dobles: 6 / 15 → 11 / 28 y 4 / 14 → 11 / 21.
+
+  Esa medida castiga que la pala siga su swing. Antes la IK la tenía atada al punto de contacto hasta 0,32 s después, que es lo que doblaba el codo al revés.
+
+**Por qué 32 cm.** En el estudio, 22, 32 y 42 cm se ven iguales cuadro a cuadro: la cadera y el paso hacen casi todo, y lo que le queda al brazo en esas tomas es menos de 22 cm. La diferencia está en los golpes de partido con la pelota lejos de lo que alcanza el clip.
+
+- Con 32 cm, las correcciones de menos de 16 cm, que son la mayoría (la mediana era 12 cm), no cambian.
+- Más pelotas quedan en la pala, y la pelota dibujada se aparta menos de su camino.
+
+La medida de `npm run sim`, 1 contra 1 con el alcance actual (mediana / p90):
+
+| Variante | La pala un cuadro después del golpe |
+| --- | --- |
+| Antes | 8 / 20 cm |
+| Brazo hasta 22 cm (suave desde 12) | 19 / 46 cm |
+| **Brazo hasta 32 cm (suave desde 16)** | **15 / 37 cm** |
+| Brazo hasta 42 cm de golpe, como antes | 11 / 28 cm |
+| 22 cm, sin la muñeca en rango | 12 / 36 cm |
+| 22 cm, sin el tope de velocidad de la muñeca | 17 / 41 cm |
+
+**Costo:**
+
+- **CPU del animador:** de 6,6–6,8 a 7,2–7,25 µs por figura y cuadro (la mejor de 9 repeticiones, en corridas alternadas con la versión anterior). Son 0,5 µs más, un 8 %: con cuatro figuras, 2 µs de los 16.700 que dura un cuadro.
+- **Peso:** el JS del juego pasa de 90.020 a 94.426 bytes con gzip (+4,4 KB) y de 78.291 a 82.111 con brotli (+3,8 KB).
+
+### Lo que queda
+
+- **Clips en Blender (paso 4).**
+  - El agarre de martillo: la muñeca de la pala tal cual sigue fuera en el 89 % del estudio, unos 43°, aunque con el agarre diagonal quede en rango.
+  - Los codos doblados de costado que traen los clips (lista `CLIPS`).
+  - La mano relativa al antebrazo, la orientación interpolada con *slerp* y la verificación de límites al exportar.
+
+  Cada arreglo achica las listas de la prueba.
+- **Hueso de giro del antebrazo (paso 5).** La muñeca de la pala todavía se afina hasta un 57 % en la peor toma.
+- **Simulación (paso 3), lo que hace la sesión `zonas-golpe`.** En el 10 % de los golpes la pala queda a más de 11–15 cm de la pelota; en el 1 %, a más de 25 cm, y esas no se llevan a la pala.
+- **Tobillos.** Con el pie apoyado plano y la cadera baja, el tobillo pasa su flexión dorsal (13 % del estudio, 42 % cerca del golpe). Falta levantar el talón.
+- **Hombros en los gestos**, que suben de 50 % a 55 % de los cuadros.
+  - Algunos avisos llevan la mano adonde el hombro no llega («¡atrás!», por encima del hombro).
+  - Probablemente suma que la IK nueva gira el brazo por el camino más corto, sin la pista de «codo abajo y afuera» que tenía la de antes.
+- **La estirada.** La cadera va tras la pelota y abre las piernas más que el clip (hasta +26°).
+- **La prueba todavía no verifica dos cosas de la sección 6:** la piel, que espera el paso 5, y que la pala quede a menos de 15 cm en el p90, que espera el paso 3.

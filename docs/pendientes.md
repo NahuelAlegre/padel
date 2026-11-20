@@ -92,7 +92,24 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
   - **Estudio de animaciones, publicado el 2026-11-19** (merge `2f619a2`): `?estudio` (o `?estudio=bloqueo`, `?estudio=no-llego`…) muestra 23 situaciones en loop, con cámara lenta, cuadro a cuadro, Zoom y Costado, lado, personaje y 2D. Detalle en `docs/estudio.md`. Pesa 8,5 KB comprimido, en un archivo aparte que no baja jugando. Lo pidió el usuario para revisar las animaciones sin jugar.
     - Mejoras posibles: que abra en Zoom (con la cámara del juego el personaje se ve chico), que el fondo de Costado no se vea estirado y medir cuánto tarda en abrir en un celular.
   - **Brazos y muñecas que se deforman** (el usuario, 2026-11-19, mirando el estudio en Zoom): "los personajes se deforman mientras juegan sobre todo muñecas y brazos. Y se siente raro durante la partida". Ejemplos: la estirada abierta casi en spagat hacia el lado opuesto a la pelota; la muñeca quebrada y el antebrazo retorcido en la baja y la volea de Romina; el codo libre como dislocado.
-    - **En curso**: investigación sin cambios de código, sesión `anatomia` (rama `claude/anatomy-research-351201`). Cubre cómo lo resuelven otros juegos de deportes, el diagnóstico de nuestras causas y una recomendación.
+    - **Investigado** (2026-11-19), sin cambios de código: `docs/investigacion-anatomia.md` en la rama `claude/anatomy-research-351201` (commit 0cbbe1f, sin unir), y un Artifact privado con capturas de antes y después. Los scripts de medición y el prototipo de IK quedaron en las notas compartidas, en `anatomia/medicion/`.
+    - **Causas medidas:**
+      - La IK (`bendLimb`) trata codo y rodilla como rótulas y no tiene topes. El codo de la pala sale de su plano en el 63 % de los cuadros cerca del golpe, y las rodillas en el 73 % de todos los cuadros.
+      - Después del golpe, la IK sigue tirando de la mano 0,32 s (`lungeWeight`), y el codo se dobla al revés durante unos 9 cuadros.
+      - Los clips fijan la pala en el espacio. El antebrazo no gira y el agarre es de martillo, así que la muñeca absorbe todo.
+      - La piel no tiene hueso de giro en el antebrazo.
+      - La simulación pega el 21 % de las pelotas detrás de los pies, y más de la mitad de las estiradas.
+      - La rival, dibujada 1,47 veces más grande, juega voleas con el clip del revés.
+    - **Recomendación, en orden:**
+      1. Una prueba automática de límites.
+      2. IK con bisagra y topes, que suelta la mano 0,1 s después del golpe.
+      3. Recortar las muñecas a su rango.
+      4. Que la simulación elija el contacto dentro de lo que alcanza el golpe. Toca la jugabilidad.
+      5. Los clips: agarre diagonal y antebrazo que gira.
+      6. La piel: hueso de giro.
+
+      Con los pasos 1 a 3, el prototipo baja las rodillas al 0 %, el codo al 6 % y las muñecas al 0 %, y la pala queda a 1 cm de la pelota en vez de 9. Son 0 KB de arte y el mismo costo de CPU.
+    - Falta que el usuario decida si se implementa y hasta qué paso.
 - **Decisiones del usuario, después de probarlo**: partida rápida en dobles, alcance real para todos, el 1 contra 1 como «Cruzado» (media cancha en diagonal), revés y Beto por defecto, cuánto se desordena la pareja rival.
 - **Pendiente** (revisión de la orquestadora):
   - ~~Fase 2, animación~~: publicada el 2026-11-19 (ver arriba).

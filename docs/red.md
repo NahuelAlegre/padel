@@ -43,9 +43,9 @@
 `secondLook` (`src/sim/pair.ts`), `Match.updatePairs` y `Match.holdBack`.
 
 - **«¡Atrás!»** Cuando el compañero ve venir un globo por arriba tuyo y no estás yendo, te lo dice con la seña de siempre (el brazo que barre hacia atrás) y te da hasta 0,4 s desde el golpe rival para que vayas.
-- **El cambio.** Si llega claramente más cómodo que vos, cruza enseguida y te avisa («¡voy!»), como antes. Si no, y no fuiste, cruza igual («¡voy!»), tarde. **El compañero no deja pasar la pelota:** antes un cuarto a un tercio de esos globos no los tocaba nadie.
+- **El cambio.** Si llega claramente más cómodo que vos, cruza enseguida y te avisa («¡voy!»), como antes. Si no, y no fuiste, cruza igual («¡voy!»), tarde. **El compañero no deja pasar la pelota:** antes, entre un sexto y un tercio de esos globos no los tocaba nadie.
 - **¿Llega apurado?** Se midió y **no**: los globos de la computadora tardan unos 3 s en llegar al vidrio, y el compañero que cruza tarde llega igual con 1,4 a 1,8 s de margen. Forzarlo sería inventado. Lo que sí se agregó: una pelota que le pasan tarde le exige desde el momento en que se la pasan y desde donde estaba (`demandOf`), y eso pesa en los globos más bajos.
-- **Se queda atrás.** Si tuvo que defender desde el fondo y vos seguís en la red, ya no vuelve a subir solo: se queda atrás y te llama («¡atrás!») hasta que bajes, pegues vos, o él pegue una pelota que lo lleve arriba (un buen globo, una volea). La pareja queda partida, que es lo que en el pádel cuesta quedarse arriba.
+- **Se queda atrás.** Si tuvo que defender lejos de la red (desde el fondo o la salida del vidrio) y vos seguís arriba, ya no vuelve a subir solo: se queda atrás y te llama («¡atrás!») hasta que bajes, pegues vos, o él pegue una pelota que lo lleve arriba (un buen globo, una volea). La pareja queda partida, que es lo que en el pádel cuesta quedarse arriba.
 - **Los rivales leen tu costumbre.** Cada vez que te pasan un globo y te quedás en la red, la pareja rival se acuerda y te tira otro por arriba tuyo: un 20 % más de las veces por cada vez que te quedaste, hasta un 60 %, además de los globos que ya tiraba. Lo hace cualquiera, también quien no lee el juego, porque se ve: medido, contra Beto y Romina (que casi no tiran globos) quedarse en la red seguía saliendo gratis. Cada vez que bajás, se le olvida una. Solo lee a las personas: lo que hace la computadora bajo un globo es el momento, no una costumbre.
 
 ## 3. La pareja partida se paga
@@ -54,7 +54,7 @@
 
 Contra una pareja con uno en la red y otro atrás, la computadora:
 
-- desde el fondo, le tira globo al de la red (más si tiene la costumbre de quedarse);
+- desde el fondo, le tira globo al de la red (y más, si lo vio quedarse: sección 2);
 - desde la red, le tira a los pies, corta;
 - y si no, **al hueco de verdad:** una pelota que pasa lejos de la pala del que está en la red (más allá de su alcance y una zancada) y cae lo más lejos posible del de atrás. Lo mismo cuando remata una pelota para atacar.
 

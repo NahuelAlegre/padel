@@ -133,10 +133,11 @@ export class BallOnRacket {
   /**
    * Who the ball is drawn coming to or off, and on which face of the racket;
    * where the racket was going to meet it in the last frame before the
-   * contact; how far that is from where the simulation meets it, kept from
-   * the contact on; and whether the contact is past.
+   * contact, and where the middle of its head really was then; how far from
+   * where the simulation meets it the ball is to rest, kept from the contact
+   * on; and whether the contact is past.
    */
-  private readonly pull = { player: -1, side: 1, eta: Number.NaN, tx: 0, ty: 0, tz: 0, left: false, ox: 0, oy: 0, oz: 0 };
+  private readonly pull = { player: -1, side: 1, eta: Number.NaN, tx: 0, ty: 0, tz: 0, fx: 0, fy: 0, fz: 0, left: false, ox: 0, oy: 0, oz: 0 };
   /**
    * How far from its real place the ball is drawn, as it was left in the last
    * frame, and where the ball really was then (`seen` false: nowhere yet).
@@ -145,6 +146,8 @@ export class BallOnRacket {
   /** The sparkle of the last hit: who hit it and where the simulation did, and how far from there it is drawn. */
   private readonly spark = { player: -1, x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 0, placed: false };
   private readonly face: RacketFace = { x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 1, reach: 0, half: 0 };
+  /** The head of the racket right at the contact. */
+  private readonly met: RacketFace = { x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 1, reach: 0, half: 0 };
   private readonly at = [0, 0, 0];
 
   /** The simulation hit the ball: player `player`, at (x, y, z). */
@@ -246,29 +249,47 @@ export class BallOnRacket {
       at[2] = Math.max(0.033, at[2]!);
       // The ball is drawn off its own path by as much as the racket is from where the simulation meets it: more as
       // the contact comes, less as it leaves. Up to the contact the racket is where it is going to be; from it on,
-      // where it was right at the contact.
-      let cx = at[0]!;
-      let cy = at[1]!;
-      let cz = at[2]!;
+      // where it really was right at the contact, which a plan only comes near.
       if (eta > 0) {
         pull.eta = eta;
-        pull.tx = cx;
-        pull.ty = cy;
-        pull.tz = cz;
-        pull.ox = cx - bx;
-        pull.oy = cy - by;
-        pull.oz = cz - bz;
+        pull.tx = at[0]!;
+        pull.ty = at[1]!;
+        pull.tz = at[2]!;
+        pull.fx = face.x;
+        pull.fy = face.y;
+        pull.fz = face.z;
+        pull.ox = at[0]! - bx;
+        pull.oy = at[1]! - by;
+        pull.oz = at[2]! - bz;
       } else if (!pull.left) {
-        // Right at the contact: between the last frame before it and this one.
+        // Right at the contact, between the last frame before it and this one: the racket as it was then, and
+        // the ball on its face as near as it gets to where it was going.
+        const met = this.met;
+        met.nx = face.nx;
+        met.ny = face.ny;
+        met.nz = face.nz;
+        met.reach = face.reach;
+        met.half = face.half;
+        let px = at[0]!;
+        let py = at[1]!;
+        let pz = at[2]!;
+        met.x = face.x;
+        met.y = face.y;
+        met.z = face.z;
         if (pull.eta > 0) {
           const u = pull.eta / (pull.eta - eta);
-          cx = pull.tx + (cx - pull.tx) * u;
-          cy = pull.ty + (cy - pull.ty) * u;
-          cz = pull.tz + (cz - pull.tz) * u;
+          px = pull.tx + (px - pull.tx) * u;
+          py = pull.ty + (py - pull.ty) * u;
+          pz = pull.tz + (pz - pull.tz) * u;
+          met.x = pull.fx + (face.x - pull.fx) * u;
+          met.y = pull.fy + (face.y - pull.fy) * u;
+          met.z = pull.fz + (face.z - pull.fz) * u;
         }
-        pull.ox = cx - bx;
-        pull.oy = cy - by;
-        pull.oz = cz - bz;
+        onFace(met, px, py, pz, pull.side, at);
+        at[2] = Math.max(0.033, at[2]!);
+        pull.ox = at[0]! - bx;
+        pull.oy = at[1]! - by;
+        pull.oz = at[2]! - bz;
         pull.left = true;
       }
       // All of it for a racket that nearly gets there; none for one the body is far from.

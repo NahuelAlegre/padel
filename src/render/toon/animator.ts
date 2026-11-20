@@ -404,8 +404,21 @@ interface Gesture {
   fromShoulder: boolean;
   /** How much of the way there the hands go, 0..1 (a little over, for the snap of one): a gesture that moves eases them in and out. */
   reach: number;
-  /** Where the elbow points, for an arm that gestures, in the axes of the free arm (the racket's is its mirror), or null: where the clip has it. */
+  /**
+   * Where the elbow of each arm points while it gestures, or null: where the
+   * clip has it. Out to its own side is +x for either arm (the racket arm's
+   * is mirrored), -y in front, z up.
+   */
   elbow: [number, number, number] | null;
+  racketElbow: [number, number, number] | null;
+  /**
+   * How much the racket points, 0..1: the hand turns for it to go on from the
+   * forearm, as far as a wrist bends, and the arm takes the middle of it out
+   * along `pointing` from the shoulder. Somebody shows the way with a racket
+   * so, instead of holding it up to swing.
+   */
+  point: number;
+  pointing: [number, number, number];
   /** How much the free hand opens out straight on its wrist, 0..1: a hand that is shown, not one that holds. */
   open: number;
   /** How far the hips drop, and how much further apart each foot is planted. */
@@ -432,7 +445,7 @@ interface Gesture {
 }
 
 function noGesture(): Gesture {
-  return { free: null, racket: null, fromShoulder: false, reach: 1, elbow: null, open: 0, crouch: 0, stance: 0, tip: 0, step: 0, aside: 0, lean: 0, turn: 0, back: 0, gaze: 0, gazeX: 0, gazeY: 0 };
+  return { free: null, racket: null, fromShoulder: false, reach: 1, elbow: null, racketElbow: null, point: 0, pointing: [-1, 0, 0], open: 0, crouch: 0, stance: 0, tip: 0, step: 0, aside: 0, lean: 0, turn: 0, back: 0, gaze: 0, gazeX: 0, gazeY: 0 };
 }
 
 /**
@@ -532,13 +545,24 @@ function callGesture(kind: CallKind, t: number, toward: number, behind: number, 
       out.elbow = [1, -0.35, 0];
       break;
     case 'yours': {
-      // Out level toward the partner, below the shoulder; with the partner on the side of the racket, the racket.
-      const hand: [number, number, number] = [side * (0.42 + 0.04 * m.beat), -0.18, -0.14];
-      if (side > 0) out.free = hand;
-      else out.racket = hand;
-      if (side < 0) out.open = 0;
-      out.elbow = [0.15, 0.35, -1];
-      out.turn = side * 0.36 * m.look;
+      if (side > 0) {
+        // Toward its left, the side of the free hand: out level toward the partner, below the shoulder.
+        out.free = [0.42 + 0.04 * m.beat, -0.18, -0.14];
+        out.elbow = [0.15, 0.35, -1];
+        out.turn = 0.36 * m.look;
+      } else {
+        // Toward its right, the side of the racket: the racket points the way, at the height of the shoulder and
+        // going on from the forearm, never held up behind it or low at its side, which is a stroke being armed.
+        // The trunk turns less than toward the free side: a turn toward the racket is the turn of a forehand. The
+        // free hand, which held the racket by its throat, lets go and hangs at its side.
+        out.racket = [-(0.46 + 0.04 * m.beat), 0, -0.06];
+        out.racketElbow = [0, 0.4, -1];
+        out.point = Math.min(1, m.arm);
+        out.pointing = [-1, 0.04 * m.beat, -0.02];
+        out.free = [0.1, 0.04, -0.46];
+        out.elbow = [0.2, 1, -0.2];
+        out.turn = -0.18 * m.look;
+      }
       // Half a step back, and away from the partner: the way to the ball is the partner's.
       out.step = -0.1 * m.room;
       out.aside = -side * 0.12 * m.room;
@@ -1880,11 +1904,13 @@ export class FigureAnimator implements AnimatedFigure {
         // The elbow keeps pointing the way the clip has it (down and a little out for an arm at the side), unless the
         // gesture says where: then the arm turns about the line from the shoulder to the hand to put it there.
         reachLimb(character, pose, skeleton, this.world, limb, pos[hand]! + (tx - pos[hand]!) * w, pos[hand + 1]! + (ty - pos[hand + 1]!) * w, pos[hand + 2]! + (tz - pos[hand + 2]!) * w);
-        if (g.elbow) {
+        const elbow = i === 0 ? g.elbow : g.racketElbow;
+        if (elbow) {
           solveSkeleton(character, pose, skeleton, style);
           const mirror = i === 0 ? 1 : -1;
-          swivelLimb(character, pose, skeleton, this.world, limb, g.elbow[0] * mirror, g.elbow[1], g.elbow[2], clamp(w, 0, 1));
+          swivelLimb(character, pose, skeleton, this.world, limb, elbow[0] * mirror, elbow[1], elbow[2], clamp(w, 0, 1));
         }
+        if (i === 1 && g.point * racket > 1e-3) this.pointRacket(g.point * racket, g.pointing);
         // A hand that is shown opens out straight on its wrist.
         const open = i === 0 ? g.open * weight : 0;
         if (open > 1e-3) {
@@ -1906,6 +1932,74 @@ export class FigureAnimator implements AnimatedFigure {
       multiplyQuaternions(pose, this.neck * 4, this.q, 0, pose, this.neck * 4);
     }
     solveSkeleton(character, pose, skeleton, style);
+  }
+
+  /**
+   * Points with the racket, `amount` (0..1) of the way: the hand turns for the
+   * racket to go on from the forearm instead of crossing it, as far as the
+   * wrist goes (see `keepWrist`), and since a wrist never goes all the way,
+   * the arm makes up for the rest, as an arm does: it takes the middle of the
+   * racket out along `toward` from the shoulder. The skeleton has to be the
+   * one of the pose; it is solved again.
+   */
+  private pointRacket(amount: number, toward: readonly [number, number, number]): void {
+    const character = this.character;
+    const pose = this.pose;
+    const skeleton = this.skeleton;
+    const arm = this.arm;
+    if (this.racket < 0 || arm.lower < 0 || arm.end < 0) return;
+    solveSkeleton(character, pose, skeleton, this.style);
+    const pos = skeleton.pos;
+    const h = arm.end * 3;
+    const f = arm.lower * 3;
+    const center = boneToCharacter(skeleton, this.racket, character.meta.racketCenter, this.at);
+    // Where the racket goes from the hand, and where the forearm goes: the turn from one to the other.
+    let rx = center[0] - pos[h]!;
+    let ry = center[1] - pos[h + 1]!;
+    let rz = center[2] - pos[h + 2]!;
+    let fx = pos[h]! - pos[f]!;
+    let fy = pos[h + 1]! - pos[f + 1]!;
+    let fz = pos[h + 2]! - pos[f + 2]!;
+    const rl = Math.hypot(rx, ry, rz);
+    const fl = Math.hypot(fx, fy, fz);
+    if (rl < 1e-5 || fl < 1e-5) return;
+    rx /= rl;
+    ry /= rl;
+    rz /= rl;
+    fx /= fl;
+    fy /= fl;
+    fz /= fl;
+    const q = this.q;
+    const dot = rx * fx + ry * fy + rz * fz;
+    if (dot < -0.999 || dot > 0.99999) return;
+    q[0] = ry * fz - rz * fy;
+    q[1] = rz * fx - rx * fz;
+    q[2] = rx * fy - ry * fx;
+    q[3] = 1 + dot;
+    const n = Math.hypot(q[0]!, q[1]!, q[2]!, q[3]!) || 1;
+    for (let c = 0; c < 4; c++) q[c] = q[c]! / n;
+    // The hand turned so, in the axes of the forearm: forearm⁻¹ · turn · hand.
+    const world = worldRotations(character, pose, this.world);
+    const e = arm.end * 4;
+    const l = arm.lower * 4;
+    const turned = this.turn;
+    multiplyQuaternions(q, 0, world, e, turned, 0);
+    const forearm = [-world[l]!, -world[l + 1]!, -world[l + 2]!, world[l + 3]!];
+    multiplyQuaternions(forearm, 0, turned, 0, turned, 0);
+    const sign = pose[e]! * turned[0]! + pose[e + 1]! * turned[1]! + pose[e + 2]! * turned[2]! + pose[e + 3]! * turned[3]! < 0 ? -1 : 1;
+    for (let c = 0; c < 4; c++) pose[e + c] = pose[e + c]! * (1 - amount) + turned[c]! * sign * amount;
+    // As far as the wrist goes, and the arm takes the middle of the racket where it points, as far from the shoulder as it is.
+    keepWrist(pose, this.wrists[1]!);
+    solveSkeleton(character, pose, skeleton, this.style);
+    const s = arm.upper * 3;
+    const tip = boneToCharacter(skeleton, this.racket, character.meta.racketCenter, this.at);
+    const reach = Math.hypot(tip[0] - pos[s]!, tip[1] - pos[s + 1]!, tip[2] - pos[s + 2]!);
+    const along = Math.hypot(toward[0], toward[1], toward[2]) || 1;
+    const tx = tip[0] + (pos[s]! + (toward[0] / along) * reach - tip[0]) * amount;
+    const ty = tip[1] + (pos[s + 1]! + (toward[1] / along) * reach - tip[1]) * amount;
+    const tz = tip[2] + (pos[s + 2]! + (toward[2] / along) * reach - tip[2]) * amount;
+    reachLimb(character, pose, skeleton, worldRotations(character, pose, this.world), arm, tx, ty, tz, tip);
+    solveSkeleton(character, pose, skeleton, this.style);
   }
 
   /** Where the middle of the racket is, on the court, with the pose of the last update. */

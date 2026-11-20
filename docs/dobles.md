@@ -63,7 +63,7 @@ Todo esto vive en `src/sim/pair.ts` y no usa azar: el partido sigue siendo deter
 | Aviso | Gesto | Cuándo |
 | --- | --- | --- |
 | ¡Mía! | La mano libre sube abierta por encima de la cabeza, con el codo afuera, y vuelve a bajar. Si ya está armando su golpe, no la levanta: el brazo es del golpe. | Va a una pelota que no se ve sola que es suya (abajo), o te toma una tuya: no la alcanzás, terminó yendo a él, o (agresivo) la juega mejor. |
-| ¡Tuya! | Gira la cabeza y el torso hacia vos, saca el brazo de tu lado bajo y al costado y da medio paso atrás para dejarte lugar. Si estás del lado de su pala, te muestra el camino con la pala. | Una pelota que no se ve sola que es tuya, o te pasa una que él no alcanza. |
+| ¡Tuya! | Gira la cabeza y el torso hacia vos, saca el brazo de tu lado bajo y al costado y da medio paso atrás para dejarte lugar. Si estás del lado de su pala, te apunta con la pala a la altura del hombro, nunca baja al costado ni atrás, que es armar un golpe, y la mano libre suelta la pala y le cuelga al costado. | Una pelota que no se ve sola que es tuya, o te pasa una que él no alcanza. |
 | ¡Voy! | Como «¡mía!», mirándote: cruzá. | Cruza por un globo que te pasó por arriba. |
 | ¡Arriba! | Te mira y te llama dos veces con el antebrazo, por debajo del hombro: «vení, vení». | Su globo pasó a la pareja rival y vos estás atrás, o sube solo detrás de su ataque. |
 | ¡Atrás! | Te mira y barre el brazo hacia atrás dos veces, por debajo del hombro. | Un globo les pasó a los dos y vos seguís en la red. |

@@ -13,7 +13,10 @@ import type { CallKind } from '../sim/pair';
  *   «¡tuya!»  the one who leaves it: the head and then the trunk turn to the
  *             partner, the arm goes out level toward it, low, and it takes
  *             half a step back to give it room. Out, to the side, and the
- *             whole body with it.
+ *             whole body with it. With the partner on the side of the racket
+ *             it points with the racket, out at the height of the shoulder:
+ *             never low at its side or up behind it, which is a stroke being
+ *             armed; and the free hand lets go of it and hangs.
  * «¡Voy!» (crossing behind the partner for a lob over it) is its own ball:
  * «¡mía!», with a look at the partner, who has to cross the other way.
  * «¡Arriba!» and «¡atrás!» move up and down at its side, never over the

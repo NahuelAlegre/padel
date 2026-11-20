@@ -257,8 +257,9 @@ function setCall(kind: CallKind, t: number, towardX: number, side: number): void
       break;
     case 'yours':
       if (toward === side) {
-        // On the side of the racket: the racket shows the way, out level.
-        overlay.racket = { hx: 0.5 + 0.04 * m.beat, hy: 1.2, rx: 0.86 + 0.04 * m.beat, ry: 1.42 };
+        // On the side of the racket: the racket shows the way, out level at the height of the shoulder, never low at
+        // its side or up behind it, which is a stroke being armed. The free hand hangs at its side.
+        overlay.racket = { hx: 0.52 + 0.04 * m.beat, hy: 1.36, rx: 0.97 + 0.04 * m.beat, ry: 1.4 };
         overlay.elbow = false;
       } else {
         freeHand(toward * (0.6 + 0.05 * m.beat), 1.22, true);

@@ -7,7 +7,7 @@ import { InputState } from '../src/input/state';
 import { CALL_SHOWS, type ScenePlayer, type SceneWhy } from '../src/render/scene';
 import { figureScale } from '../src/render/stage/camera';
 import { contactOf, FigureAnimator, holdOf, strideOf, strokeClipName, strokeTime } from '../src/render/toon/animator';
-import { parseCharacter, styleOf, type Character } from '../src/render/toon/character';
+import { boneToCharacter, parseCharacter, styleOf, type Character } from '../src/render/toon/character';
 import { Match } from '../src/sim/match';
 import type { CallKind } from '../src/sim/pair';
 import type { ShotKind } from '../src/sim/types';
@@ -1278,9 +1278,31 @@ describe('las señas de dobles: dos que no se confunden, hechas por una persona'
       expect(out, `hacia ${toward}`).toBeGreaterThan(0.3);
       expect(low, `hacia ${toward}`).toBeGreaterThan(0);
       expect(bent, `hacia ${toward}`).toBeGreaterThan(12);
-      expect(turned, `hacia ${toward}`).toBeGreaterThan(10);
+      expect(turned, `hacia ${toward}`).toBeGreaterThan(toward > 0 ? 10 : 5);
       expect(looked, `hacia ${toward}`).toBeGreaterThan(0.6);
     }
+  });
+
+  it('«¡tuya!» con la pala la apunta hacia el compañero a la altura del hombro, nunca baja al costado como un armado; y la mano libre la suelta y cuelga', () => {
+    const resting = joint(sign(null, -1), 'hand.L');
+    let outward = 0;
+    let level = Infinity;
+    let hangs = -Infinity;
+    sign('yours', -1, 0, (animator, said) => {
+      if (said < 0.25 || said > 0.5) return;
+      const hand = joint(animator, 'hand.R');
+      const shoulder = joint(animator, 'upper_arm.R');
+      const racket = boneToCharacter(animator.skeleton, character.bone('racket'), character.meta.racketCenter, [0, 0, 0]);
+      // Out to its right (-x), beyond the hand: it goes on from the arm.
+      outward = Math.max(outward, hand[0]! - racket[0]);
+      level = Math.min(level, 0.2 - Math.abs(racket[2] - shoulder[2]!));
+      hangs = Math.max(hangs, joint(animator, 'hand.L')[2]!);
+    });
+    expect(outward).toBeGreaterThan(0.2);
+    // At the height of the shoulder, within 20 cm, the whole time it is out.
+    expect(level).toBeGreaterThan(0);
+    // The free hand, which held the racket by its throat in front of the chest, is down at its side.
+    expect(hangs).toBeLessThan(resting[2]! - 0.15);
   });
 
   it('no se confunden: la mano de «¡mía!» arriba y pegada a la cabeza; la de «¡tuya!» abajo del hombro y lejos del cuerpo', () => {

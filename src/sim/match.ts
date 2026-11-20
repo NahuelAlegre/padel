@@ -17,6 +17,7 @@ import {
   DISORDER,
   disorderChance,
   NET_LINE,
+  PERSON_GOES,
   createPairState,
   followPerson,
   secondLook,
@@ -188,6 +189,14 @@ export interface Feed {
 /** How long before contact the swing animation starts. */
 const SWING_LEAD = 0.12;
 const SWING_DURATION = 0.42;
+/** A player swinging at the air moves this much of its pace while the stroke lasts (docs/red.md). */
+const AIR_LEGS = 0.5;
+/**
+ * A swing at the air holds the racket back this long before it comes through,
+ * as if waiting for the ball: if the other side strikes it meanwhile (up to
+ * `AIR_HOLD + SWING_LEAD` after the ask), it was the windup for that ball.
+ */
+const AIR_HOLD = 0.1;
 /** How often the advice on where to stand is refreshed for a hand-moved player, in steps. */
 const GUIDE_EVERY = 12;
 /** A lob at least this good (0..1) is one to follow to the net. */
@@ -429,7 +438,8 @@ export class Match {
     for (let i = 0; i < this.players.length; i++) {
       const player = this.players[i]!;
       if (this.phase === 'rally') {
-        movePlayer(player, this.intents[i]!, SIM_DT, this.config);
+        // A swing at the air takes the legs with it while it lasts: the body is in the stroke.
+        movePlayer(player, this.intents[i]!, SIM_DT, this.config, this.time < player.airUntil ? AIR_LEGS : 1);
       } else {
         // Between points everybody walks to the position the rules give them.
         this.walkIntent.hasTarget = true;
@@ -448,6 +458,7 @@ export class Match {
 
     if (this.phase === 'windup' && this.time >= this.serveHitAt) this.executeServe();
     if (this.phase === 'rally') this.resolveSwings();
+    this.settleAirSwings(-1);
 
     if (this.phase === 'serve' || this.ballHeld) {
       this.holdBall();
@@ -498,6 +509,8 @@ export class Match {
       player.guide = null;
       player.swing = null;
       player.swingLockUntil = 0;
+      player.airSwing = null;
+      player.airUntil = 0;
       player.cue = null;
       player.homeMode = 'back';
       player.anim.kind = 'idle';
@@ -526,6 +539,7 @@ export class Match {
       pair.trajId = -1;
       pair.doubted = -1;
       pair.leader = -1;
+      pair.anchor = -1;
     }
     this.serveIntent = null;
     this.holdBall();
@@ -652,6 +666,8 @@ export class Match {
       player.guide = null;
       player.swing = null;
       player.swingLockUntil = 0;
+      player.airSwing = null;
+      player.airUntil = 0;
       player.cue = null;
       player.homeMode = 'back';
       player.anim.kind = 'idle';
@@ -734,28 +750,46 @@ export class Match {
   /**
    * A swing is not a hit yet: it arms the player. The racket goes back and the
    * ball is struck when it gets there, so a player can choose where to hit
-   * well before the ball arrives. Asking again replaces what was armed.
+   * well before the ball arrives. Every swing commits the body (docs/red.md):
+   *
+   *   - Armed already for this ball, asking again changes where it goes and
+   *     not when the racket comes: the moment of the first ask stays. A
+   *     perfect has to be earned, not pressed for again and again.
+   *   - With the ball not coming, it is a swing at the air, and the body goes
+   *     through all of it (`AIR_HOLD` and `SWING_DURATION`): nothing else
+   *     until it is over, and the legs go with it (`AIR_LEGS`). If the other
+   *     side strikes the ball while the racket is still back, that was the
+   *     windup for this ball (see `AirSwing`).
    */
   private requestSwing(player: Player, intent: ShotIntent): void {
-    if (this.time < player.swingLockUntil) return;
     if (this.phase === 'serve') {
+      if (this.time < player.swingLockUntil) return;
       if (player.id === this.serverId) this.startServe(player, intent);
       return;
     }
     if (this.phase !== 'rally') return;
 
     const timing = this.config.timing;
-    player.swingLockUntil = this.time + timing.reswipeGap;
-
-    if (!this.rally.live || this.rally.hitter === player.team) {
-      // The ball is not coming: swing at the air so the input is visibly acknowledged.
-      player.swing = null;
-      this.playSwing(player, 'whiff', this.time, intent);
-      this.events.push({ type: 'whiff', player: player.id, reason: 'nothing' });
+    const armed = player.swing;
+    if (armed && this.trajectory && armed.traj === this.trajectory.id) {
+      armed.intent = intent;
+      player.anim.shot = this.predictKind(player, intent);
       return;
     }
-
+    if (this.time < player.swingLockUntil) return;
     const at = this.time - (player.isHuman ? timing.latencyCompensation : 0);
+
+    if (!this.rally.live || this.rally.hitter === player.team) {
+      // The ball is not coming: a swing at the air, all of it, so the input is visibly acknowledged.
+      player.swing = null;
+      const start = this.time + AIR_HOLD;
+      player.swingLockUntil = start + SWING_DURATION;
+      player.airUntil = start + SWING_DURATION;
+      player.airSwing = { intent, at, until: start + SWING_LEAD };
+      this.playSwing(player, 'whiff', start, intent);
+      return;
+    }
+    player.swingLockUntil = this.time + timing.reswipeGap;
 
     // Assisted movement may be waiting for a later, more comfortable contact,
     // typically the rebound off the back wall. A person who swings while the
@@ -776,8 +810,31 @@ export class Match {
       if (passing && passing.t < plan.t - timing.good) player.plan = passing;
     }
 
-    player.swing = { intent, at };
+    player.swing = { intent, at, traj: this.trajectory?.id ?? -1 };
     this.playSwing(player, 'swing', Infinity, intent);
+  }
+
+  /**
+   * A swing at the air whose racket has come through: it is seen (and told)
+   * as one. One still winding up when the other side strikes the ball is the
+   * windup for that ball instead: it arms the player, with the moment it was
+   * asked for.
+   */
+  private settleAirSwings(struck: TeamId | -1): void {
+    for (const player of this.players) {
+      const air = player.airSwing;
+      if (!air) continue;
+      if (struck >= 0 && player.team !== struck && this.time <= air.until && this.trajectory) {
+        player.airSwing = null;
+        player.swingLockUntil = this.time;
+        player.airUntil = 0;
+        player.swing = { intent: air.intent, at: air.at, traj: this.trajectory.id };
+        this.playSwing(player, 'swing', Infinity, air.intent);
+      } else if (this.time > air.until) {
+        player.airSwing = null;
+        this.events.push({ type: 'whiff', player: player.id, reason: 'nothing' });
+      }
+    }
   }
 
   /**
@@ -961,6 +1018,12 @@ export class Match {
     for (const player of this.players) {
       const swing = player.swing;
       if (!swing) continue;
+      if (swing.traj !== (this.trajectory?.id ?? -1)) {
+        // The ball it was armed for has been struck, by the partner or by anybody: the racket comes down.
+        player.swing = null;
+        if (player.anim.kind === 'swing' && !(player.anim.contactAt <= this.time)) player.anim.kind = 'idle';
+        continue;
+      }
       const plan = player.plan;
       if (!plan) {
         // Nothing within reach yet: stay armed.
@@ -1175,6 +1238,31 @@ export class Match {
       ahead: zone.ahead,
     });
     this.onBallStruck(player.team, -1, player, shot.kind, quality, pressure);
+    this.holdBack(player, attacking || advancing);
+  }
+
+  /**
+   * Doubles, next to a person: a computer player that has just defended from
+   * away from the net (a ball that does not take it up: see `executeHit`),
+   * with the person still at the net, stays back and calls the person back
+   * («¡atrás!»). A defensive ball from the back is no way to the net, and the
+   * pair is split until the person comes back or plays a ball (see
+   * `PairState.anchor`). A ball of its own that takes it up ends it.
+   */
+  private holdBack(player: Player, up: boolean): void {
+    const members = this.teams[player.team];
+    if (members.length !== 2 || player.isHuman) return;
+    const pair = this.pairs[player.team];
+    const person = members.find((other) => other !== player && other.manual);
+    if (!person) return;
+    if (up) {
+      if (pair.anchor === player.id) pair.anchor = -1;
+      return;
+    }
+    if (Math.abs(player.y) < NET_LINE || Math.abs(person.y) >= NET_LINE || pair.home !== 'net') return;
+    pair.anchor = player.id;
+    pair.leader = -1;
+    this.say(player, 'back', this.trajectory?.id ?? -1, true);
   }
 
   /**
@@ -1211,6 +1299,7 @@ export class Match {
       player.plan = null;
       player.guide = null;
     }
+    this.settleAirSwings(hitter);
 
     const receiving = otherTeam(hitter);
     this.setReads(receiving, by, kind, quality, pressure);
@@ -1395,14 +1484,21 @@ export class Match {
       if (!owner) continue;
       const partner = members[0] === owner ? members[1]! : members[0]!;
 
-      // A second look, once both have read the ball: the partner crosses for a lob over the head of a person at the net.
+      // A second look, once both have read the ball: a lob over the head of a person at the net. The
+      // partner crosses for it, or tells the person to go back and looks again (see `secondLook`).
       const readBy = trajectory.t0 + Math.max(partner.read, owner.manual ? 0 : owner.read);
-      if (!partner.manual && !pair.switchChecked && this.time >= readBy) {
+      if (!partner.manual && !pair.switchChecked && this.time >= readBy && this.time >= pair.lookAgainAt) {
         const plans = this.pairPlans;
         plans[0] = planIntercept(trajectory, members[0]!, this.time, this.config);
         plans[1] = planIntercept(trajectory, members[1]!, this.time, this.config);
-        const other = secondLook(members, owner, plans, pair);
-        if (other) {
+        const config = this.config;
+        const run = plans[members.indexOf(owner)];
+        const reach = run ? playerReach(owner, config, run.z) + (config.player.realReach ? lungeReach(config) : 0) : 0;
+        const other = secondLook(members, owner, plans, pair, this.time, this.time - trajectory.t0, playerSpeed(owner, config), reach);
+        if (other === 'wait') {
+          pair.lookAgainAt = trajectory.t0 + PERSON_GOES;
+          this.say(partner, 'back', trajectory.id, true);
+        } else if (other) {
           this.assigned[team] = other.id;
           if (!owner.manual) owner.plan = null;
           this.say(other, 'switch', trajectory.id, true);
@@ -1436,8 +1532,9 @@ export class Match {
         }
       }
       if (!owner.isHuman && plan && this.time >= trajectory.t0 + owner.read) {
-        // A lob over the two of them that it lets bounce, with the person still at the net: back, together.
-        const overBoth = plan.kind !== 'volley' && Math.abs(plan.y) > BACK_LOB && partner.manual && Math.abs(partner.y) < NET_LINE;
+        // A lob over the two of them that it lets bounce, with the person still at the net: back, together. Not
+        // again on every deep ball once it has stayed at the back calling the person (see `holdBack`).
+        const overBoth = plan.kind !== 'volley' && Math.abs(plan.y) > BACK_LOB && partner.manual && Math.abs(partner.y) < NET_LINE && pair.anchor !== owner.id;
         if (pair.why === 'switch') this.say(owner, 'switch', trajectory.id, true);
         else if (overBoth) this.say(owner, 'back', trajectory.id, true);
         else if (pair.why === 'cover' || ambiguous) this.say(owner, 'mine', trajectory.id, pair.unclear);
@@ -1513,7 +1610,10 @@ export class Match {
   private lead(team: TeamId, person: Player, mate: Player): void {
     const pair = this.pairs[team];
     const rally = this.rally;
-    if (pair.leader >= 0 && (pair.home === 'net' || (rally.hitter === team && this.lastHitter[team] === person.id))) pair.leader = -1;
+    const personPlayed = rally.hitter === team && this.lastHitter[team] === person.id;
+    if (pair.leader >= 0 && (pair.home === 'net' || personPlayed)) pair.leader = -1;
+    // Back on its own (see `holdBack`): until the person comes back or plays a ball, and decides again.
+    if (pair.anchor >= 0 && (pair.home === 'back' || personPlayed)) pair.anchor = -1;
     if (pair.leader >= 0 || mate.manual || !ATTITUDE[mate.attitude].leads) return;
     if (!rally.live || rally.hitter !== team || this.lastHitter[team] !== mate.id || mate.homeMode !== 'net') return;
     if (pair.home === 'net' || Math.abs(person.y) < NET_LINE) return;

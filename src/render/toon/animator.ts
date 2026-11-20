@@ -1154,7 +1154,8 @@ export class FigureAnimator implements AnimatedFigure {
       this.layer(pose, this.stroke, upper, lower);
     }
     // The computer swung and did not get there: a moment later, «no llegué», with the trunk and the head.
-    if (player.anim !== 'whiff' || !swing) this.missShown = false;
+    // Not the person's own swings at the air: it pressed, nothing was coming, and the full stroke says enough.
+    if (player.anim !== 'whiff' || !swing || player.isHuman) this.missShown = false;
     else if (!this.missShown && eta < -MISS_AFTER) {
       this.missShown = true;
       this.play('lamento', MISS_FROM, MISS_TO, 0.65);

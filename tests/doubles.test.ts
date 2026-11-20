@@ -5,7 +5,7 @@ import { createConfig, type GameConfig } from '../src/config';
 import { createBall, type BallState } from '../src/sim/ball';
 import { InputState } from '../src/input/state';
 import { contactNear, planIntercept } from '../src/sim/intercept';
-import { Match, type Controller, type PlayerEntry } from '../src/sim/match';
+import { Match, type Controller, type PlayerEntry, type SimEvent } from '../src/sim/match';
 import { BACK_LINE, createPairState, followPerson, NET_LINE, pairSpot } from '../src/sim/pair';
 import { createPlayer, lowestContact, playerReach, type Player } from '../src/sim/player';
 import { createRally, registerHit } from '../src/sim/rules';
@@ -252,6 +252,37 @@ describe('dobles: la pareja va atada', () => {
     }
     expect(together[0]! / live).toBeGreaterThan(0.7);
     expect(together[1]! / live).toBeGreaterThan(0.7);
+  });
+});
+
+describe('dobles: el globo que te pasa por tu lado es tuyo (docs/red.md)', () => {
+  it('si te quedás en la red, el compañero te dice «¡atrás!», cruza tarde («¡voy!») y después se queda atrás llamándote', () => {
+    const match = practice('reves');
+    const mate = match.players[0]!;
+    const me = match.players[1]!;
+    // Both at the net; a lob from the far side lands deep behind the person, who never moves.
+    match.rest([{ x: 1.8, y: -3.2 }, { x: -1.8, y: -2.8 }, { x: 0, y: 7 }, { x: 2.5, y: 7.4 }], 2, true);
+    match.feed({ targetX: -2.6, targetY: -8.4, kind: 'lob', params: { clearance: 2, apex: 5.2, speed: 30 } });
+    const struckAt = match.time;
+    const calls: Array<{ call: string; at: number }> = [];
+    let played: Extract<SimEvent, { type: 'hit' }> | null = null;
+    for (let i = 0; i < 5 * 120 && !played; i++) {
+      match.step();
+      if (mate.call && mate.callAt === match.time) calls.push({ call: mate.call, at: match.time - struckAt });
+      for (const event of match.events) if (event.type === 'hit' && event.team === 0) played = event;
+      match.events.length = 0;
+    }
+    // First it tells the person to go back; the person does not, and it crosses for it after all.
+    expect(calls[0]?.call).toBe('back');
+    expect(calls.find((c) => c.call === 'switch')?.at).toBeGreaterThanOrEqual(0.4);
+    expect(played?.player).toBe(mate.id);
+    expect(Math.abs(me.y)).toBeLessThan(4);
+    // Defending off the glass, with the person still at the net: it stays back and calls the person back.
+    expect(played?.kind).toBe('wallExit');
+    expect(match.pairs[0].anchor).toBe(mate.id);
+    expect(mate.call).toBe('back');
+    for (let i = 0; i < 120; i++) match.step();
+    expect(Math.abs(mate.y)).toBeGreaterThan(6.5);
   });
 });
 
@@ -672,7 +703,7 @@ describe('dobles: las señas, solo cuando de quién es la pelota no se ve sola',
   it('en partidos enteros tu compañero hace seña en una minoría de las pelotas, y la pareja rival también', { timeout: 60_000 }, () => {
     const balls = [0, 0];
     const signed = [0, 0];
-    for (const seed of [21, 22]) {
+    for (const seed of [21, 22, 23]) {
       const config = createConfig();
       const match = new Match({
         config,

@@ -279,7 +279,7 @@ describe('timing del golpe', () => {
     expect(hitsOf(events)).toHaveLength(1);
   });
 
-  it('pedir otro golpe antes de que llegue la pelota reemplaza al que estaba armado', () => {
+  it('pedir otro golpe con el golpe armado cambia a dónde va, no cuándo pega', () => {
     const { match, a, b } = setup();
     a.decide = serving;
     let asked = 0;
@@ -293,10 +293,72 @@ describe('timing del golpe', () => {
     const events = run(match, (all) => all.filter((event) => event.type === 'bounce').length >= 4 || has('point')(all));
     expect(asked).toBe(2);
     expect(hitsOf(events)).toHaveLength(2);
-    // The return went left: the last request is the one that counted.
+    // The return went left: the last request is the one that counted for where...
     const bounces = events.filter((event) => event.type === 'bounce');
     const landing = bounces[bounces.length - 1]!;
     expect(landing.type === 'bounce' && landing.x).toBeLessThan(-2);
+    // ...and the first one for when: asking again does not take the moment again (docs/red.md).
+    expect(hitsOf(events)[1]!.quality).toBe('early');
+    expect(hitsOf(events)[1]!.error).toBeLessThan(-0.55);
+  });
+
+  it('volver a apretar justo a tiempo con el golpe armado no lo hace perfecto', () => {
+    const { match, a, b } = setup();
+    a.decide = serving;
+    let asked = 0;
+    b.decide = (m, me) => {
+      if (!me.plan) return null;
+      if (asked === 0 && m.time < me.plan.t - 0.5) return (asked = 1), shot();
+      // Right on time, which alone would be a perfect.
+      if (asked === 1 && m.time >= me.plan.t - 1e-9) return (asked = 2), shot();
+      return null;
+    };
+    const events = run(match, (all) => hitsOf(all).length >= 2 || has('point')(all));
+    expect(asked).toBe(2);
+    expect(hitsOf(events)[1]!.quality).toBe('early');
+  });
+
+  it('un golpe al aire es el golpe entero: hasta que termina no hay otro, y las piernas van con él', () => {
+    const { match, a, b, server } = setup();
+    a.decide = serving;
+    run(match, has('hit'));
+    // The ball is on its way to the other side: a swing now is at the air.
+    a.decide = () => shot();
+    b.decide = () => null;
+    match.step();
+    const started = server.anim.t0;
+    expect(server.anim.kind).toBe('whiff');
+    // Asking again and again changes nothing while the stroke lasts.
+    for (let i = 0; i < 40; i++) {
+      match.step();
+      expect(server.anim.t0).toBe(started);
+    }
+    expect(server.swingLockUntil - match.time).toBeGreaterThan(0.1);
+    expect(server.airUntil).toBeGreaterThan(match.time);
+    const events = run(match, has('whiff'), 2);
+    expect(once(events, 'whiff')).toMatchObject({ player: 0, reason: 'nothing' });
+  });
+
+  it('apretar un instante antes de que pegue el rival arma el golpe para esa pelota', () => {
+    const { match, a, b, server } = setup();
+    a.decide = serving;
+    // The receiver returns the serve right on its contact; the server asks for its next shot 0.15 s before that.
+    let pressed = false;
+    b.decide = (m, me) => (me.plan && m.time >= me.plan.t - 1e-9 ? shot() : null);
+    a.decide = (m) => {
+      if (m.phase === 'serve') return shot();
+      const receiver = m.players[1]!;
+      if (pressed || !receiver.plan || m.time < receiver.plan.t - 0.15) return null;
+      pressed = true;
+      return shot({ aim: -1 });
+    };
+    const events = run(match, (all) => hitsOf(all).length >= 2 || has('point')(all));
+    expect(pressed).toBe(true);
+    expect(hitsOf(events)).toHaveLength(2);
+    // The swing was not at the air: it became the swing for the ball that is now coming.
+    expect(events.some((event) => event.type === 'whiff')).toBe(false);
+    expect(server.swing?.traj).toBe(match.trajectory?.id);
+    expect(server.swing?.intent.aim).toBe(-1);
   });
 });
 

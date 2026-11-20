@@ -109,7 +109,14 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
       6. La piel: hueso de giro.
 
       Con los pasos 1 a 3, el prototipo baja las rodillas al 0 %, el codo al 6 % y las muñecas al 0 %, y la pala queda a 1 cm de la pelota en vez de 9. Son 0 KB de arte y el mismo costo de CPU.
-    - Falta que el usuario decida si se implementa y hasta qué paso.
+    - **Decisión del usuario** (2026-11-19): no obsesionarse con que la pala toque la pelota. El brazo corrige poco y nunca fuerza; la pelota se dibuja pegada a la pala en el instante del golpe (solo dibujo, la simulación no cambia).
+    - **En curso** (2026-11-19):
+      - Sesión `anatomia-ik` (rama `claude/anatomy-ik-a8966f`), solo dibujo. Hace la prueba de límites, la IK con bisagra y topes sin segunda pasada, la mano que se suelta 0,1 s después del golpe, la pelota pegada a la pala y el recorte de muñecas.
+      - Quedan para después los clips en Blender (agarre diagonal, antebrazo que gira) y el hueso de giro de la piel.
+- **Zonas de golpe** (idea del usuario, 2026-11-19: «que el jugador sepa que tiene que estar bien parado antes de golpear»).
+  - Hoy la simulación solo mide la distancia entre el cuerpo y la pelota. Una pelota al pecho cuenta como perfecta, y una que ya pasó, igual que una al costado.
+  - La propuesta son zonas alrededor del cuerpo: ideal, al cuerpo (bloqueo blando), lejos, atrás y arriba o abajo. El efecto es gradual y la IA lo sufre igual. Los rivales agresivos pueden tirar al cuerpo como táctica.
+  - **En curso**: sesión `zonas-golpe` (rama `claude/hit-zones-2692e6`), detrás de `?zonas`. La meta es que jugar bien parado rinda unos +15 pp.
 - **Decisiones del usuario, después de probarlo**: partida rápida en dobles, alcance real para todos, el 1 contra 1 como «Cruzado» (media cancha en diagonal), revés y Beto por defecto, cuánto se desordena la pareja rival.
 - **Pendiente** (revisión de la orquestadora):
   - ~~Fase 2, animación~~: publicada el 2026-11-19 (ver arriba).

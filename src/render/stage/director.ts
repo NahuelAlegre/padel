@@ -117,7 +117,7 @@ export class Director {
       skyShift: 0,
       nearWall: true,
       figures: this.figures,
-      ball: { x: 0, y: 0, z: 0, visible: true, glow: 0, trail: new Float32Array(TRAIL_POINTS * 3), trailCount: 0 },
+      ball: { x: 0, y: 0, z: 0, visible: true, over: null, glow: 0, trail: new Float32Array(TRAIL_POINTS * 3), trailCount: 0 },
       bounce: null,
       aim: null,
       guide: null,
@@ -293,6 +293,7 @@ export class Director {
     out.y = ball.y;
     out.z = Math.max(0.033, ball.z);
     out.visible = ball.visible;
+    out.over = null;
     // Before a serve the ball is in the server's hand and then drops from it.
     // The server is drawn bigger than life, so its hand is further out and
     // higher than the simulation has the ball: the ball is shown where the

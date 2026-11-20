@@ -9,9 +9,10 @@ import { FigureAnimator, type Moment } from '../toon/animator';
 import { parseCharacter, styleOf, type Character, type Style } from '../toon/character';
 import { ToonGL } from '../toon/gl';
 import type { CameraName } from '../view';
+import { BallOnRacket } from './contact';
 import { loadCourt, type CourtLayers } from './court-art';
 import { Director, type DirectorTexts } from './director';
-import type { FigureFrame } from './frame';
+import type { FigureFrame, StageFrame } from './frame';
 import { castName, paletteOf, shirtOf } from './looks';
 import { StageView, type Projected } from './view';
 
@@ -76,6 +77,8 @@ export class StageRenderer implements Renderer {
   /** The ball of a serve while a hand has it, and how far from its real place it is still shown after. */
   private readonly hand = { x: 0, y: 0, z: 0, left: 0 };
   private readonly held: [number, number, number] = [0, 0, 0];
+  /** The ball drawn on the racket around a contact (see `contact.ts`), and where a racket is drawn. */
+  private readonly onRacket = new BallOnRacket();
   private readonly palettes = new Map<string, Float32Array>();
   private readonly tints = new Map<string, string>();
   private readonly noPalette = new Float32Array(26 * 4);
@@ -238,6 +241,7 @@ export class StageRenderer implements Renderer {
   onEvent(event: SimEvent, scene: Scene): void {
     this.director.onEvent(event, scene);
     this.followSteal(event, scene);
+    if (event.type === 'hit') this.onRacket.hit(event.player, event.x, event.y, event.z);
     // Whoever won the point is glad and whoever lost it is not, for the moment the pause lasts.
     if (event.type === 'point') {
       for (let i = 0; i < scene.players.length; i++) {
@@ -303,6 +307,7 @@ export class StageRenderer implements Renderer {
     for (const animator of this.animators) animator.reset();
     this.stolen = -1;
     this.sorry = -1;
+    this.onRacket.reset();
   }
 
   render(scene: Scene, dt: number): void {
@@ -370,6 +375,7 @@ export class StageRenderer implements Renderer {
         ball.y += hand.y * w;
         ball.z += hand.z * w;
       }
+      this.ballOnRacket(scene, frame);
       this.painter.clear();
       toon.draw(frame);
       if (this.timings.first3d < 0) this.timings.first3d = now;
@@ -382,5 +388,24 @@ export class StageRenderer implements Renderer {
     }
     this.painter.overlay(frame, scene, this.director.label, dt);
     if (this.timings.firstFrame < 0) this.timings.firstFrame = now;
+  }
+
+  /** Around a contact the ball is drawn on the racket that hits it (see `contact.ts`). The figures have to be posed for this frame. */
+  private ballOnRacket(scene: Scene, frame: StageFrame): void {
+    const figures = frame.figures;
+    this.onRacket.place(
+      figures,
+      (i, out) => {
+        const figure = figures[i]!;
+        return this.animators[i]?.racketFace(figure.k, figure.facing, out) ?? false;
+      },
+      (i, out, behind) => {
+        const figure = figures[i]!;
+        return this.animators[i]?.racketAtContact(figure.k, figure.facing, out, behind) ?? false;
+      },
+      frame.ball,
+      scene.ball,
+      frame.effects,
+    );
   }
 }

@@ -11,6 +11,7 @@ import { pointAt } from '../sim/trajectory';
 import type { ShotIntent, SwingWhy } from '../sim/types';
 import type { HitZone } from '../sim/zones';
 import {
+  CALL_SHOWS,
   createPointerFeedback,
   type AidLevel,
   type PointerFeedback,
@@ -73,8 +74,6 @@ const guide = { x: 0, y: 0 };
 const tells: SceneTell[] = [];
 /** One per player, reused: what it is telling its partner. */
 const calls: SceneCall[] = [];
-/** Seconds a call is shown for. */
-const CALL_SHOWS = 0.9;
 /** One per player: what the stroke it is winding up for, or in the middle of, is like (see `ScenePlayer.why`). */
 const whys: Array<SceneWhy | null> = [];
 /** A ball read this much more slowly than usual has caught a player by surprise. */
@@ -281,10 +280,11 @@ export function fillScene(
     const said = time - player.callAt;
     const mate = player.call && player.callShown ? match.teams[player.team].find((other) => other !== player) : undefined;
     if (player.call && mate && said >= 0 && said < CALL_SHOWS) {
-      const call = (calls[i] ??= { kind: 'mine', t: 0, towardX: 0 });
+      const call = (calls[i] ??= { kind: 'mine', t: 0, towardX: 0, towardY: 0 });
       call.kind = player.call;
       call.t = said;
       call.towardX = lerp(mate.px, mate.x, alpha) - x;
+      call.towardY = lerp(mate.py, mate.y, alpha) - y;
       out.call = call;
     } else {
       out.call = null;

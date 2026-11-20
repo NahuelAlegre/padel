@@ -58,17 +58,35 @@ Todo esto vive en `src/sim/pair.ts` y no usa azar: el partido sigue siendo deter
   
   Cada personaje tiene la suya (Beto equilibrado, Romina agresiva, Chela pasiva) y le podés pedir otra en Opciones, con tres canchitas dibujadas.
 
-**Cómo avisa, sin texto.** Con el brazo libre, el mismo gesto para todos los personajes, para que se aprenda una vez. Siempre es verdad.
+**Cómo avisa, sin texto.** Con el cuerpo, el mismo gesto para todos los personajes, para que se aprenda una vez. Siempre es verdad. Cada aviso es un movimiento corto, que entra, marca y sale en menos de un segundo, nunca una pose sostenida, y el codo va doblado, como el de una persona. Los dos que más se ven no se parecen ni de espaldas ni de frente, ni en chiquito: «¡mía!» es una mano arriba; «¡tuya!», un brazo al costado y el cuerpo entero girado.
 
 | Aviso | Gesto | Cuándo |
 | --- | --- | --- |
-| ¡Mía! | La mano libre arriba de la cabeza. | Va a una pelota del medio, a una tuya que no alcanzás o que terminó yendo a él, o (agresivo) a una tuya que juega mejor. |
-| ¡Tuya! | Te señala, con la cabeza hacia vos. | Una pelota del medio es tuya, o te pasa una que él no alcanza. |
-| ¡Voy! | El brazo barre hacia tu lado: cruzá. | Cruza por un globo que te pasó por arriba. |
-| ¡Arriba! | Te hace señas hacia la red. | Su globo pasó a la pareja rival y vos estás atrás. |
-| ¡Atrás! | Señala por arriba del hombro. | Un globo les pasó a los dos y vos seguís en la red. |
+| ¡Mía! | La mano libre sube abierta por encima de la cabeza, con el codo afuera, y vuelve a bajar. Si ya está armando su golpe, no la levanta: el brazo es del golpe. | Va a una pelota que no se ve sola que es suya (abajo), o te toma una tuya: no la alcanzás, terminó yendo a él, o (agresivo) la juega mejor. |
+| ¡Tuya! | Gira la cabeza y el torso hacia vos, saca el brazo de tu lado bajo y al costado y da medio paso atrás para dejarte lugar. Si estás del lado de su pala, te muestra el camino con la pala. | Una pelota que no se ve sola que es tuya, o te pasa una que él no alcanza. |
+| ¡Voy! | Como «¡mía!», mirándote: cruzá. | Cruza por un globo que te pasó por arriba. |
+| ¡Arriba! | Te mira y te llama dos veces con el antebrazo, por debajo del hombro: «vení, vení». | Su globo pasó a la pareja rival y vos estás atrás, o sube solo detrás de su ataque. |
+| ¡Atrás! | Te mira y barre el brazo hacia atrás dos veces, por debajo del hombro. | Un globo les pasó a los dos y vos seguís en la red. |
 
-Los avisos salen cuando el compañero terminó de leer la pelota (su reacción, 0,2 a 0,35 s después del golpe rival), así hay medio segundo o más para actuar. Duran 0,9 s. No dicen nada sobre las pelotas obvias de cada lado: la pantalla queda limpia.
+**Cuándo hace seña: solo cuando de quién es la pelota no se ve sola.** Dice siempre de quién es cada pelota del medio, pero el cuerpo lo muestra solo cuando hace falta:
+
+- **Una pelota que va claramente a uno** (le pasa más cerca que al otro por más de un cuarto de la distancia entre los dos: 1,15 m con los dos atrás) es de ese, y no lleva seña. Si la juega el otro, sí.
+- **Entre los dos**, quien juega al pádel sabe la regla: cada uno su lado, y la del medio para el que tiene la derecha hacia el medio. Tu compañero hace seña cuando se aparta de la regla (te deja una suya, te toma una tuya) y cuando es una moneda al aire: los dos llegan con tiempo y ninguno con más de 0,3 s de ventaja.
+- **Lo que cambia de manos en el camino** siempre lleva seña: te la cubre, te la deja porque no llega, cruza por un globo, te la roba.
+- **Entre dos de la computadora**, que se entienden solos, solo hay seña en la moneda al aire y cuando la juega el que no era: lo que una pareja de verdad se diría en voz alta. Siguen las de su desorden, que son las que se pueden castigar: se señalan los dos cuando dudan, y el que subió o bajó solo llama al otro.
+
+Lo que se dice sin mostrarse no cambia nada del juego: la simulación es idéntica cuadro a cuadro. En un solo lugar se atiene a lo dicho: un compañero que ya habló de una pelota no te la pasa después (`Match.updatePairs`).
+
+Medido en 30 partidos (`npx vitest run --config vitest.sim.config.ts calls`), vos al revés con Beto contra Romina y Chela:
+
+| | Antes | Ahora |
+| --- | --- | --- |
+| Pelotas que te llegan a la pareja con seña de tu compañero | 76 % | 21 % |
+| Pelotas que le llegan a la pareja rival con alguna seña | 85 % | 30 % (la mitad, las de su desorden) |
+
+Con Romina de compañera hace seña en el 36 % (sus robos y lo que no hace por la regla) y con Chela en el 21 %. Una persona simulada que solo ve las señas, y tarda 0,25 s en leerlas, gana 2 a 3 puntos porcentuales menos que una que oyera todo lo que dice su compañero, y hay 1 o 2 pelotas más de cada 100 a las que no va ninguno de los dos.
+
+Los avisos salen cuando el compañero terminó de leer la pelota (su reacción, 0,2 a 0,35 s después del golpe rival), así hay medio segundo o más para actuar. Uno dicho sobre su propio golpe espera a que el golpe termine.
 
 **Su personalidad.** El mismo personaje que como rival, con su estilo y sus piernas, pero jugando a ganar y con manos más firmes (40 % menos de dispersión de timing, con tope de 0,07 s; 25 % menos de dispersión de golpes; lee la pelota un 25 % antes). Lo que propone `docs/personajes.md` llega por la actitud de cada uno: Beto equilibrado, que avisa todo; Romina agresiva, que sube y remata lo alto; Chela pasiva, que te devuelve todo desde atrás. Los tres avisan con los mismos gestos.
 

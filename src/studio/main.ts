@@ -1,9 +1,10 @@
 import type { Game } from '../app/game';
 import type { Launch } from '../platform/types';
 import type { Scene, StudioView } from '../render/scene';
-import { Scan, SITUATION, SITUATIONS, type Calm, type Moment, type SituationId } from './situations';
+import type { CallKind } from '../sim/pair';
+import { Scan, SIGN, SITUATION, SITUATIONS, type Calm, type Moment, type SituationId } from './situations';
 import { snapshot } from './snapshot';
-import { stagedRun, stagedSteal, stagedTics, type Staged } from './stage';
+import { stagedCall, stagedRun, stagedSteal, stagedTics, type Staged } from './stage';
 import { StudioUI, type CameraChoice, type Speed, type StudioHandlers } from './ui';
 
 /**
@@ -38,6 +39,8 @@ export interface StudioStatus {
   ready: boolean;
   situation: SituationId | null;
   near: boolean;
+  /** Position in `match.players` of the player on show. */
+  player: number;
   playing: boolean;
   /** Frames shown so far, and seconds into the loop. */
   frames: number;
@@ -82,7 +85,7 @@ const breathe = (): Promise<void> =>
   });
 
 class Studio {
-  readonly status: StudioStatus = { ready: false, situation: null, near: true, playing: true, frames: 0, time: 0, found: 0 };
+  readonly status: StudioStatus = { ready: false, situation: null, near: true, player: 0, playing: true, frames: 0, time: 0, found: 0 };
   private readonly ui: StudioUI;
   private moments = new Map<string, Moment>();
   private calm: Calm | null = null;
@@ -218,7 +221,9 @@ class Studio {
       this.near = base.players[index]?.team === 0;
       this.view.focus = index;
       this.stagedBase = base;
-      this.staged = id === 'estocada' ? stagedRun(base, index) : id === 'manias' ? stagedTics(base, index) : stagedSteal(base, index, id === 'robo');
+      const call = (Object.keys(SIGN) as CallKind[]).find((kind) => SIGN[kind] === id);
+      this.staged =
+        id === 'estocada' ? stagedRun(base, index) : id === 'manias' ? stagedTics(base, index) : call ? stagedCall(base, index, call) : stagedSteal(base, index, id === 'robo');
     } else {
       return;
     }
@@ -227,6 +232,7 @@ class Studio {
     this.view.character = undefined;
     this.status.situation = id;
     this.status.near = this.near;
+    this.status.player = this.view.focus;
     this.launch.note(`estudio=${id}`);
     this.restart();
     this.refresh();

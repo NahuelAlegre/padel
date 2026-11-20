@@ -162,7 +162,7 @@ Pegando parado, el deslizamiento que quedaba salía casi todo de estos planes, c
 | --- | --- | --- |
 | **Agresiva** | Te sigue a la red antes (cuando estás a 6,2 m de la red) y tarda en bajar (0,9 s). Detrás de un golpe de ataque suyo sube aunque estés atrás. Va a la red y la aguanta: 60 % del camino hacia siempre, y define más. Y a veces **te pide la pelota**: una alta que remata en la red, una a la que llegás apurado o una que podés dejar picar y él volea. Siempre dice «¡mía!» antes, como mínimo 0,25 s antes de tu golpe. A veces se equivoca robando, porque calcula su margen como la gente que roba: 0,1 s de más, con ±0,15 s de error. | «¡Arriba!» cuando sube solo. La mano arriba («¡mía!»). Más pelotas desde la red. |
 | **Equilibrada** | Su lado y el medio según la regla, y te cubre lo que no llegás. Es el compañero de antes, con el arreglo de la sección 1. | «¡mía!» y «¡tuya!» solo en las dudosas. |
-| **Pasiva** | Te sigue a la red tarde (cuando ya estás a 4,2 m) y baja enseguida (0,15 s). Va menos a la red, globea más y no define: te la deja. En el medio te deja la pelota aunque sea de su derecha. Cubre solo lo que le viene al cuerpo (1,3 m), y en el último momento pone la pala si no llegás. | Te señala («¡tuya!») en las del medio. |
+| **Pasiva** | Te sigue a la red tarde (cuando ya estás a 4,2 m) y baja enseguida (0,15 s). Va menos a la red, globea más y no define: te la deja. En el medio te deja la pelota aunque sea de su derecha. Cubre solo lo que le viene al cuerpo (1,3 m), y en el último momento pone la pala si no llegás. | Te señala («¡tuya!») cuando te deja una del medio que era suya. |
 
 **Medido** (30 partidos por casilla, Beto con cada actitud, vos promedio):
 

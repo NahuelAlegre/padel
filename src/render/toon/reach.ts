@@ -358,6 +358,86 @@ export function reachLimb(
   }
 }
 
+const swivelAxis = [0, 0, 0];
+const swivelTurn = [0, 0, 0, 1];
+
+/**
+ * Turns a limb about the line from its root to its end, so that its middle
+ * joint points as near a direction (px, py, pz) as it can, `amount` (0..1) of
+ * the way: the end stays where it is, and so does the bend. It is how a
+ * person picks where the elbow goes for a hand put somewhere: out to the side
+ * for one raised over the head, down for one held out. Seen from behind or
+ * from the front a bend toward the camera hides; one to the side shows.
+ *
+ * Only the upper bone turns: the rest of the limb goes with it. `skeleton`
+ * has to be solved for `pose`, and `world` has to be its rotations; the new
+ * rotation is written into `pose`, `world` is kept in step for the three
+ * bones, and the skeleton has to be solved again afterwards.
+ */
+export function swivelLimb(
+  character: Character,
+  pose: Float32Array,
+  skeleton: Skeleton,
+  world: Float32Array,
+  limb: Limb,
+  px: number,
+  py: number,
+  pz: number,
+  amount = 1,
+): void {
+  const pos = skeleton.pos;
+  const u = limb.upper * 3;
+  const l = limb.lower * 3;
+  const e = limb.end * 3;
+  // The line from the root to the end.
+  let ax = pos[e]! - pos[u]!;
+  let ay = pos[e + 1]! - pos[u + 1]!;
+  let az = pos[e + 2]! - pos[u + 2]!;
+  const length = Math.sqrt(ax * ax + ay * ay + az * az);
+  if (length < 1e-5 || amount <= 0) return;
+  ax /= length;
+  ay /= length;
+  az /= length;
+  // Where the middle joint is off that line, and where it should be: both square to it.
+  let mx = pos[l]! - pos[u]!;
+  let my = pos[l + 1]! - pos[u + 1]!;
+  let mz = pos[l + 2]! - pos[u + 2]!;
+  const along = mx * ax + my * ay + mz * az;
+  mx -= ax * along;
+  my -= ay * along;
+  mz -= az * along;
+  const wanted = px * ax + py * ay + pz * az;
+  const wx = px - ax * wanted;
+  const wy = py - ay * wanted;
+  const wz = pz - az * wanted;
+  // A limb nearly straight has no middle joint off the line to speak of: nothing to turn.
+  if (Math.sqrt(mx * mx + my * my + mz * mz) < 1e-3 || Math.sqrt(wx * wx + wy * wy + wz * wz) < 1e-5) return;
+  const angle = Math.atan2(ax * (my * wz - mz * wy) + ay * (mz * wx - mx * wz) + az * (mx * wy - my * wx), mx * wx + my * wy + mz * wz) * amount;
+  const s = Math.sin(angle / 2);
+  swivelAxis[0] = ax;
+  swivelAxis[1] = ay;
+  swivelAxis[2] = az;
+  swivelTurn[0] = ax * s;
+  swivelTurn[1] = ay * s;
+  swivelTurn[2] = az * s;
+  swivelTurn[3] = Math.cos(angle / 2);
+  const uq = limb.upper * 4;
+  const lq = limb.lower * 4;
+  const eq = limb.end * 4;
+  for (const q of [uq, lq, eq]) {
+    multiply(swivelTurn[0]!, swivelTurn[1]!, swivelTurn[2]!, swivelTurn[3]!, world[q]!, world[q + 1]!, world[q + 2]!, world[q + 3]!, scratch, 0);
+    for (let c = 0; c < 4; c++) world[q + c] = scratch[c]!;
+  }
+  // Back to a rotation relative to the parent, which is what a pose holds.
+  const parent = character.meta.bones.parents[limb.upper]!;
+  if (parent >= 0) {
+    const p = parent * 4;
+    multiply(-world[p]!, -world[p + 1]!, -world[p + 2]!, world[p + 3]!, world[uq]!, world[uq + 1]!, world[uq + 2]!, world[uq + 3]!, pose, uq);
+  } else {
+    for (let c = 0; c < 4; c++) pose[uq + c] = world[uq + c]!;
+  }
+}
+
 /**
  * How far a wrist goes, in radians: it bends forward (flexion) and back
  * (extension), tilts toward the thumb (radial) and toward the little finger

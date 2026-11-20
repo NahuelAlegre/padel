@@ -1,4 +1,5 @@
 import type { Match, SimEvent } from '../sim/match';
+import type { CallKind } from '../sim/pair';
 import { snapshot } from './snapshot';
 
 /**
@@ -32,9 +33,14 @@ export type SituationId =
   | 'manias'
   | 'correr'
   | 'atras'
-  | 'lateral';
+  | 'lateral'
+  | 'mia'
+  | 'tuya'
+  | 'voy'
+  | 'arriba'
+  | 'atras-juntos';
 
-export type Group = 'Golpes' | 'IA' | 'Cuerpo' | 'Correr';
+export type Group = 'Golpes' | 'IA' | 'Cuerpo' | 'Correr' | 'Señas';
 
 export interface Situation {
   id: SituationId;
@@ -72,7 +78,18 @@ export const SITUATIONS: readonly Situation[] = [
   { id: 'correr', label: 'Adelante', group: 'Correr', lead: 0.8, tail: 0.9, source: 'real' },
   { id: 'atras', label: 'Atrás', group: 'Correr', lead: 0.8, tail: 0.9, source: 'real' },
   { id: 'lateral', label: 'Lateral', group: 'Correr', lead: 0.8, tail: 0.9, source: 'real' },
+  { id: 'mia', label: '¡Mía!', group: 'Señas', lead: 1.0, tail: 1.2, source: 'either' },
+  { id: 'tuya', label: '¡Tuya!', group: 'Señas', lead: 1.0, tail: 1.2, source: 'either' },
+  { id: 'voy', label: '¡Voy!', group: 'Señas', lead: 1.0, tail: 1.2, source: 'either' },
+  { id: 'arriba', label: '¡Arriba!', group: 'Señas', lead: 1.0, tail: 1.2, source: 'either' },
+  { id: 'atras-juntos', label: '¡Atrás!', group: 'Señas', lead: 1.0, tail: 1.2, source: 'either' },
 ];
+
+/** Each call of doubles, and the situation that shows it. */
+export const SIGN: Readonly<Record<CallKind, SituationId>> = { mine: 'mia', yours: 'tuya', switch: 'voy', up: 'arriba', back: 'atras-juntos' };
+
+/** A call is at its fullest this long after it is said, in seconds: the key instant of its situation. */
+export const SIGN_PEAK = 0.3;
 
 export const SITUATION: Readonly<Record<SituationId, Situation>> = Object.fromEntries(
   SITUATIONS.map((situation) => [situation.id, situation]),
@@ -212,6 +229,21 @@ export class Scan {
     }
     for (const event of match.events) this.consider(event, now);
     match.events.length = 0;
+    // What somebody shows its partner, from when it starts: the one with the most room before its own stroke, and
+    // not two who doubt and point at each other, which is a call of its own kind. Never one made over the swing of
+    // its own stroke, which would hide it («¡arriba!» and «¡atrás!» often come right after one): staged instead.
+    if (now > SETTLED && match.rally.live) {
+      for (let i = 0; i < match.players.length; i++) {
+        const player = match.players[i]!;
+        if (!player.call || !player.callShown || player.callAt !== now) continue;
+        const anim = player.anim;
+        if (anim.kind !== 'idle' && now >= anim.t0 && now - anim.t0 < anim.duration) continue;
+        const room = player.plan && player.plan.trajId === match.trajectory?.id ? player.plan.t - now : Infinity;
+        const doubt = match.pairs[player.team]!.doubted === match.trajectory?.id;
+        const note = doubt ? 'dudan' : room < 5 ? `golpea ${room.toFixed(1).replace('.', ',')} s después` : '';
+        this.offer(SIGN[player.call], i, now + SIGN_PEAK, Math.min(room, 1.6) - this.speed[i]! * 0.05 - (doubt ? 1 : 0), note);
+      }
+    }
     if (now > SETTLED && match.rally.live) this.tension(now);
   }
 

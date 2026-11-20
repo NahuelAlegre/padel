@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { boneToCharacter, createSkeleton, parseCharacter, samplePose, solveSkeleton, stand, styleOf, type Character } from '../src/render/toon/character';
-import { armOf, elbowOf, flexion, keepElbow, keepWrist, legOf, reachLimb, worldRotations, wristOf } from '../src/render/toon/reach';
+import { armOf, elbowOf, flexion, keepElbow, keepWrist, legOf, reachLimb, swivelLimb, worldRotations, wristOf } from '../src/render/toon/reach';
 import { snapshot } from '../src/studio/snapshot';
 import { excess, limitOf, measure, MEASURED, studioDemo, studioMoments, watch, wristStep, WRIST_JUMP, type BodyFrame } from './anatomy';
 
@@ -63,7 +63,7 @@ const CLIPS: Record<string, Record<string, number>> = {
 const DRAWN: Record<string, { worst: number; why: string }> = {
   'elbow.free.off': { worst: 75, why: 'clips: el codo doblado de costado cuando el brazo pasa por recto (CLIPS)' },
   'elbow.racket.off': { worst: 75, why: 'clips: el codo doblado de costado (CLIPS)' },
-  'shoulder.free.horizontal': { worst: 80, why: 'clips (la estirada, CLIPS) y adónde llevan la mano los avisos («¡atrás!» señala por encima del hombro)' },
+  'shoulder.free.horizontal': { worst: 75, why: 'clips (la estirada, CLIPS); los avisos a la pareja ya no lo pasan' },
   'shoulder.racket.horizontal': { worst: 90, why: 'clips (remate, CLIPS) y el giro de la cadera de la carrera bajo un golpe' },
   'hip.L.abduction': { worst: 35, why: 'la estirada: el clip abre las piernas y el cuerpo va más allá tras la pelota' },
   'hip.R.abduction': { worst: 15, why: 'la estirada' },
@@ -268,6 +268,44 @@ describe('las articulaciones que se corrigen al dibujar', () => {
         const now = worldRotations(character, pose, new Float32Array(character.bones * 4)).slice(limb.end * 4, limb.end * 4 + 4);
         expect(Math.abs(now[0]! * turned[0]! + now[1]! * turned[1]! + now[2]! * turned[2]! + now[3]! * turned[3]!), what).toBeGreaterThan(0.99999);
       }
+    }
+  });
+
+  it('el brazo gira alrededor de la línea hombro–mano para poner el codo donde va: la mano no se mueve y el codo dobla igual, en su bisagra', () => {
+    for (const [clip, at] of [
+      ['listo', 0.3],
+      ['correr', 0.2],
+      ['volea', 0.2],
+    ] as const) {
+      // The free hand raised over the head, first by the shortest way, then the elbow put out to the side.
+      const { pose, skeleton, world } = posed(clip, at);
+      const arm = armOf(character, 'L');
+      const shoulder = joint(skeleton, arm.upper);
+      reachLimb(character, pose, skeleton, world, arm, shoulder[0]! + 0.07, shoulder[1]! - 0.1, shoulder[2]! + 0.4);
+      solveSkeleton(character, pose, skeleton);
+      const hand = joint(skeleton, arm.end);
+      const bent = flexion(skeleton, worldRotations(character, pose, new Float32Array(character.bones * 4)), arm);
+      const plane = offPlane(skeleton, worldRotations(character, pose, new Float32Array(character.bones * 4)), arm);
+      const pole = [1, -0.35, 0];
+      swivelLimb(character, pose, skeleton, worldRotations(character, pose, world), arm, pole[0]!, pole[1]!, pole[2]!);
+      solveSkeleton(character, pose, skeleton);
+      const now = worldRotations(character, pose, new Float32Array(character.bones * 4));
+      expect(apart(joint(skeleton, arm.end), hand), clip).toBeLessThan(1e-4);
+      expect(Math.abs(flexion(skeleton, now, arm) - bent), clip).toBeLessThan(1e-4);
+      expect(Math.abs(offPlane(skeleton, now, arm) - plane), clip).toBeLessThan(0.05);
+      // Off the line from the shoulder to the hand, the elbow points the way it was asked to.
+      const s = joint(skeleton, arm.upper);
+      const e = joint(skeleton, arm.lower);
+      const line = [hand[0]! - s[0]!, hand[1]! - s[1]!, hand[2]! - s[2]!];
+      const length = Math.hypot(line[0]!, line[1]!, line[2]!);
+      const square = (v: number[]): number[] => {
+        const along = (v[0]! * line[0]! + v[1]! * line[1]! + v[2]! * line[2]!) / (length * length);
+        return [v[0]! - line[0]! * along, v[1]! - line[1]! * along, v[2]! - line[2]! * along];
+      };
+      const m = square([e[0]! - s[0]!, e[1]! - s[1]!, e[2]! - s[2]!]);
+      const p = square(pole);
+      const cos = (m[0]! * p[0]! + m[1]! * p[1]! + m[2]! * p[2]!) / (Math.hypot(m[0]!, m[1]!, m[2]!) * Math.hypot(p[0]!, p[1]!, p[2]!));
+      expect(cos, clip).toBeGreaterThan(0.999);
     }
   });
 

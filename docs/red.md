@@ -25,7 +25,7 @@
 | Qué hacés | Qué pasa |
 | --- | --- |
 | Apretás con la pelota viniendo | Se arma el golpe, como siempre: elegís a dónde antes de que llegue. **Prepararse temprano sigue siendo un golpe bueno.** |
-| Volvés a apretar ya armado | **Cambia a dónde va, no cuándo pega.** El momento del primer toque queda: el perfecto hay que ganárselo, no se consigue apretando de nuevo. |
+| Volvés a apretar ya armado | **Cambia a dónde va, no cuándo pega.** El momento del primer toque queda: el perfecto hay que ganárselo, no se consigue apretando de nuevo. Con movimiento asistido, si la pelota te está pasando al alcance, ese toque también elige tomarla ahí en vez de esperar el rebote del vidrio, como antes. |
 | Apretás sin que venga la pelota | **Golpe al aire entero:** la pala espera atrás un instante (0,1 s), pasa y termina (0,42 s). Mientras dura no hay otro golpe, y las piernas van con el golpe: te movés a media velocidad. Antes se cortaba a los 0,15 s y el cuerpo quedaba congelado en el armado. |
 | Apretás justo antes de que pegue el rival | Si el rival le pega mientras tu pala todavía está atrás (hasta 0,22 s después de apretar), ese armado sirve para su pelota: no es un golpe al aire. |
 | Tu compañero le pega a la pelota para la que estabas armado | El armado se va con esa pelota. Antes quedaba armado sin límite y te servía para la siguiente. |

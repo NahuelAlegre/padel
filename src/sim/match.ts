@@ -770,14 +770,16 @@ export class Match {
     if (this.phase !== 'rally') return;
 
     const timing = this.config.timing;
+    const at = this.time - (player.isHuman ? timing.latencyCompensation : 0);
     const armed = player.swing;
     if (armed && this.trajectory && armed.traj === this.trajectory.id) {
+      // Which ball it takes can still change (see `takeIfPassing`); the moment stays the first ask's.
       armed.intent = intent;
+      this.takeIfPassing(player, at);
       player.anim.shot = this.predictKind(player, intent);
       return;
     }
     if (this.time < player.swingLockUntil) return;
-    const at = this.time - (player.isHuman ? timing.latencyCompensation : 0);
 
     if (!this.rally.live || this.rally.hitter === player.team) {
       // The ball is not coming: a swing at the air, all of it, so the input is visibly acknowledged.
@@ -790,28 +792,25 @@ export class Match {
       return;
     }
     player.swingLockUntil = this.time + timing.reswipeGap;
-
-    // Assisted movement may be waiting for a later, more comfortable contact,
-    // typically the rebound off the back wall. A person who swings while the
-    // ball is passing within reach means that ball: take it there. Unless it
-    // has already got past: then the rebound that was planned is the better ball.
-    const plan = player.plan;
-    if (player.isHuman && !player.manual && this.trajectory && plan && plan.t - at > timing.good) {
-      const passing = contactNear(
-        this.trajectory,
-        player,
-        this.time,
-        this.config,
-        timing.takeNow,
-        timing.takeNowBack,
-        undefined,
-        false,
-      );
-      if (passing && passing.t < plan.t - timing.good) player.plan = passing;
-    }
-
+    this.takeIfPassing(player, at);
     player.swing = { intent, at, traj: this.trajectory?.id ?? -1 };
     this.playSwing(player, 'swing', Infinity, intent);
+  }
+
+  /**
+   * Assisted movement may be waiting for a later, more comfortable contact,
+   * typically the rebound off the back wall. A person who asks for a swing
+   * (`at`, the moment of this ask) while the ball is passing within reach
+   * means that ball: take it there. Unless it has already got past: then the
+   * rebound that was planned is the better ball. Also with the swing already
+   * armed: asking again can choose to take it now.
+   */
+  private takeIfPassing(player: Player, at: number): void {
+    const timing = this.config.timing;
+    const plan = player.plan;
+    if (!player.isHuman || player.manual || !this.trajectory || !plan || plan.t - at <= timing.good) return;
+    const passing = contactNear(this.trajectory, player, this.time, this.config, timing.takeNow, timing.takeNowBack, undefined, false);
+    if (passing && passing.t < plan.t - timing.good) player.plan = passing;
   }
 
   /**

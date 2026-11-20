@@ -124,6 +124,17 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
     - Pararse bien paga en 1 contra 1 +12 / +19 / +23 pp (Beto / Romina / Chela; antes +4 / +10 / +14), y en dobles +6 a +10 (antes +1 a +5). Los golpes detrás de los pies bajan del 19 % al 8 %. Al jugador que no se acomoda le cuesta 6 a 10 pp en 1 contra 1.
     - **Para decidir después de probarlo en el celular** (sección 10 de `docs/zonas.md`): si el bloqueo se siente justo, si Romina es demasiado para quien no se acomoda, si pegar tarde cuenta como «atrás», si el bloqueo va al medio o vuelve a quien la pegó, y la animación del bloqueo con el codo arriba y la lección «Al costado».
   - Las dos ramas se unieron sin conflictos; juntas pasan las 439 pruebas, el build y el smoke (128 de 128). Para probarlas: https://nahuelalegre.github.io/padel/?zonas
+- **Señas de «¡mía!» y «¡tuya!»** (el usuario, 2026-11-20): "el brazo parece un palo extendido", "a veces me confunde el gesto de cuando van a golpear ellos y cuando quieren que golpee yo", y que la seña aparezca "solo cuando la pelota está en medio de ambos jugadores y no se sabe quién va a ir".
+  - **Causa**: toda pelota a menos de 1,7 m del punto medio de la pareja contaba como dudosa, y las señas eran poses fijas con el brazo estirado.
+  - **Publicado** (2026-11-20, merge a27a648): rama `claude/doubles-calls-62c067`. Detalle en `docs/dobles.md`.
+    - La seña se dice igual que antes, pero el cuerpo la muestra solo cuando no se ve sola. Se muestra si la pelota va entre los dos y es una moneda al aire, si va claramente a uno y la juega el otro, o, con el jugador al lado, si el compañero no sigue la regla del lado y el medio. Lo que cambia de manos en el camino siempre se muestra.
+    - Pelotas con seña: tu compañero baja del 76 % al 21 % y los rivales del 85 % al 30 %. La simulación da idéntico.
+    - «¡Mía!»: la mano abierta sube por encima de la cabeza, con el codo afuera, y baja. «¡Tuya!»: gira la cabeza y el torso hacia el compañero, le marca con el brazo bajo y da medio paso atrás. Si el compañero está del lado de la pala, señala con la pala a la altura del hombro y la mano libre cuelga.
+    - IK nueva `swivelLimb` (hacia dónde apunta el codo sin mover la mano), el grupo «Señas» en `?estudio` (cinco señas) y `scripts/strip.mjs` (tiras de cuadros de una situación).
+    - Revisión de la orquestadora: la primera versión del «¡tuya!» con la pala, baja al costado, de lejos parecía la preparación de un drive. Se corrigió antes de unir. Pasan las 452 pruebas, el build y el smoke (128 de 128).
+  - **Para ver en el celular**: si de lejos el «¡tuya!» con la pala se lee como seña.
+  - **Propuesto, sin hacer**: que la marca de pique aparezca solo cuando la pelota es tuya.
+  - **Visto de paso**: en un golpe seguido de una carrera hacia atrás, Beto gira el tronco 83° cuando el tope es 65°. Queda para el trabajo de anatomía.
 - **Decisiones del usuario, después de probarlo**: partida rápida en dobles, alcance real para todos, el 1 contra 1 como «Cruzado» (media cancha en diagonal), revés y Beto por defecto, cuánto se desordena la pareja rival.
 - **Pendiente** (revisión de la orquestadora):
   - ~~Fase 2, animación~~: publicada el 2026-11-19 (ver arriba).

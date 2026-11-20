@@ -279,7 +279,7 @@ describe('timing del golpe', () => {
     expect(hitsOf(events)).toHaveLength(1);
   });
 
-  it('pedir otro golpe antes de que llegue la pelota reemplaza al que estaba armado', () => {
+  it('pedir otro golpe con el golpe armado cambia a dónde va, no cuándo pega', () => {
     const { match, a, b } = setup();
     a.decide = serving;
     let asked = 0;
@@ -293,10 +293,72 @@ describe('timing del golpe', () => {
     const events = run(match, (all) => all.filter((event) => event.type === 'bounce').length >= 4 || has('point')(all));
     expect(asked).toBe(2);
     expect(hitsOf(events)).toHaveLength(2);
-    // The return went left: the last request is the one that counted.
+    // The return went left: the last request is the one that counted for where...
     const bounces = events.filter((event) => event.type === 'bounce');
     const landing = bounces[bounces.length - 1]!;
     expect(landing.type === 'bounce' && landing.x).toBeLessThan(-2);
+    // ...and the first one for when: asking again does not take the moment again (docs/red.md).
+    expect(hitsOf(events)[1]!.quality).toBe('early');
+    expect(hitsOf(events)[1]!.error).toBeLessThan(-0.55);
+  });
+
+  it('volver a apretar justo a tiempo con el golpe armado no lo hace perfecto', () => {
+    const { match, a, b } = setup();
+    a.decide = serving;
+    let asked = 0;
+    b.decide = (m, me) => {
+      if (!me.plan) return null;
+      if (asked === 0 && m.time < me.plan.t - 0.5) return (asked = 1), shot();
+      // Right on time, which alone would be a perfect.
+      if (asked === 1 && m.time >= me.plan.t - 1e-9) return (asked = 2), shot();
+      return null;
+    };
+    const events = run(match, (all) => hitsOf(all).length >= 2 || has('point')(all));
+    expect(asked).toBe(2);
+    expect(hitsOf(events)[1]!.quality).toBe('early');
+  });
+
+  it('un golpe al aire es el golpe entero: hasta que termina no hay otro, y las piernas van con él', () => {
+    const { match, a, b, server } = setup();
+    a.decide = serving;
+    run(match, has('hit'));
+    // The ball is on its way to the other side: a swing now is at the air.
+    a.decide = () => shot();
+    b.decide = () => null;
+    match.step();
+    const started = server.anim.t0;
+    expect(server.anim.kind).toBe('whiff');
+    // Asking again and again changes nothing while the stroke lasts.
+    for (let i = 0; i < 40; i++) {
+      match.step();
+      expect(server.anim.t0).toBe(started);
+    }
+    expect(server.swingLockUntil - match.time).toBeGreaterThan(0.1);
+    expect(server.airUntil).toBeGreaterThan(match.time);
+    const events = run(match, has('whiff'), 2);
+    expect(once(events, 'whiff')).toMatchObject({ player: 0, reason: 'nothing' });
+  });
+
+  it('apretar un instante antes de que pegue el rival arma el golpe para esa pelota', () => {
+    const { match, a, b, server } = setup();
+    a.decide = serving;
+    // The receiver returns the serve right on its contact; the server asks for its next shot 0.15 s before that.
+    let pressed = false;
+    b.decide = (m, me) => (me.plan && m.time >= me.plan.t - 1e-9 ? shot() : null);
+    a.decide = (m) => {
+      if (m.phase === 'serve') return shot();
+      const receiver = m.players[1]!;
+      if (pressed || !receiver.plan || m.time < receiver.plan.t - 0.15) return null;
+      pressed = true;
+      return shot({ aim: -1 });
+    };
+    const events = run(match, (all) => hitsOf(all).length >= 2 || has('point')(all));
+    expect(pressed).toBe(true);
+    expect(hitsOf(events)).toHaveLength(2);
+    // The swing was not at the air: it became the swing for the ball that is now coming.
+    expect(events.some((event) => event.type === 'whiff')).toBe(false);
+    expect(server.swing?.traj).toBe(match.trajectory?.id);
+    expect(server.swing?.intent.aim).toBe(-1);
   });
 });
 
@@ -305,11 +367,16 @@ describe('movimiento asistido (opción de accesibilidad)', () => {
    * The serve bounces and carries on to the back glass, and the assisted plan
    * is to wait for the rebound. The person swings as the ball goes by instead.
    */
-  function swingAtPassingBall(configure?: (config: GameConfig) => void) {
+  function swingAtPassingBall(configure?: (config: GameConfig) => void, armEarly = false) {
     const { match, a, b, receiver } = setup(configure, {}, { isHuman: true });
     a.decide = serving;
-    const result = { swungAt: -1, plannedFor: -1, returnedAt: -1, wallFirst: false };
+    const result = { swungAt: -1, plannedFor: -1, returnedAt: -1, wallFirst: false, armedAt: -1, quality: '', error: 0 };
     b.decide = (m, me) => {
+      // Armed early, as soon as the serve is in the air: waiting for the rebound it planned.
+      if (armEarly && result.armedAt < 0 && m.rally.live && m.rally.hitter === 0 && m.rally.bounces === 0 && me.plan) {
+        result.armedAt = m.time;
+        return shot();
+      }
       if (result.swungAt >= 0 || !me.plan || m.rally.bounces !== 1) return null;
       const gap = Math.hypot(m.ball.x - me.x, m.ball.y - me.y);
       if (gap > 1 || me.plan.t - m.time < 0.25) return null;
@@ -321,7 +388,11 @@ describe('movimiento asistido (opción de accesibilidad)', () => {
       match.step();
       for (const event of match.events) {
         if (event.type === 'wall' && result.swungAt >= 0) result.wallFirst = true;
-        if (event.type === 'hit' && event.team === receiver.team) result.returnedAt = match.time;
+        if (event.type === 'hit' && event.team === receiver.team) {
+          result.returnedAt = match.time;
+          result.quality = event.quality;
+          result.error = event.error;
+        }
         if (event.type === 'point') i = Infinity;
       }
       match.events.length = 0;
@@ -337,6 +408,19 @@ describe('movimiento asistido (opción de accesibilidad)', () => {
     expect(returnedAt - swungAt).toBeLessThan(0.2);
     expect(returnedAt).toBeLessThan(plannedFor - 0.1);
     expect(wallFirst).toBe(false);
+  });
+
+  it('con el golpe ya armado, volver a apretar cuando la pelota pasa al lado también la toma ahí, con el momento del primer toque', () => {
+    const { armedAt, swungAt, plannedFor, returnedAt, wallFirst, quality, error } = swingAtPassingBall(undefined, true);
+    expect(armedAt).toBeGreaterThan(0);
+    expect(swungAt).toBeGreaterThan(armedAt);
+    expect(returnedAt).toBeGreaterThan(0);
+    expect(returnedAt - swungAt).toBeLessThan(0.2);
+    expect(returnedAt).toBeLessThan(plannedFor - 0.1);
+    expect(wallFirst).toBe(false);
+    // The second ask chose the ball, not the moment: it was struck as armed at the first one.
+    expect(quality).toBe('early');
+    expect(error).toBeLessThan(armedAt - returnedAt + 0.05);
   });
 
   it('sin esa regla, el mismo golpe espera la pared', () => {

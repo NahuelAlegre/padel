@@ -223,6 +223,8 @@ export interface PairState {
   unclear: boolean;
   /** The partner has taken its second look at this ball (see `secondLook`). */
   switchChecked: boolean;
+  /** Not before this time: the partner looks again once the person has had its moment (see `secondLook`). */
+  lookAgainAt: number;
   /** The ball the two of a pair of computer players doubted over, or -1. */
   doubted: number;
   /**
@@ -231,10 +233,31 @@ export interface PairState {
    * -1. It lasts until the person plays a ball, or a lob goes over it.
    */
   leader: number;
+  /**
+   * Next to a person at the net: the computer player that had to defend
+   * from the back and stays there, calling the person back («¡atrás!»), or
+   * -1. A defensive ball from the back is no way to the net: the pair is
+   * split until the person comes back, plays a ball, or the partner plays one
+   * that takes it up. It is what the person pays for staying at the net when
+   * a lob went over (docs/red.md).
+   */
+  anchor: number;
 }
 
 export function createPairState(): PairState {
-  return { home: 'back', backSince: -1, trajId: -1, why: 'alone', offMiddle: 0, unclear: false, switchChecked: false, doubted: -1, leader: -1 };
+  return {
+    home: 'back',
+    backSince: -1,
+    trajId: -1,
+    why: 'alone',
+    offMiddle: 0,
+    unclear: false,
+    switchChecked: false,
+    lookAgainAt: 0,
+    doubted: -1,
+    leader: -1,
+    anchor: -1,
+  };
 }
 
 const depthOf = (player: Player): number => Math.abs(player.y);
@@ -284,6 +307,7 @@ export function chooseOwner(
   state.trajId = trajectory.id;
   state.offMiddle = off;
   state.switchChecked = false;
+  state.lookAgainAt = 0;
   const spare = (index: number): number => timeToSpare(plans[index] ?? null, members[index]!);
   const passA = closestPass(trajectory, a, now, highest);
   const passB = closestPass(trajectory, b, now, highest);
@@ -378,32 +402,51 @@ function isLobOver(player: Player, plan: InterceptPlan | null): boolean {
 
 /**
  * The partner's second look, once it has read the ball: a lob over the head
- * of a person at the net, if the person is not already on its way back for
- * it, the partner crosses for. `plans` are the contacts each of them could
- * make from where they are now. Returns the new owner, or null to leave
- * things as they are. It looks once per ball; covering a ball the owner is
- * not getting to is looked at all along (see `shouldCover`).
+ * of a person at the net (docs/red.md).
+ *
+ *   - The person is on its way back for it: the person's.
+ *   - The partner gets there clearly more comfortably: it crosses for it at
+ *     once («¡voy!»), the switch of padel.
+ *   - Otherwise it is the person's ball. The partner tells the person to go
+ *     back («¡atrás!», said by the match: this returns 'wait') and gives it
+ *     until `PERSON_GOES` after the shot to show it is going. If it is not,
+ *     the partner crosses after all, if it can get there at all: late, and
+ *     from the other side of the court (a high lob still leaves it time; a
+ *     low one, not). Nobody watches the lob bounce twice.
+ *
+ * `plans` are the contacts each of them could make from where they are now;
+ * `elapsed` is how long ago the ball was struck, and `speed` and `reach` the
+ * person's. Returns the new owner; null to leave things as they are; 'wait'
+ * to look again once the person has had its moment. Covering a ball the
+ * owner is not getting to is looked at all along (see `shouldCover`).
  */
 export function secondLook(
   members: readonly Player[],
   owner: Player,
   plans: ReadonlyArray<InterceptPlan | null>,
   state: PairState,
-): Player | null {
+  now: number,
+  elapsed: number,
+  speed: number,
+  reach: number,
+): Player | null | 'wait' {
   if (state.switchChecked) return null;
-  state.switchChecked = true;
   const index = members.indexOf(owner);
   const other = members[index === 0 ? 1 : 0];
-  if (!other) return null;
   const mine = plans[index] ?? null;
   const theirs = plans[index === 0 ? 1 : 0] ?? null;
-  if (!theirs || !theirs.reachable || theirs.slack < COVER_SLACK) return null;
-  if (!owner.manual || !mine || !mine.reachable || !isLobOver(owner, mine)) return null;
+  const settle = (who: Player | null): Player | null => {
+    state.switchChecked = true;
+    if (who) state.why = 'switch';
+    return who;
+  };
+  if (!other || !theirs || !theirs.reachable) return settle(null);
+  if (!owner.manual || !mine || !mine.reachable || !isLobOver(owner, mine)) return settle(null);
   const retreating = -owner.vy * teamDir(owner.team) > RETREATING;
-  if (retreating) return null;
-  if (theirs.slack < mine.slack + SWITCH_MARGIN) return null;
-  state.why = 'switch';
-  return other;
+  if (retreating || onItsWay(owner, mine, now, speed, reach)) return settle(null);
+  if (theirs.slack >= COVER_SLACK && theirs.slack >= mine.slack + SWITCH_MARGIN) return settle(other);
+  if (elapsed < PERSON_GOES) return 'wait';
+  return settle(other);
 }
 
 /** A ball the person can play about as soon as the partner covering it could: it is still the person's. */
@@ -452,7 +495,7 @@ export function shouldCover(
 }
 
 /** A person is given this long (seconds) after the shot to start going for a ball before its partner judges it is not going. */
-const PERSON_GOES = 0.4;
+export const PERSON_GOES = 0.4;
 
 /**
  * A ball of the person's that has come to be at `watcher`: it passes within
@@ -563,7 +606,8 @@ export function pairSpot(
     if (personSide * me.lane > 0.6) me.lane = (personSide > 0 ? -1 : 1) as 1 | -1;
   }
   // Out of place for this exchange: where it stayed, or half way. Up on its own, calling the person up: at the net.
-  const home = me.astray === 'stay' ? me.astrayHome : state.leader === me.id ? 'net' : state.home;
+  // Back on its own after a defensive ball, calling the person back: at the back.
+  const home = me.astray === 'stay' ? me.astrayHome : state.leader === me.id ? 'net' : state.anchor === me.id ? 'back' : state.home;
   const net = home === 'net';
   const depth = me.astray === 'halfway' ? HALFWAY : net ? config.player.homeNet : config.player.homeBack;
   out.x = slide + me.lane * (net ? LANE_NET : LANE);

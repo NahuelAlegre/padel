@@ -46,7 +46,7 @@ Todo esto vive en `src/sim/pair.ts` y no usa azar: el partido sigue siendo deter
 
 **Juega en pareja con vos.**
 
-- **Te sigue.** Sube a la red cuando estás a menos de 5 m de la red. Baja cuando te quedás atrás casi medio segundo (0,4 s) o en el instante en que corrés para atrás detrás de un globo. A mitad de camino, espera a ver adónde vas. Equilibrado, nunca abre el hueco él: si no subís, no sube. Cuánto antes sube y cuánto tarda en bajar depende de su actitud (abajo).
+- **Te sigue.** Sube a la red cuando estás a menos de 5 m de la red. Baja cuando te quedás atrás casi medio segundo (0,4 s) o en el instante en que corrés para atrás detrás de un globo. A mitad de camino, espera a ver adónde vas. Equilibrado, nunca abre el hueco él: si no subís, no sube. Cuánto antes sube y cuánto tarda en bajar depende de su actitud (abajo). Si tuvo que defender desde el fondo y vos seguís en la red, se queda atrás y te llama («¡atrás!») hasta que bajes o pegues vos: ver [red.md](red.md).
 - **Cubre su mitad** y se desliza con la pelota. Si cruzás al otro lado, toma el lado que dejaste.
 - **No se queda mirando.** Una pelota que le viene al cuerpo es suya. Una que es tuya la sigue con la vista: si terminó yendo a él y no a vos, o si no estás yendo, la toma, y siempre avisa antes («¡mía!»). Una que se le cruza a una pelota de distancia y a la que no llegás, la juega en el último momento. Si le llega antes de leerla, la bloquea.
 - **No te roba.** Equilibrado o pasivo, una pelota tuya a la que estás yendo no la toca. Agresivo, a veces sí, siempre con «¡mía!» antes (abajo). Hay un test que juega partidos enteros y verifica, golpe por golpe, que toda pelota tuya que pegó la avisó antes.
@@ -64,9 +64,9 @@ Todo esto vive en `src/sim/pair.ts` y no usa azar: el partido sigue siendo deter
 | --- | --- | --- |
 | ¡Mía! | La mano libre sube abierta por encima de la cabeza, con el codo afuera, y vuelve a bajar. Si ya está armando su golpe, no la levanta: el brazo es del golpe. | Va a una pelota que no se ve sola que es suya (abajo), o te toma una tuya: no la alcanzás, terminó yendo a él, o (agresivo) la juega mejor. |
 | ¡Tuya! | Gira la cabeza y el torso hacia vos, saca el brazo de tu lado bajo y al costado y da medio paso atrás para dejarte lugar. Si estás del lado de su pala, te apunta con la pala a la altura del hombro, nunca baja al costado ni atrás, que es armar un golpe, y la mano libre suelta la pala y le cuelga al costado. | Una pelota que no se ve sola que es tuya, o te pasa una que él no alcanza. |
-| ¡Voy! | Como «¡mía!», mirándote: cruzá. | Cruza por un globo que te pasó por arriba. |
+| ¡Voy! | Como «¡mía!», mirándote: cruzá. | Cruza por un globo que te pasó por arriba: enseguida si llega mucho más cómodo, o tarde si no fuiste a buscarlo (ver [red.md](red.md)). Bajá vos también. |
 | ¡Arriba! | Te mira y te llama dos veces con el antebrazo, por debajo del hombro: «vení, vení». | Su globo pasó a la pareja rival y vos estás atrás, o sube solo detrás de su ataque. |
-| ¡Atrás! | Te mira y barre el brazo hacia atrás dos veces, por debajo del hombro. | Un globo les pasó a los dos y vos seguís en la red. |
+| ¡Atrás! | Te mira y barre el brazo hacia atrás dos veces, por debajo del hombro. | Un globo te pasa por arriba (o les pasó a los dos) y seguís en la red; o él quedó atrás defendiendo y vos seguís arriba ([red.md](red.md)). |
 
 **Cuándo hace seña: solo cuando de quién es la pelota no se ve sola.** Dice siempre de quién es cada pelota del medio, pero el cuerpo lo muestra solo cuando hace falta:
 

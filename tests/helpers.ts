@@ -207,6 +207,8 @@ export class ScriptedHuman implements Controller {
   private mine: boolean | null = null;
   /** The time of the match, for what it is told. */
   private now = 0;
+  /** Doubles: its partner called it back («¡atrás!») and it has not played a ball since. */
+  private calledBack = false;
 
   constructor(
     private readonly rng: Rng,
@@ -220,6 +222,7 @@ export class ScriptedHuman implements Controller {
     this.serveAt = -1;
     this.thinking = this.thinks();
     this.mine = null;
+    this.calledBack = false;
     this.input.clear();
   }
 
@@ -267,7 +270,12 @@ export class ScriptedHuman implements Controller {
     const side = Math.sign(me.x - partner.x) || ownSide;
     // Tied to the partner: up when it is up, and back when it says so; up behind a shot of its own that takes it there.
     const told = match.trajectory !== null && partner.callTraj === match.trajectory.id && this.hearsIt(partner) ? partner.call : null;
-    const up = told === 'back' ? false : told === 'up' || Math.abs(partner.y) < NET_ZONE || me.homeMode === 'net';
+    // «¡Atrás!», or «¡voy!» for a lob over it (the switch: the partner crosses for it, and it goes back too).
+    const back = told === 'back' || told === 'switch';
+    if (back) this.calledBack = true;
+    else if (told === 'up' || Math.abs(partner.y) < NET_ZONE) this.calledBack = false;
+    // Called back, it stays back with its partner until it plays a ball: it does not go up on its own.
+    const up = back ? false : told === 'up' || Math.abs(partner.y) < NET_ZONE || (me.homeMode === 'net' && !this.calledBack);
     out.x = side * (up ? LANE_NET : LANE) + clampTo(match.ball.x * SLIDE, SLIDE_MAX);
     out.y = -dir * (up ? 3.4 : 7.2);
   }
@@ -371,8 +379,9 @@ export class ScriptedHuman implements Controller {
     if (partner && incoming && this.mine === null && me.plan && this.trajectory && match.time >= this.trajectory.t0) {
       this.mine = this.isMine(me, partner, me.guide ?? me.plan, match);
     }
-    // What the partner says about the ball settles it, with tactics: "¡mía!", "¡voy!", "¡atrás!" or "¡tuya!".
-    if (partner && incoming && this.thinking && this.trajectory && partner.callTraj === this.trajectory.id && partner.call && this.hearsIt(partner)) {
+    // What the partner says about the ball settles it, with tactics: "¡mía!", "¡voy!" or "¡tuya!". "¡Atrás!"
+    // says where to go, not whose it is: a lob over it is still its own, and it goes back for it.
+    if (partner && incoming && this.thinking && this.trajectory && partner.callTraj === this.trajectory.id && partner.call && partner.call !== 'back' && this.hearsIt(partner)) {
       this.mine = partner.call === 'yours';
     }
     if (incoming && !this.released && (!partner || this.mine !== false)) {
@@ -386,6 +395,7 @@ export class ScriptedHuman implements Controller {
       }
       if (this.thumbOffset !== null && contact && match.time >= contact.t + this.thumbOffset) {
         this.released = true;
+        this.calledBack = false;
         const rival = match.teams[me.team === 0 ? 1 : 0][0]!;
         const open = rival.x > 0 ? rng.range(-1, -0.5) : rng.range(0.5, 1);
         const aim = rng.chance(this.skill.aimSmart) ? open : rng.range(-1, 1);

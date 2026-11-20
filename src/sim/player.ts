@@ -15,6 +15,22 @@ export interface PendingSwing {
   intent: ShotIntent;
   /** Simulation time of the request, already corrected for input latency. */
   at: number;
+  /**
+   * The ball it is armed for (the id of its trajectory). Once anybody strikes
+   * that ball, or it is gone, the swing is gone too: it was for that ball.
+   */
+  traj: number;
+}
+
+/**
+ * A swing at the air that has not come through yet: the racket is still
+ * going back (until `until`). If the other side strikes the ball meanwhile,
+ * it was the windup for that ball, and it becomes the swing for it.
+ */
+export interface AirSwing {
+  intent: ShotIntent;
+  at: number;
+  until: number;
 }
 
 /** Abstract animation state. The renderer decides what it looks like. */
@@ -122,7 +138,12 @@ export interface Player extends PlayerSetup {
   /** Reused every step for the contact of a hand-moved player. */
   contact: InterceptPlan;
   swing: PendingSwing | null;
+  /** No new stroke until this time: the body is still going through the last one. */
   swingLockUntil: number;
+  /** A swing at the air still winding up (see `AirSwing`), or null. */
+  airSwing: AirSwing | null;
+  /** Until this time it is swinging at the air, and its legs go with the stroke (see `movePlayer`). */
+  airUntil: number;
   /** The shot it has decided to play and is winding up for, and since when. */
   cue: ShotIntent | null;
   cueAt: number;
@@ -188,6 +209,8 @@ export function createPlayer(id: number, team: TeamId, index: number, setup: Pla
     contact: { trajId: 0, t: 0, x: 0, y: 0, z: 0, stanceX: 0, stanceY: 0, kind: 'bounce', reachable: true, slack: 0 },
     swing: null,
     swingLockUntil: 0,
+    airSwing: null,
+    airUntil: 0,
     cue: null,
     cueAt: 0,
     anim: { kind: 'idle', t0: 0, duration: 0, contactAt: Infinity, side: 1, shot: 'drive', reachX: 0.6, reachY: 0.2, reachZ: 0.9 },
@@ -262,10 +285,10 @@ export function clampToHalf(
 
 const clamped = { x: 0, y: 0 };
 
-/** Moves a player for one step according to its intent. */
-export function movePlayer(player: Player, intent: PlayerIntent, dt: number, config: GameConfig): void {
+/** Moves a player for one step according to its intent. `legs` (0..1) is how much of its pace it has right now. */
+export function movePlayer(player: Player, intent: PlayerIntent, dt: number, config: GameConfig, legs = 1): void {
   const pc = config.player;
-  const top = playerSpeed(player, config);
+  const top = playerSpeed(player, config) * legs;
 
   let wantX = 0;
   let wantY = 0;

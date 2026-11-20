@@ -500,8 +500,8 @@ export function drawFigure(
   else if (player.surprise > 0.05) setSurprise(player.surprise);
   else if (call && said >= 0) setCall(call.kind, said, call.towardX, side);
   else if (act && resting) setAct(act.clip, act.t, act.duration);
-  // A swing at the air: a moment later, «no» with the head.
-  if (player.anim === 'whiff' && player.contactIn < -MISS_AFTER && player.contactIn > -MISS_AFTER - MISS_FOR) {
+  // A swing at the air of the computer: a moment later, «no» with the head. Not the person's own.
+  if (player.anim === 'whiff' && !player.isHuman && player.contactIn < -MISS_AFTER && player.contactIn > -MISS_AFTER - MISS_FOR) {
     const t = -player.contactIn - MISS_AFTER;
     overlay.head = Math.sin(t * 22) * 0.07 * Math.sin((t / MISS_FOR) * Math.PI);
     overlay.weight = Math.max(overlay.weight, 1);

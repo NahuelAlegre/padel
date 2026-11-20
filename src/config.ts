@@ -21,7 +21,7 @@ export const SIM_DT = 1 / SIM_HZ;
  * (physics, rules, shot maths, AI). Recorded matches carry the version they
  * were played with, so an old recording is replayed right or cleanly refused.
  */
-export const PHYSICS_VERSION = 5;
+export const PHYSICS_VERSION = 6;
 
 export interface SideSegment {
   /** Distance from the back wall where this segment ends. */
@@ -156,7 +156,11 @@ export interface TimingConfig {
   good: number;
   /** A swing this long after the ideal contact can still reach the ball. */
   lateMax: number;
-  /** Minimum time between two swings: a new one replaces the armed one. */
+  /**
+   * Minimum time between two asks that arm a swing. Once armed for a ball,
+   * asking again only changes where it goes, never when the racket comes; and
+   * a swing at the air takes all of its stroke (see `Match.requestSwing`).
+   */
   reswipeGap: number;
   /** An automatically moved player waits this long for a ball slightly out of reach. */
   graceAfter: number;

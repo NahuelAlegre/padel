@@ -110,13 +110,20 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
 
       Con los pasos 1 a 3, el prototipo baja las rodillas al 0 %, el codo al 6 % y las muñecas al 0 %, y la pala queda a 1 cm de la pelota en vez de 9. Son 0 KB de arte y el mismo costo de CPU.
     - **Decisión del usuario** (2026-11-19): no obsesionarse con que la pala toque la pelota. El brazo corrige poco y nunca fuerza; la pelota se dibuja pegada a la pala en el instante del golpe (solo dibujo, la simulación no cambia).
-    - **En curso** (2026-11-19):
-      - Sesión `anatomia-ik` (rama `claude/anatomy-ik-a8966f`), solo dibujo. Hace la prueba de límites, la IK con bisagra y topes sin segunda pasada, la mano que se suelta 0,1 s después del golpe, la pelota pegada a la pala y el recorte de muñecas.
-      - Quedan para después los clips en Blender (agarre diagonal, antebrazo que gira) y el hueso de giro de la piel.
+    - **Hecho, sin unir** (2026-11-20): rama `claude/anatomy-ik-a8966f` (4 commits, detalle en la sección 8 de `docs/investigacion-anatomia.md`). Solo dibujo: la simulación da idéntico.
+      - IK de dos huesos con bisagra y topes (codo 2–145°, rodilla 2–150°) en brazos, piernas y gestos. El brazo acerca la pala hasta 32 cm sin forzar y la suelta 0,1 s después del golpe. Las muñecas quedan en su rango.
+      - La pelota dibujada se apoya en la cara de la pala alrededor del contacto, sin saltos. Si la pala quedó a más de 25–45 cm, no la acerca. La volea de Romina usa el clip de volea.
+      - Números: rodillas fuera de rango 73 % → 0 %, codo de la pala 63 % → 3 %, muñecas → 0 %. La pala queda a 4 cm de la pelota de mediana y 11–15 cm en el p90. Cuesta +4,4 KB de JS con gzip y +0,5 µs por figura y cuadro.
+      - Revisión de la orquestadora: 421 pruebas en verde; la volea de Romina mejora a la vista, la estirada queda casi igual (es del clip y de la simulación) y el bloqueo todavía no se lee como bloqueo.
+    - **Queda**: los clips en Blender (agarre diagonal, antebrazo que gira, codos de costado, slerp, límites al exportar), el hueso de giro de la piel (la muñeca se afina hasta un 57 %), levantar el talón, los hombros en los gestos y la cadera en la estirada.
 - **Zonas de golpe** (idea del usuario, 2026-11-19: «que el jugador sepa que tiene que estar bien parado antes de golpear»).
   - Hoy la simulación solo mide la distancia entre el cuerpo y la pelota. Una pelota al pecho cuenta como perfecta, y una que ya pasó, igual que una al costado.
   - La propuesta son zonas alrededor del cuerpo: ideal, al cuerpo (bloqueo blando), lejos, atrás y arriba o abajo. El efecto es gradual y la IA lo sufre igual. Los rivales agresivos pueden tirar al cuerpo como táctica.
-  - **En curso**: sesión `zonas-golpe` (rama `claude/hit-zones-2692e6`), detrás de `?zonas`. La meta es que jugar bien parado rinda unos +15 pp.
+  - **Hecho, sin unir** (2026-11-20): rama `claude/hit-zones-2692e6`, detrás de `?zonas` y de Opciones → Experimental. Apagadas, el juego da idéntico. Diseño y números en `docs/zonas.md`.
+    - La pelota se mide en los ejes del cuerpo. Al cuerpo sale un bloqueo blando al medio, con el cartel «Bloqueo»; pasada la línea del cuerpo, un manotazo flojo, y a más de 90 cm no se pega. La IA lo sufre igual y le tira al cuerpo a quien está en la red (Romina mucho, Beto y Chela poco).
+    - Pararse bien paga en 1 contra 1 +12 / +19 / +23 pp (Beto / Romina / Chela; antes +4 / +10 / +14), y en dobles +6 a +10 (antes +1 a +5). Los golpes detrás de los pies bajan del 19 % al 8 %. Al jugador que no se acomoda le cuesta 6 a 10 pp en 1 contra 1.
+    - **Para decidir después de probarlo en el celular** (sección 10 de `docs/zonas.md`): si el bloqueo se siente justo, si Romina es demasiado para quien no se acomoda, si pegar tarde cuenta como «atrás», si el bloqueo va al medio o vuelve a quien la pegó, y la animación del bloqueo con el codo arriba y la lección «Al costado».
+  - Las dos ramas se unen sin conflictos y juntas pasan las 439 pruebas.
 - **Decisiones del usuario, después de probarlo**: partida rápida en dobles, alcance real para todos, el 1 contra 1 como «Cruzado» (media cancha en diagonal), revés y Beto por defecto, cuánto se desordena la pareja rival.
 - **Pendiente** (revisión de la orquestadora):
   - ~~Fase 2, animación~~: publicada el 2026-11-19 (ver arriba).

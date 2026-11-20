@@ -135,6 +135,20 @@ La prueba 3D sacó de encima las primitivas, pero el personaje sigue siendo "pro
   - **Para ver en el celular**: si de lejos el «¡tuya!» con la pala se lee como seña.
   - **Propuesto, sin hacer**: que la marca de pique aparezca solo cuando la pelota es tuya.
   - **Visto de paso**: en un golpe seguido de una carrera hacia atrás, Beto gira el tronco 83° cuando el tope es 65°. Queda para el trabajo de anatomía.
+- **Plantarse en la red** (el usuario, 2026-11-20): "si me pongo enfrente de la red y empiezo a spamear el botón de golpear, prácticamente me vuelvo invencible", y ante un globo "simplemente espero a que mi compañero la devuelva".
+  - **Causa**:
+    - Cada toque volvía a tomar el momento del golpe: nunca salía tarde y uno de cada cinco salía perfecto.
+    - Con una persona en la pareja, el globo no obligaba a nadie a bajar.
+    - Contra la pareja partida, la computadora tiraba al medio, al alcance del que estaba en la red.
+  - **Publicado** (2026-11-20, merge ea1dd57): rama `claude/net-camping-dcf41c`. Detalle y números en `docs/red.md`.
+    - Volver a apretar con el golpe armado cambia la dirección, no el momento. Un golpe al aire dura el swing entero (0,52 s), y mientras dura el jugador se mueve a media velocidad. Prepararse temprano sigue siendo un golpe bueno.
+    - Globo por tu lado: el compañero dice «¡atrás!», te da 0,4 s y, si no vas, cruza él. Si defendió desde el fondo, se queda atrás llamándote. Los rivales te tiran más globos cada vez que no bajás (`HABIT_LOB`).
+    - Contra la pareja partida, el hueco de verdad: lejos de la pala del que está en la red. Por ahora solo contra parejas con una persona (`PERSON_PAIRS_ONLY`), hasta que la anatomía resuelva una «baja» con la cadera a 127°.
+    - En dobles con Beto, plantado apretando sin parar pasa de 68,7 % a 58,9 %, y jugar bien queda igual. Los partidos solo de la computadora dan idénticos. `PHYSICS_VERSION` 6.
+    - Revisión de la orquestadora: el segundo toque con el golpe armado había dejado de poder tomar la pelota que pasa, con movimiento asistido. Se corrigió antes de unir. Pasan las 457 pruebas, el build y el smoke (128 de 128).
+  - **Para ver en el celular**: que apretar de más se sienta torpe y no como que el juego no responde, y que se note que te buscan con globos.
+  - **Decisión del usuario, después de probarlo**: prepararse temprano es lo que más gana en todas las pruebas. Si apretar de más todavía se siente fuerte, el golpe armado mucho antes puede salir un poco menos preciso (`shots.quality.early`).
+  - **Para la sesión de señas**: el «¡atrás!» del compañero mientras corre o arma un golpe se lee poco.
 - **Decisiones del usuario, después de probarlo**: partida rápida en dobles, alcance real para todos, el 1 contra 1 como «Cruzado» (media cancha en diagonal), revés y Beto por defecto, cuánto se desordena la pareja rival.
 - **Pendiente** (revisión de la orquestadora):
   - ~~Fase 2, animación~~: publicada el 2026-11-19 (ver arriba).

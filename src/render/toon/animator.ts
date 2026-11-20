@@ -112,8 +112,8 @@ const BODY = {
    * thrown at the ball. Past `armSoft` it gives less and less, so it never
    * stops dead at the most.
    */
-  arm: 0.22,
-  armSoft: 0.12,
+  arm: 0.32,
+  armSoft: 0.16,
   /**
    * A block is all arm: no swing, nothing else moves, and the racket is put
    * in front of the body, which an elbow folds to without strain.

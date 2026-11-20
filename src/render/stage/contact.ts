@@ -10,6 +10,12 @@ import type { BallFrame, EffectFrame, FigureFrame } from './frame';
  * leaves its real path, comes onto the face of the racket that hits it, and
  * goes back to its path as it leaves: it is seen to come off the racket. Its
  * shadow goes with it. The simulation never knows.
+ *
+ * Only for a racket that nearly gets there: a ball the body is far from is
+ * not taken to it, it is missed by as much as it is (see `PULL_FAR`). And the
+ * ball drawn never jumps: it bends toward the racket and back no faster than
+ * it goes (see `STEER`), so that a stroke that misses, or is given up, lets go
+ * of it as smoothly as one that hits.
  */
 
 /**
@@ -36,6 +42,20 @@ export function racketPull(eta: number): number {
 
 /** The radius of a padel ball, in metres: what the middle of the ball is off the face it rests on. */
 const BALL = 0.033;
+/**
+ * How far from where the simulation meets the ball the racket can be, in
+ * metres at life size, for the ball still to be drawn on it: all the way up
+ * to `full`, less and less from there, and not at all from `none` on. Further
+ * than that the body did not get there, and it is seen.
+ */
+const PULL_FAR = { full: 0.25, none: 0.45 };
+/**
+ * From one frame to the next the ball drawn moves off its path, or back to
+ * it, at most this much of what it moves along it (and a few millimetres
+ * more): its way bends by some twenty degrees at most, as a ball that is
+ * curling does, instead of jumping aside.
+ */
+const STEER = { along: 0.35, least: 0.004 };
 
 /** The head of a racket as it is drawn, on the court. */
 export interface RacketFace {
@@ -104,7 +124,8 @@ export function faceSide(face: RacketFace, vx: number, vy: number, vz: number, d
  * Before the contact the ball bends toward where the racket is going to meet
  * it, not toward where the racket still is, far back in its swing; after it,
  * only if that one really did hit it, it leaves from where they met, along
- * its own way, not with the follow-through.
+ * its own way, not with the follow-through. If it did not, it goes back to
+ * its path.
  */
 export class BallOnRacket {
   /** Who has really hit the ball in the stroke on show. */
@@ -116,6 +137,11 @@ export class BallOnRacket {
    * the contact on; and whether the contact is past.
    */
   private readonly pull = { player: -1, side: 1, eta: Number.NaN, tx: 0, ty: 0, tz: 0, left: false, ox: 0, oy: 0, oz: 0 };
+  /**
+   * How far from its real place the ball is drawn, as it was left in the last
+   * frame, and where the ball really was then (`seen` false: nowhere yet).
+   */
+  private readonly drawn = { x: 0, y: 0, z: 0, seen: false, bx: 0, by: 0, bz: 0 };
   /** The sparkle of the last hit: who hit it and where the simulation did, and how far from there it is drawn. */
   private readonly spark = { player: -1, x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 0, placed: false };
   private readonly face: RacketFace = { x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 1, reach: 0, half: 0 };
@@ -139,6 +165,11 @@ export class BallOnRacket {
     this.struck.length = 0;
     this.pull.player = -1;
     this.spark.player = -1;
+    const drawn = this.drawn;
+    drawn.x = 0;
+    drawn.y = 0;
+    drawn.z = 0;
+    drawn.seen = false;
   }
 
   /**
@@ -175,6 +206,15 @@ export class BallOnRacket {
     const face = this.face;
     const pull = this.pull;
     const spark = this.spark;
+    // How far from its real place the ball is to be drawn in this frame; and where the simulation hit it, when
+    // this is the frame it is seen to be hit.
+    let tx = 0;
+    let ty = 0;
+    let tz = 0;
+    let sparkAt = false;
+    let sx = 0;
+    let sy = 0;
+    let sz = 0;
     if (who < 0 || !ball.visible || !faceOf(who, face)) {
       pull.player = -1;
     } else {
@@ -231,30 +271,61 @@ export class BallOnRacket {
         pull.oz = cz - bz;
         pull.left = true;
       }
-      let ox = pull.ox;
-      let oy = pull.oy;
-      let oz = pull.oz;
+      // All of it for a racket that nearly gets there; none for one the body is far from.
+      const ox = pull.ox;
+      const oy = pull.oy;
+      const oz = pull.oz;
+      const far = Math.sqrt(ox * ox + oy * oy + oz * oz) / hitter.k;
+      const w = racketPull(eta) * (1 - smoothstep(PULL_FAR.full, PULL_FAR.none, far));
+      tx = ox * w;
+      ty = oy * w;
+      tz = oz * w;
+      // On the racket it is seen, whatever is nearer the camera, the racket or the body.
+      if (w > 0) ball.over = hitter;
       // The sparkle of the hit goes where the ball is seen to be hit: on the racket.
       if (spark.player === who && !spark.placed && this.struck[who]) {
-        spark.dx = bx + ox - spark.x;
-        spark.dy = by + oy - spark.y;
-        spark.dz = bz + oz - spark.z;
         spark.placed = true;
+        sparkAt = true;
+        sx = bx;
+        sy = by;
+        sz = bz;
       }
-      const w = racketPull(eta);
-      ox *= w;
-      oy *= w;
-      oz *= w;
-      ball.x += ox;
-      ball.y += oy;
-      ball.z += oz;
-      // On the racket it is seen, whatever is nearer the camera, the racket or the body.
-      if (w > 0) ball.over = figures[who]!;
+    }
+    // Off its path no faster than it goes along it, and back: it bends, it never jumps.
+    const drawn = this.drawn;
+    const moved = drawn.seen ? Math.sqrt((ball.x - drawn.bx) ** 2 + (ball.y - drawn.by) ** 2 + (ball.z - drawn.bz) ** 2) : Infinity;
+    drawn.bx = ball.x;
+    drawn.by = ball.y;
+    drawn.bz = ball.z;
+    drawn.seen = ball.visible;
+    let dx = (ball.visible ? tx : 0) - drawn.x;
+    let dy = (ball.visible ? ty : 0) - drawn.y;
+    let dz = (ball.visible ? tz : 0) - drawn.z;
+    const gap = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const room = ball.visible ? STEER.along * moved + STEER.least : Infinity;
+    if (gap > room) {
+      const k = room / gap;
+      dx *= k;
+      dy *= k;
+      dz *= k;
+    }
+    drawn.x += dx;
+    drawn.y += dy;
+    drawn.z += dz;
+    if (drawn.x !== 0 || drawn.y !== 0 || drawn.z !== 0) {
+      ball.x += drawn.x;
+      ball.y += drawn.y;
+      ball.z = Math.max(BALL, ball.z + drawn.z);
       for (let i = 0; i < ball.trailCount * 3; i += 3) {
-        ball.trail[i] = ball.trail[i]! + ox;
-        ball.trail[i + 1] = ball.trail[i + 1]! + oy;
-        ball.trail[i + 2] = ball.trail[i + 2]! + oz;
+        ball.trail[i] = ball.trail[i]! + drawn.x;
+        ball.trail[i + 1] = ball.trail[i + 1]! + drawn.y;
+        ball.trail[i + 2] = ball.trail[i + 2]! + drawn.z;
       }
+    }
+    if (sparkAt) {
+      spark.dx = sx + drawn.x - spark.x;
+      spark.dy = sy + drawn.y - spark.y;
+      spark.dz = sz + drawn.z - spark.z;
     }
     if (spark.player < 0) return;
     for (const effect of effects) {

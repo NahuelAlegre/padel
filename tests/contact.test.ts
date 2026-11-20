@@ -48,13 +48,12 @@ const distance = (a: ArrayLike<number>, b: ArrayLike<number>): number => Math.hy
 /**
  * A forehand of somebody on the near side to a ball that is not where the
  * clip meets it, frame by frame: the ball comes in along a straight line,
- * is hit at the contact (or not) and goes back the other way. Returns, for
- * every frame, where the ball really is and where it is drawn, and the
- * sparkle of the hit as it is drawn.
+ * and is hit at the contact and goes back the other way, or is missed and
+ * goes on. Returns, for every frame, where the ball really is and where it
+ * is drawn, and the sparkle of the hit as it is drawn.
  */
-function play(hit: boolean): Array<{ eta: number; real: number[]; drawn: number[]; face: RacketFace; spark: EffectFrame | null }> {
+function play(hit: boolean, contact = [0.75, -5.6, 0.85]): Array<{ eta: number; real: number[]; drawn: number[]; face: RacketFace; spark: EffectFrame | null }> {
   const k = 1.2;
-  const contact = [0.75, -5.6, 0.85];
   const who = player({ anim: 'swing', animPhase: -1, reachX: contact[0]! - 0, reachY: contact[1]! + 6, reachZ: contact[2]! });
   const animator = new FigureAnimator(character);
   for (let i = 0; i < 20; i++) animator.update(player(), k, 1, { x: 0, y: 8, z: 1, visible: true }, DT);
@@ -68,7 +67,7 @@ function play(hit: boolean): Array<{ eta: number; real: number[]; drawn: number[
     const eta = i * DT;
     who.contactIn = eta;
     if (eta <= 0) who.animPhase = -eta / 0.6;
-    const v = eta > 0 ? incoming : outgoing;
+    const v = eta > 0 || !hit ? incoming : outgoing;
     const real = [contact[0]! - v.vx * eta, contact[1]! - v.vy * eta, contact[2]! - v.vz * eta];
     animator.update(who, k, 1, { x: real[0]!, y: real[1]!, z: real[2]!, visible: true }, DT);
     figure.x = animator.x;
@@ -151,8 +150,72 @@ describe('la pelota dibujada sobre la pala', () => {
     }
   });
 
-  it('una pelota que no se golpeó no se queda en la pala', () => {
+  it('una pelota que no se golpeó vuelve a su camino, sin saltos, y no se queda en la pala', () => {
     const rows = play(false);
-    for (const row of rows) if (row.eta < -DT) expect(distance(row.drawn, row.real), `${row.eta}`).toBeLessThan(1e-9);
+    const at = rows.findIndex((row) => row.eta <= 0);
+    // It was coming to the racket, as it does to one that hits it.
+    expect(distance(rows[at - 1]!.drawn, rows[at - 1]!.real)).toBeGreaterThan(0.03);
+    // From there it goes back to its path, a little every frame, and is on it before the time a hit lets go of it.
+    for (let i = at; i < rows.length; i++) {
+      const off = distance(rows[i]!.drawn, rows[i]!.real);
+      expect(off, `${rows[i]!.eta}`).toBeLessThanOrEqual(distance(rows[i - 1]!.drawn, rows[i - 1]!.real) + 1e-9);
+      if (rows[i]!.eta <= -BALL_ON_RACKET.after) expect(off).toBeLessThan(1e-9);
+    }
+  });
+
+  it('nunca salta: de un cuadro al otro se aparta de su camino, o vuelve, menos de lo que avanza por él', () => {
+    for (const hit of [true, false]) {
+      const rows = play(hit);
+      for (let i = 1; i < rows.length; i++) {
+        const turned = distance(
+          rows[i]!.drawn.map((v, c) => v - rows[i]!.real[c]!),
+          rows[i - 1]!.drawn.map((v, c) => v - rows[i - 1]!.real[c]!),
+        );
+        // Some twenty degrees off its way at most, and a few millimetres.
+        expect(turned, `${hit} ${rows[i]!.eta}`).toBeLessThanOrEqual(0.35 * distance(rows[i]!.real, rows[i - 1]!.real) + 0.004 + 1e-9);
+      }
+    }
+  });
+
+  it('a una pala que quedó lejos la pelota no va: si no llega, no llega', () => {
+    const k = 1.2;
+    const contact = [0.6, -5.6, 0.9];
+    // The racket meets it 10 cm off, or 70 cm off: a body that did not get there.
+    for (const [away, pulled] of [
+      [0.1, true],
+      [0.7, false],
+    ] as const) {
+      const who = player({ anim: 'swing', reachX: 0.6, reachY: 0.4, reachZ: 0.9 });
+      const figure: FigureFrame = { player: who, x: 0, y: -6, k, facing: 1, depth: 10, palette: new Float32Array(), parts: null, bones: null };
+      const face: RacketFace = { x: contact[0]! + away, y: contact[1]!, z: contact[2]!, nx: 0, ny: -1, nz: 0, reach: 0.06 * k, half: 0.02 * k };
+      const onRacket = new BallOnRacket();
+      let most = 0;
+      for (let i = 10; i >= -10; i--) {
+        const eta = i * DT;
+        who.contactIn = eta;
+        if (i === 0) onRacket.hit(0, contact[0]!, contact[1]!, contact[2]!);
+        const real = [contact[0]!, contact[1]! + (eta > 0 ? 16 : -18) * eta, contact[2]!];
+        const ball: BallFrame = { x: real[0]!, y: real[1]!, z: real[2]!, visible: true, over: null, glow: 0, trail: new Float32Array(15), trailCount: 0 };
+        onRacket.place(
+          [figure],
+          (_, out) => {
+            Object.assign(out, face);
+            return true;
+          },
+          (_, out) => {
+            out[0] = face.x;
+            out[1] = face.y;
+            out[2] = face.z;
+            return true;
+          },
+          ball,
+          eta > 0 ? { vx: 0, vy: -16, vz: 0 } : { vx: 0, vy: 18, vz: 0 },
+          [],
+        );
+        most = Math.max(most, distance([ball.x, ball.y, ball.z], real));
+      }
+      if (pulled) expect(most).toBeGreaterThan(0.08);
+      else expect(most).toBeLessThan(1e-9);
+    }
   });
 });

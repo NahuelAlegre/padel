@@ -62,5 +62,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    // Several tests play whole matches and take 2-3 s here with every file running at once. The
+    // GitHub runner is slower and went past the default 5 s, which stopped a publish (2026-11-20).
+    testTimeout: 20_000,
   },
 });
